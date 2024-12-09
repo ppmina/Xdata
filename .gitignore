@@ -24,3 +24,6 @@ dist/
 
 # Ignore .env file
 .env
+
+# Ignore .env.template file
+!.env.template

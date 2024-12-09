@@ -1,0 +1,22 @@
+# Binance API 配置
+binance:
+  api_key: "aCJX20Idtnb9FOrPcu5j0DLH6xeLrkSea1QXRI9KIvYbxMYYWFrvsWN01O58zymU"
+  api_secret: "o9Ry8bugWNNcVOsYmYIDT6mGPyHhRSTx2G9k6b0FOTted10kF8Ss809dampSeQqm"
+
+# 交易对配置
+trading:
+  symbols:
+    - "BNBBTC"
+  streams:
+    - "bnbbtc@miniTicker"
+    - "bnbbtc@bookTicker"
+
+# 数据存储配置
+storage:
+  data_dir: "data/raw"
+  processed_dir: "data/processed"
+
+# 日志配置
+logging:
+  level: "INFO"
+  file: "logs/trading.log"

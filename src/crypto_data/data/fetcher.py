@@ -1,13 +1,12 @@
-import os
-import sys
-
-root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-sys.path.append(root)
-
 from binance import ThreadedWebsocketManager
+from crypto_data.config import config
 
-api_key = "<api_key>"
-api_secret = "<api_secret>"
+# Get API credentials from config
+api_key = config.binance.get("api_key")
+api_secret = config.binance.get("api_secret")
+
+if not api_key or not api_secret:
+    raise ValueError("Missing Binance API credentials in config")
 
 
 def main():
