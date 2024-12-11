@@ -5,7 +5,7 @@ from enum import Enum
 
 
 class SortBy(Enum):
-    """排序方式枚举"""
+    """排序方式枚举."""
 
     VOLUME = "volume"
     PRICE_CHANGE = "priceChange"
@@ -15,7 +15,7 @@ class SortBy(Enum):
 
 @dataclass
 class MarketTicker:
-    """市场数据模型"""
+    """市场数据模型."""
 
     symbol: str
     price_change: Decimal
@@ -35,7 +35,7 @@ class MarketTicker:
 
     @classmethod
     def from_binance_ticker(cls, ticker: dict) -> "MarketTicker":
-        """从Binance ticker数据创建MarketTicker实例"""
+        """从Binance ticker数据创建MarketTicker实例."""
         return cls(
             symbol=ticker["symbol"],
             price_change=Decimal(str(ticker["priceChange"])),

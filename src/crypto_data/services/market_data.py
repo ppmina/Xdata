@@ -1,31 +1,33 @@
-from typing import List, Optional, Dict, Any
 import logging
 from datetime import datetime
+from typing import Any, Dict, List, Optional, cast
 
+from binance import Client
+
+from crypto_data.config.settings import settings
+from crypto_data.exceptions import InvalidSymbolError, MarketDataFetchError
 from crypto_data.interfaces import IMarketDataService
 from crypto_data.models import MarketTicker, SortBy
-from crypto_data.exceptions import MarketDataFetchError, InvalidSymbolError
 from crypto_data.utils.cache_manager import CacheManager
 from crypto_data.utils.data_converter import DataConverter
-from crypto_data.config.settings import settings
 
 logger = logging.getLogger(__name__)
 
 
 class MarketDataService(IMarketDataService):
-    """市场数据服务实现类"""
+    """市场数据服务实现类."""
 
-    def __init__(self, client):
+    def __init__(self, client: Client) -> None:
         self.client = client
         self.cache = CacheManager(ttl_seconds=settings.CACHE_TTL)
         self.converter = DataConverter()
 
     def get_ticker(self, symbol: str) -> MarketTicker:
-        """获取单个交易对的行情数据"""
+        """获取单个交易对的行情数据."""
         try:
             cached_data = self.cache.get(f"ticker_{symbol}")
             if cached_data:
-                return cached_data
+                return cast(MarketTicker, cached_data)
 
             ticker = self.client.get_symbol_ticker(symbol=symbol)
             if not ticker:
@@ -45,23 +47,23 @@ class MarketDataService(IMarketDataService):
         sort_by: SortBy = SortBy.QUOTE_VOLUME,
         quote_asset: Optional[str] = None,
     ) -> List[MarketTicker]:
-        """获取排名靠前的币种数据"""
+        """获取排名靠前的币种数据."""
         try:
             cache_key = f"top_coins_{limit}_{sort_by.value}_{quote_asset}"
             cached_data = self.cache.get(cache_key)
             if cached_data:
-                return cached_data
+                return cast(List[MarketTicker], cached_data)
 
             tickers = self.client.get_ticker()
             market_tickers = [MarketTicker.from_binance_ticker(t) for t in tickers]
 
             if quote_asset:
-                market_tickers = [
-                    t for t in market_tickers if t.symbol.endswith(quote_asset)
-                ]
+                market_tickers = [t for t in market_tickers if t.symbol.endswith(quote_asset)]
 
             sorted_tickers = sorted(
-                market_tickers, key=lambda x: getattr(x, "quote_volume"), reverse=True
+                market_tickers,
+                key=lambda x: getattr(x, "quote_volume"),
+                reverse=True,
             )[:limit]
 
             self.cache.set(cache_key, sorted_tickers)
@@ -72,14 +74,14 @@ class MarketDataService(IMarketDataService):
             raise MarketDataFetchError(f"Failed to get top coins: {e}")
 
     def get_market_summary(self, symbols: List[str]) -> Dict[str, Any]:
-        """获取市场概况"""
+        """获取市场概况."""
         try:
             cache_key = f"market_summary_{'_'.join(sorted(symbols))}"
             cached_data = self.cache.get(cache_key)
             if cached_data:
-                return cached_data
+                return cast(Dict[str, Any], cached_data)
 
-            summary = {"timestamp": datetime.now(), "data": {}}
+            summary: Dict[str, Any] = {"timestamp": datetime.now(), "data": {}}
 
             for symbol in symbols:
                 ticker = self.get_ticker(symbol)

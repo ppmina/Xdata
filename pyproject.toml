@@ -1,21 +1,78 @@
 [build-system]
-requires = ["hatchling"]
+requires = [
+    "hatchling",
+]
 build-backend = "hatchling.build"
 
 [project]
-name = "crypto_data"
+name = "crypto-data"
 version = "0.1.0"
-authors = [
-    { name = "Your Name", email = "your.email@example.com" },
-]
-description = "A cryptocurrency trading info bot"
+description = "A cryptocurrency trading info package"
 readme = "README.md"
 requires-python = ">=3.8"
 dependencies = [
-    "python-binance",
-    "pyyaml",
-    # 添加其他依赖
+    "python-binance>=1.0.0",
+    "pyyaml>=5.4",
+    "tomli>=2.2.1",
+    "tomli-w>=1.0.0",
+]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+]
+authors = [
+    { name = "Your Name", email = "your.email@example.com" },
 ]
 
+[project.optional-dependencies]
+dev = [
+    "pytest>=6.0.0",
+    "pytest-cov>=2.10.0",
+    "pre-commit>=2.0.0",
+    "python-dotenv>=0.15.0",
+]
+
+[tool.semantic_release]
+version_variable = [
+    "setup.py:version",
+]
+branch = "main"
+upload_to_pypi = false
+commit_version_number = true
+commit_message = "chore(release): bump version to {version}"
+build_command = "python setup.py sdist bdist_wheel"
+
+[tool.black]
+line-length = 100
+target-version = [
+    "py38",
+]
+include = "\\.pyi?$"
+
+[tool.isort]
+profile = "black"
+multi_line_output = 3
+line_length = 100
+
+[tool.mypy]
+python_version = "3.8"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true
+check_untyped_defs = true
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+testpaths = [
+    "tests",
+]
+python_files = [
+    "test_*.py",
+]
+addopts = "-v --cov=src/crypto_data --cov-report=term-missing"
+
 [tool.hatch.build.targets.wheel]
-packages = ["src/crypto-data"] 
+packages = [
+    "src/crypto_data",
+]

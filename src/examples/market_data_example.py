@@ -1,25 +1,33 @@
-import os
-from dotenv import load_dotenv
 import logging
+import os
 
-from crypto_data.client.client import BinanceClient
-from crypto_data.services.market_data import MarketDataService
+from dotenv import load_dotenv
+
+from crypto_data.client import BinanceClientFactory
 from crypto_data.models.market_data import SortBy
+from crypto_data.services.market_data import MarketDataService
 
 # 设置日志
 logging.basicConfig(
-    level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+    level=logging.INFO,
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
 )
 logger = logging.getLogger(__name__)
 
 
-def main():
+def main() -> None:
     load_dotenv()
 
     # 初始化客户端
     api_key = os.getenv("BINANCE_API_KEY")
     api_secret = os.getenv("BINANCE_API_SECRET")
-    binance_client = BinanceClient(api_key, api_secret)
+
+    if not api_key or not api_secret:
+        raise ValueError(
+            "BINANCE_API_KEY and BINANCE_API_SECRET must be set in environment variables"
+        )
+
+    binance_client = BinanceClientFactory.create_client(api_key, api_secret)
 
     # 创建市场数据服务实例
     market_service = MarketDataService(binance_client)

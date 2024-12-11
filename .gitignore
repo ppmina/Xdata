@@ -27,3 +27,6 @@ dist/
 
 # Ignore .env.template file
 !.env.template
+
+# Ignore mypy cache
+.mypy_cache/
