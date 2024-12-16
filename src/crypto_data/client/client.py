@@ -66,6 +66,8 @@ if __name__ == "__main__":
     # 创建客户端
     client = BinanceClientFactory.create_client(api_key, api_secret)
 
+    print(client.get_ticker()[0])
+
     # 创建服务
     market_service = MarketDataService(client)
 

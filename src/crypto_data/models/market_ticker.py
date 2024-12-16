@@ -1,7 +1,10 @@
 from dataclasses import dataclass
-from datetime import datetime
+
+# from datetime import datetime
 from decimal import Decimal
 from enum import Enum
+
+# from typing import Any, Dict, List
 
 
 class SortBy(Enum):
@@ -31,7 +34,11 @@ class MarketTicker:
     low_price: Decimal
     volume: Decimal
     quote_volume: Decimal
-    timestamp: datetime
+    open_time: str
+    close_time: str
+    first_id: int
+    last_id: int
+    count: int
 
     @classmethod
     def from_binance_ticker(cls, ticker: dict) -> "MarketTicker":
@@ -51,5 +58,9 @@ class MarketTicker:
             low_price=Decimal(str(ticker["lowPrice"])),
             volume=Decimal(str(ticker["volume"])),
             quote_volume=Decimal(str(ticker["quoteVolume"])),
-            timestamp=datetime.now(),
+            open_time=str(ticker["openTime"]),
+            close_time=str(ticker["closeTime"]),
+            first_id=ticker["firstId"],
+            last_id=ticker["lastId"],
+            count=ticker["count"],
         )
