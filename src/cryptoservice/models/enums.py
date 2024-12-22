@@ -1,6 +1,15 @@
 # -*- coding: utf-8 -*-
 
-from enum import IntEnum, auto
+from enum import Enum, IntEnum, auto
+
+
+class SortBy(Enum):
+    """排序方式枚举."""
+
+    VOLUME = "volume"
+    PRICE_CHANGE = "priceChange"
+    PRICE_CHANGE_PERCENT = "priceChangePercent"
+    QUOTE_VOLUME = "quoteVolume"
 
 
 class InstType(IntEnum):

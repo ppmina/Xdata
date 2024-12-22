@@ -3,9 +3,8 @@ import os
 
 from dotenv import load_dotenv
 
-from crypto_data.client import BinanceClientFactory
-from crypto_data.models.market_data import SortBy
-from crypto_data.services.market_data import MarketDataService
+from cryptoservice.data import StorageUtils
+from cryptoservice.services import MarketDataService
 
 # 设置日志
 logging.basicConfig(
@@ -27,30 +26,24 @@ def main() -> None:
             "BINANCE_API_KEY and BINANCE_API_SECRET must be set in environment variables"
         )
 
-    binance_client = BinanceClientFactory.create_client(api_key, api_secret)
-
     # 创建市场数据服务实例
-    market_service = MarketDataService(binance_client)
+    market_service = MarketDataService(api_key, api_secret)
 
     try:
-        # 获取USDT交易对中交易量最大的前20个
-        top_coins = market_service.get_top_coins(
-            limit=20, sort_by=SortBy.QUOTE_VOLUME, quote_asset="USDT"
+        data = market_service.get_perpetual_data(
+            symbols=["BTCUSDT", "ETHUSDT", "BNBUSDT"],
+            start_time="2024-01-01",
+            end_time="2024-01-02",
+            freq="1h",
         )
-
-        # 打印结果
-        for coin in top_coins:
-            print(
-                f"{coin.symbol}: Volume={coin.quote_volume}, "
-                f"Price=${coin.last_price}, "
-                f"Change={coin.price_change_percent}%"
-            )
-
-        # 获取特定币种的市场概况
-        symbols = ["BTCUSDT", "ETHUSDT", "BNBUSDT"]
-        summary = market_service.get_market_summary(symbols)
-        print("\nMarket Summary:")
-        print(summary)
+        StorageUtils.store_feature_data(
+            data,
+            "2024-01-01",
+            "H1",
+            "SWAP",
+            "cls",
+            ["BTCUSDT", "ETHUSDT", "BNBUSDT"],
+        )
 
     except Exception as e:
         logger.error(f"Error in main: {e}")
