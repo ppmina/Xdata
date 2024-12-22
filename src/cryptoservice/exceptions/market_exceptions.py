@@ -20,3 +20,9 @@ class InvalidSymbolError(MarketDataError):
     """无效的交易对错误."""
 
     pass
+
+
+class MarketDataStoreError(MarketDataError):
+    """存储市场数据时的错误."""
+
+    pass

@@ -25,8 +25,8 @@ dist/
 # Ignore .env file
 .env
 
-# Ignore .env.template file
-!.env.template
-
 # Ignore mypy cache
 .mypy_cache/
+
+# Ignore data directory
+/data/

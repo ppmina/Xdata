@@ -3,7 +3,7 @@ from typing import Optional
 
 from binance import Client
 
-from crypto_data.exceptions import MarketDataError
+from cryptoservice.exceptions import MarketDataError
 
 logger = logging.getLogger(__name__)
 
@@ -47,31 +47,3 @@ class BinanceClientFactory:
     def reset_client(cls) -> None:
         """重置客户端实例."""
         cls._instance = None
-
-
-if __name__ == "__main__":
-    import os
-
-    from dotenv import load_dotenv
-
-    from crypto_data.services import MarketDataService
-
-    # 尝试加载 .env 文件，如果文件不存在也不会报错
-    load_dotenv(override=True)
-
-    # 优先使用环境变量，如果没有可以直接设置
-    api_key = os.getenv("BINANCE_API_KEY") or "your_api_key_here"
-    api_secret = os.getenv("BINANCE_API_SECRET") or "your_api_secret_here"
-
-    # 创建客户端
-    client = BinanceClientFactory.create_client(api_key, api_secret)
-
-    print(client.get_ticker()[0])
-
-    # 创建服务
-    market_service = MarketDataService(client)
-
-    # 使用服务
-    top_coins = market_service.get_top_coins(limit=10)
-
-    print(top_coins)

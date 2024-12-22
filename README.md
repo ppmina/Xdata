@@ -14,7 +14,7 @@
 ## 安装
 
 ```bash
-pip install crypto-data
+pip install cryptoservice
 ```
 
 ## 快速开始
@@ -25,32 +25,80 @@ pip install crypto-data
 # 根目录.env 文件 建议的token保存方式
 BINANCE_API_KEY=your_api_key
 BINANCE_API_SECRET=your_api_secret
+# 使用时
 ```
-
-2. 基本使用：
-
 ```python
-from crypto_data import BinanceClientFactory
-from crypto_data import MarketDataService
+# 使用时这样引入
+import os
 from dotenv import load_dotenv
 
 load_dotenv()
 api_key = os.getenv("BINANCE_API_KEY")
 api_secret = os.getenv("BINANCE_API_SECRET")
-
-# 除了现有的功能，使用者也可以提feature commit，merge进主线发包就可以用了
-
-# 创建客户端
-client = BinanceClientFactory.create_client(api_key, api_secret)
-
-# 通过客户端获取市场数据
-# 例如获取BTCUSDT的行情数据
-data = client.somet_other_way(...).A(...).B(...).C("BTCUSDT")
-
-# MarketDataService 是服务层，封装了一些常用的功能
-# 通过MarketDataService 获取市场数据 例如获取BTCUSDT的行情数据
-data = MarketDataService(client).get_ticker("BTCUSDT")
 ```
+
+2. 基本使用：
+
+```python
+from cryptoservice import MarketDataService
+
+# 创建市场数据服务实例
+service = MarketDataService(api_key, api_secret)
+```
+
+3. 获取数据：
+
+```python
+# 获取单个交易对的行情数据
+ticker = service.get_ticker("BTCUSDT")
+```
+
+```python
+# 获取排名靠前的币种数据
+top_coins = service.get_top_coins(
+    limit=10,
+    sort_by=SortBy.QUOTE_VOLUME,
+    quote_asset="USDT"
+)
+```
+
+```python
+# 获取市场概况
+summary = service.get_market_summary(
+    symbols=["BTCUSDT", "ETHUSDT"],
+    interval="1d"
+)
+```
+
+```python
+# 获取历史行情数据
+historical_data = service.get_historical_data(
+    symbol="BTCUSDT",
+    start_time="20240101",
+    end_time="20240102",
+    interval="1h"
+)
+```
+
+```python
+# 获取订单簿数据
+orderbook = service.get_orderbook(
+    symbol="BTCUSDT",
+    limit=100
+)
+```
+
+```python
+# 获取永续合约历史数据
+perpetual_data = service.get_perpetual_data(
+    symbols=["BTCUSDT", "ETHUSDT"],
+    start_time="20240101",
+    end_time="20240102",
+    freq="1h",
+    store=True  # 是否存储数据
+)
+```
+除了现有的功能，使用者也可以提feature commit，merge进主线发包就可以用了
 
 ## 开发环境设置
 
@@ -81,7 +129,7 @@ pre-commit install
 ```
 Xdata/
 ├── src/
-│   ├── crypto_data/        # 源代码
+│   ├── cryptoservice/        # 源代码
 │   ├── examples/           # 示例代码
 │   └── tests/              # 测试文件
 ├── scripts/                # 工具脚本
@@ -167,7 +215,7 @@ BREAKING CHANGE: new API is not compatible with previous version"
 
 ```bash
 # 查看当前版本
-python setup.py --version
+python setup.py --versiona
 
 # 查看提交历史和对应的版本变更
 git log --pretty=format:"%h %s"
