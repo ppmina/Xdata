@@ -5,7 +5,12 @@ from typing import Any, Dict, List
 
 @dataclass
 class BaseMarketTicker:
-    """市场行情基础数据类."""
+    """市场行情基础数据类.
+
+    Attributes:
+        symbol: 交易对
+        last_price: 最新价格
+    """
 
     symbol: str
     last_price: Decimal
@@ -22,7 +27,12 @@ class BaseMarketTicker:
 
 @dataclass
 class SymbolTicker(BaseMarketTicker):
-    """单个交易币的行情数据类."""
+    """单个交易币的行情数据类.
+
+    Attributes:
+        symbol: 交易对
+        last_price: 最新价格
+    """
 
     @classmethod
     def from_binance_ticker(cls, ticker: Dict[str, Any]) -> "SymbolTicker":
@@ -33,25 +43,31 @@ class SymbolTicker(BaseMarketTicker):
 
 
 @dataclass
-class SpotMarketTicker(BaseMarketTicker):
-    """现货行情数据类."""
-
-    bid_price: Decimal
-    ask_price: Decimal
-
-    @classmethod
-    def from_binance_ticker(cls, ticker: Dict[str, Any]) -> "SpotMarketTicker":
-        return cls(
-            symbol=ticker["symbol"],
-            last_price=Decimal(str(ticker["price"])),
-            bid_price=Decimal(str(ticker["bidPrice"])),
-            ask_price=Decimal(str(ticker["askPrice"])),
-        )
-
-
-@dataclass
 class DailyMarketTicker(BaseMarketTicker):
-    """24小时行情数据类."""
+    """24小时行情数据类.
+
+    Attributes:
+        symbol: 交易对
+        last_price: 最新价格
+        price_change: 价格变动
+        price_change_percent: 价格变动百分比
+        volume: 成交量
+        quote_volume: 成交额
+        weighted_avg_price: 加权平均价
+        prev_close_price: 前收盘价
+        bid_price: 买一价
+        ask_price: 卖一价
+        bid_qty: 买一量
+        ask_qty: 卖一量
+        open_price: 开盘价
+        high_price: 最高价
+        low_price: 最低价
+        open_time: 开盘时间
+        close_time: 收盘时间
+        first_id: 第一个ID
+        last_id: 最后一个ID
+        count: 计数
+    """
 
     price_change: Decimal
     price_change_percent: Decimal
@@ -100,7 +116,17 @@ class DailyMarketTicker(BaseMarketTicker):
 
 @dataclass
 class KlineMarketTicker(BaseMarketTicker):
-    """K线行情数据类."""
+    """K线行情数据类.
+
+    Attributes:
+        symbol: 交易对
+        last_price: 最新价格
+        open_price: 开盘价
+        high_price: 最高价
+        low_price: 最低价
+        volume: 成交量
+        close_time: 收盘时间
+    """
 
     open_price: Decimal
     high_price: Decimal
@@ -123,7 +149,22 @@ class KlineMarketTicker(BaseMarketTicker):
 
 @dataclass
 class PerpetualMarketTicker(BaseMarketTicker):
-    """永续合约行情数据类."""
+    """永续合约行情数据类.
+
+    Attributes:
+        symbol: 交易对
+        last_price: 最新价格
+        open_time: 开盘时间
+        open_price: 开盘价
+        high_price: 最高价
+        low_price: 最低价
+        volume: 成交量
+        close_time: 收盘时间
+        quote_volume: 成交额
+        count: 计数
+        taker_buy_volume: 买方成交量
+        taker_buy_quote_volume: 买方成交额
+    """
 
     open_time: int
     open_price: Decimal

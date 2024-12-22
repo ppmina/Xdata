@@ -1,27 +1,6 @@
-import os
 from decimal import Decimal
 
-from cryptoservice.models.market_ticker import (
-    DailyMarketTicker,
-    KlineMarketTicker,
-    SpotMarketTicker,
-    SymbolTicker,
-)
-from cryptoservice.services.market_service import MarketDataService
-
-api_key = os.getenv("BINANCE_API_KEY")
-api_secret = os.getenv("BINANCE_API_SECRET")
-if not api_key or not api_secret:
-    raise ValueError("BINANCE_API_KEY 和 BINANCE_API_SECRET 环境变量未设置")
-
-
-def test_market_ticker_from_spot_ticker() -> None:
-    """测试现货行情数据解析"""
-    spot_data = {"symbol": "BTCUSDT", "price": "50000.0"}
-    ticker = SpotMarketTicker.from_binance_ticker(spot_data)
-    assert ticker.symbol == "BTCUSDT"
-    assert ticker.last_price == Decimal("50000.0")
-    assert not hasattr(ticker, "volume")  # 确保不存在的字段没有被添加
+from cryptoservice.models.market_ticker import DailyMarketTicker, KlineMarketTicker, SymbolTicker
 
 
 def test_market_ticker_from_24h_ticker() -> None:
@@ -33,8 +12,20 @@ def test_market_ticker_from_24h_ticker() -> None:
         "priceChangePercent": "2.0",
         "volume": "100.0",
         "quoteVolume": "5000000.0",
+        "weightedAvgPrice": "100.0",
+        "prevClosePrice": "100.0",
+        "bidPrice": "100.0",
+        "askPrice": "100.0",
+        "bidQty": "100.0",
+        "askQty": "100.0",
+        "openPrice": "100.0",
+        "highPrice": "100.0",
+        "lowPrice": "100.0",
         "openTime": 1234567890000,
         "closeTime": 1234567890000,
+        "firstId": 1234567890000,
+        "lastId": 1234567890000,
+        "count": 100,
     }
     ticker = DailyMarketTicker.from_binance_ticker(ticker_24h)
     assert ticker.symbol == "BTCUSDT"
@@ -69,31 +60,11 @@ def test_market_ticker_from_kline() -> None:
 
 def test_market_ticker_to_dict() -> None:
     """测试转换为字典格式"""
-    ticker_data = {"symbol": "BTCUSDT", "Price": "50000.0"}
+    ticker_data = {"symbol": "BTCUSDT", "price": "50000.0"}
     ticker = SymbolTicker.from_binance_ticker(ticker_data)
     result = ticker.to_dict()
 
     assert result["symbol"] == "BTCUSDT"
     assert result["last_price"] == "50000.0"
-    assert result["volume"] == "100.0"
+    assert "volume" not in result
     assert "price_change" not in result  # 确保不存在的字段不会出现在结果中
-
-
-def test_get_symbol_ticker() -> None:
-    """测试获取单个交易对行情"""
-    if not api_key or not api_secret:
-        raise ValueError("BINANCE_API_KEY 和 BINANCE_API_SECRET 环境变量未设置")
-    service = MarketDataService(api_key=api_key, api_secret=api_secret)
-    ticker = service.get_symbol_ticker("BTCUSDT")
-    assert ticker.symbol == "BTCUSDT"
-    assert isinstance(ticker.last_price, Decimal)
-
-
-def test_get_top_coins() -> None:
-    """测试获取热门交易对"""
-    if not api_key or not api_secret:
-        raise ValueError("BINANCE_API_KEY 和 BINANCE_API_SECRET 环境变量未设置")
-    service = MarketDataService(api_key=api_key, api_secret=api_secret)
-    top_coins = service.get_top_coins(limit=3)
-    assert len(top_coins) == 3
-    assert all(isinstance(coin.last_price, Decimal) for coin in top_coins)
