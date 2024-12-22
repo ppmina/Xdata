@@ -29,6 +29,7 @@ dev = [
     "python-dotenv>=0.15.0",
     "pydantic-settings>=2.0.0",
 ]
+test = ["pytest>=6.0.0", "pytest-cov>=2.10.0"]
 
 [tool.semantic_release]
 version_variable = ["setup.py:version"]
