@@ -25,13 +25,9 @@ classifiers = [
 authors = [{ name = "Minnn", email = "minzzzai.s@gmail.com" }]
 
 [project.optional-dependencies]
-dev = [
-    "pytest>=6.0.0",
-    "pytest-cov>=2.10.0",
-    "pre-commit>=2.0.0",
-    "python-dotenv>=0.15.0",
-]
 test = ["pytest>=6.0.0", "pytest-cov>=2.10.0"]
+dev = ["pre-commit>=2.0.0", "python-dotenv>=0.15.0"]
+dev-all = ["cryptoservice[test,dev]"]
 
 [tool.semantic_release]
 version_variable = ["src/cryptoservice/__init__.py:__version__"]
