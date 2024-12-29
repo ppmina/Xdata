@@ -1,4 +1,4 @@
-from .enums import Freq, SortBy
+from .enums import Freq, HistoricalKlinesType, SortBy
 from .market_ticker import DailyMarketTicker, KlineMarketTicker, PerpetualMarketTicker, SymbolTicker
 
 __all__ = [
@@ -8,4 +8,5 @@ __all__ = [
     "PerpetualMarketTicker",
     "SortBy",
     "Freq",
+    "HistoricalKlinesType",
 ]

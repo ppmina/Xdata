@@ -12,6 +12,7 @@ from cryptoservice.interfaces import IMarketDataService
 from cryptoservice.models import (
     DailyMarketTicker,
     Freq,
+    HistoricalKlinesType,
     KlineMarketTicker,
     PerpetualMarketTicker,
     SortBy,
@@ -122,7 +123,8 @@ class MarketDataService(IMarketDataService):
         symbol: str,
         start_time: str | datetime,
         end_time: str | datetime | None = None,
-        interval: Freq = Freq.d1,
+        interval: Freq = Freq.h1,
+        klines_type: HistoricalKlinesType = HistoricalKlinesType.SPOT,
     ) -> List[KlineMarketTicker]:
         """获取历史行情数据."""
         try:
@@ -146,7 +148,7 @@ class MarketDataService(IMarketDataService):
                 start_str=start_time.strftime("%Y-%m-%d"),
                 end_str=end_time.strftime("%Y-%m-%d"),
                 limit=1000,
-                klines_type="spot",
+                klines_type=HistoricalKlinesType.to_binance(klines_type),
             )
 
             # 转换为 MarketTicker 对象
