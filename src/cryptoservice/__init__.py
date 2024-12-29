@@ -1,7 +1,7 @@
 """Cryptocurrency trading bot package."""
 
-__version__ = "0.1.0"
-__author__ = "Your Name"
+__version__ = "0.1.1"
+__author__ = "Minnn"
 
 # 可以在这里导出常用的模块，使得用户可以直接从包根导入
 from .client import BinanceClientFactory
