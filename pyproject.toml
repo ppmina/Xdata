@@ -38,6 +38,10 @@ version_variable = ["src/cryptoservice/__init__.py:__version__"]
 branch = "main"
 upload_to_pypi = true
 build_command = "pip install build && python -m build"
+commit_message = "chore(release): v{version}"
+tag_format = "v{version}"
+major_on_zero = false
+changelog_components = "semantic_release.changelog.changelog_headers,semantic_release.changelog.compare_url"
 
 [tool.black]
 line-length = 100
