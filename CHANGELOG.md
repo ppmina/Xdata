@@ -1,6 +1,29 @@
 # CHANGELOG
 
 
+## v0.2.0 (2024-12-31)
+
+### Bug Fixes
+
+- Fix version problem
+  ([`ed20e4f`](https://github.com/Mrzai/Xdata/commit/ed20e4fff4f52a70fb3b92fdb60f582fac26fca5))
+
+- Fix version problem
+  ([`545c070`](https://github.com/Mrzai/Xdata/commit/545c0702d153523717609eeaef937fee308abc90))
+
+### Features
+
+- Aaa  ([`e907a99`](https://github.com/Mrzai/Xdata/commit/e907a9991d33f2c1481dba9096e03832c9adc681))
+
+- Aaa  ([`b1ec053`](https://github.com/Mrzai/Xdata/commit/b1ec053ecf289cf1136c45c33b9d0ee04308b586))
+
+- New thing
+  ([`2d26c85`](https://github.com/Mrzai/Xdata/commit/2d26c85339df374be4ad1fa87481646cfbb5a90d))
+
+- New thing
+  ([`797c3ca`](https://github.com/Mrzai/Xdata/commit/797c3ca032bd403c92035fb86a1b2223a24dc968))
+
+
 ## v0.1.1 (2025-01-01)
 
 ### Bug Fixes
@@ -30,6 +53,9 @@
 
 - **release**: Test
   ([`4785e89`](https://github.com/Mrzai/Xdata/commit/4785e89ee49b716d8f4911243671491676be33fb))
+
+- **release**: V0.1.1
+  ([`d6eca35`](https://github.com/Mrzai/Xdata/commit/d6eca350df217becdc63bdb5342cf2a5e6bd9f7e))
 
 ### Documentation
 
