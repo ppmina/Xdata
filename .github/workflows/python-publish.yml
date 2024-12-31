@@ -8,13 +8,12 @@ on:
       - 'src/**'
       - 'tests/**'
       - 'setup.py'
-      - 'setup.cfg'
       - 'pyproject.toml'
       - 'src/cryptoservice/__init__.py'
 
 jobs:
   test:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     strategy:
       matrix:
         python-version: ["3.10"]
@@ -34,15 +33,12 @@ jobs:
           pip install -e ".[test]"
 
       - name: Run tests with pytest
-        env:
-          BINANCE_API_KEY: ${{ secrets.BINANCE_API_KEY }}
-          BINANCE_API_SECRET: ${{ secrets.BINANCE_API_SECRET }}
         run: |
           pytest tests/ -v --cov=cryptoservice --cov-report=xml
 
   release:
     needs: test
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     concurrency: release
     permissions:
       id-token: write
