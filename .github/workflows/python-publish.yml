@@ -51,13 +51,21 @@ jobs:
           token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Python Semantic Release
+        id: release
         uses: python-semantic-release/python-semantic-release@master
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           git_committer_name: "github-actions[bot]"
           git_committer_email: "github-actions[bot]@users.noreply.github.com"
 
+      - name: Check if release was created
+        if: steps.release.outputs.released == 'true'
+        run: |
+          echo "Version: ${{ steps.release.outputs.version }}"
+          echo "Release created successfully"
+
       - name: Set up Python
+        if: steps.release.outputs.released == 'true'
         uses: actions/setup-python@v4
         with:
           python-version: "3.10"
