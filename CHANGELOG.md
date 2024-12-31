@@ -1,12 +1,25 @@
 # CHANGELOG
 
 
+## v0.2.2 (2024-12-31)
+
+### Bug Fixes
+
+- Type issue
+  ([`1c1f0f7`](https://github.com/Mrzai/Xdata/commit/1c1f0f7095b26d4794532587828701bd8492ea7b))
+
+
 ## v0.2.1 (2024-12-31)
 
 ### Bug Fixes
 
 - Type issue
   ([`e94be3d`](https://github.com/Mrzai/Xdata/commit/e94be3d718e2e03d1b141800acf8b70997716e37))
+
+### Chores
+
+- **release**: V0.2.1
+  ([`08740ec`](https://github.com/Mrzai/Xdata/commit/08740ec3eaba8e6a8efbed5ee899e0e3f1a2ae47))
 
 
 ## v0.2.0 (2024-12-31)
