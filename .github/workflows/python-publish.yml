@@ -9,7 +9,12 @@ on:
       - 'tests/**'
       - 'setup.py'
       - 'pyproject.toml'
+      - '.github/workflows/**'
       - 'src/cryptoservice/__init__.py'
+  workflow_dispatch:
+  release:
+    types: [published]
+
 
 jobs:
   test:
