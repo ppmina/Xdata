@@ -55,8 +55,8 @@ jobs:
         uses: python-semantic-release/python-semantic-release@master
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
-          force: patch
-          changelog: "CHANGELOG.md"
+          force: "patch"
+          changelog: "true"
           git_committer_name: "github-actions"
           git_committer_email: "actions@users.noreply.github.com"
 
