@@ -109,11 +109,11 @@ class IMarketDataService(ABC):
     def get_perpetual_data(
         self,
         symbols: List[str],
-        start_time: str,  # YYYYMMDD
-        end_time: str | None = None,  # YYYYMMDD
+        start_time: str,
+        data_path: Path | str,
+        end_time: str | None = None,
         interval: Freq = Freq.h1,
         batch_size: int = 500,
-        data_path: Path | str = settings.DATA_STORAGE["PERPETUAL_DATA"],
         max_workers: int = 5,
     ) -> List[List[PerpetualMarketTicker]]:
         """获取永续合约历史数据.

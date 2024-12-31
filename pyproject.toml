@@ -64,3 +64,7 @@ addopts = "-v --cov=src/cryptoservice --cov-report=term-missing"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/cryptoservice"]
+include = ["py.typed"]
+
+[tool.hatch.build.targets.sdist]
+include = ["src/cryptoservice/py.typed"]

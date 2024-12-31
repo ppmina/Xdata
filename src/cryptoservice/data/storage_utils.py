@@ -55,7 +55,7 @@ class StorageUtils:
         date: str,
         freq: str,
         univ: str,
-        data_path: Path | str = settings.DATA_STORAGE["MARKET_DATA"],
+        data_path: Path | str,
     ) -> None:
         """存储 KDTV 格式数据.
 
