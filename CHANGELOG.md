@@ -1,7 +1,7 @@
 # CHANGELOG
 
 
-## v0.1.1 (2024-12-29)
+## v0.1.1 (2025-01-01)
 
 ### Bug Fixes
 
@@ -16,6 +16,12 @@
 
 - Fix some problems
   ([`0b9d046`](https://github.com/Mrzai/Xdata/commit/0b9d0464a26438b429bb350c5265f11b9a9a015f))
+
+- Fix version problem
+  ([`ed10d5a`](https://github.com/Mrzai/Xdata/commit/ed10d5a64c4faae0c5bd88223f43545b45103bc4))
+
+- **ci**: Fix ci problems
+  ([`9faffab`](https://github.com/Mrzai/Xdata/commit/9faffab7e0dc7e989cfe2186063f9f4454db4847))
 
 - **ci**: Fix ci problems
   ([`bbfe98d`](https://github.com/Mrzai/Xdata/commit/bbfe98d6a3126ba348dbc6208eb0b16d136cf3a5))
