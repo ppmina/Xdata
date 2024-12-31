@@ -121,3 +121,48 @@ MIT License
 
 - GitHub Issues: [https://github.com/Mrzai/cryptoservice/issues](https://github.com/Mrzai/cryptoservice/issues)
 - Email: minzzzai.s@gmail.com
+
+## 提交规范
+
+提交信息必须遵循以下格式：
+```
+<type>(<scope>): <subject>
+
+<body>
+
+<footer>
+```
+
+例如：
+```bash
+# 新功能
+feat(market): add historical data support
+
+Added support for fetching historical market data
+with customizable time ranges and intervals.
+
+# 修复bug
+fix(cache): resolve memory leak issue
+
+Fixed memory leak in cache manager when handling
+large datasets.
+
+# 文档更新
+docs(readme): update installation guide
+
+Updated installation instructions to include
+new development dependencies.
+```
+
+提交类型必须是以下之一：
+- feat: 新功能
+- fix: 修复问题
+- docs: 文档更新
+- style: 代码格式调整
+- refactor: 代码重构
+- perf: 性能优化
+- test: 测试相关
+- chore: 构建过程或辅助工具
+- revert: 回退
+- ci: CI/CD相关
+- build: 构建系统

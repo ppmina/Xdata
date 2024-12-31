@@ -2,9 +2,15 @@ import logging
 from typing import Optional
 
 from binance import Client
+from rich import print as rprint
+from rich.logging import RichHandler
 
 from cryptoservice.exceptions import MarketDataError
 
+# 设置 rich logger
+logging.basicConfig(
+    level=logging.INFO, format="%(message)s", handlers=[RichHandler(rich_tracebacks=True)]
+)
 logger = logging.getLogger(__name__)
 
 
@@ -32,9 +38,9 @@ class BinanceClientFactory:
                 if not api_key or not api_secret:
                     raise ValueError("Missing Binance API credentials")
                 cls._instance = Client(api_key, api_secret)
-                logger.info("Successfully created Binance client")
+                logger.info("[green]Successfully created Binance client[/green]")
             except Exception as e:
-                logger.error(f"Failed to initialize Binance client: {e}")
+                logger.error(f"[red]Failed to initialize Binance client: {e}[/red]")
                 raise MarketDataError(f"Failed to initialize Binance client: {e}") from e
         return cls._instance
 

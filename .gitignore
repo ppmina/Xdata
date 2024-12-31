@@ -30,3 +30,6 @@ dist/
 
 # Ignore data directory
 /data/
+
+# Ignore logs directory
+/logs/

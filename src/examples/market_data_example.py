@@ -1,15 +1,30 @@
 import logging
 import os
+from pathlib import Path
 
 from dotenv import load_dotenv
+from rich.console import Console
+from rich.logging import RichHandler
+from rich.traceback import install
 
+from cryptoservice import MarketDataService
+from cryptoservice.data import StorageUtils
 from cryptoservice.models import Freq, HistoricalKlinesType, SortBy
-from cryptoservice.services import MarketDataService
 
-# 设置日志
+# 设置 rich console 和 traceback
+console = Console()
+install(show_locals=True)
+
+# 配置日志
 logging.basicConfig(
     level=logging.INFO,
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    format="%(message)s",
+    datefmt="[%X]",
+    handlers=[
+        RichHandler(
+            rich_tracebacks=True, markup=True, console=console, show_time=True, show_path=True
+        )
+    ],
 )
 logger = logging.getLogger(__name__)
 
@@ -41,26 +56,39 @@ def demonstrate_market_data_features(market_service: MarketDataService) -> None:
     historical_data = market_service.get_historical_klines(
         symbol="ETHUSDT",
         start_time="20240101",
-        end_time="20240102",
+        end_time="20240103",
         interval=Freq.h4,
         klines_type=HistoricalKlinesType.SPOT,
     )
-    logger.info(f"获取到 {len(historical_data)} 条ETH历史数据")
+    logger.info(f"获取到 {len(historical_data)} 条 ETHUSDT 历史数据")
 
     # 6. 获取订单簿数据
     orderbook = market_service.get_orderbook("BTCUSDT", limit=10)
     logger.info(f"BTCUSDT 订单簿深度: {len(orderbook['bids'])} 档")
 
-    # 7. 获取永续合约数据并存储
+    # 7. 获取永续合约数据
     perpetual_data = market_service.get_perpetual_data(
-        symbols=["BTCUSDT", "ETHUSDT", "BNBUSDT"],
-        start_time="2024-01-01",
-        end_time="2024-01-02",
-        freq=Freq.h1,
-        store=True,  # 启用数据存储
-        features=["cls", "vol"],  # 只存储收盘价和成交量
+        symbols=[
+            "BTCUSDT",
+            "ETHUSDT",
+            "BNBUSDT",
+            "SOLUSDT",
+            "ADAUSDT",
+            "XRPUSDT",
+            "DOGEUSDT",
+            "DOTUSDT",
+            "AVAXUSDT",
+            "LTCUSDT",
+        ],
+        start_time="20240101",
+        end_time="20240103",
+        interval=Freq.h1,
+        data_path="data",
     )
-    logger.info(f"获取到 {len(perpetual_data)} 条永续合约数据")
+    StorageUtils.visualize_npy_data("./data/1h/count/20240102.npy")
+    StorageUtils.visualize_npy_data("./data/1h/high_price/20240102.npy")
+    StorageUtils.visualize_npy_data("./data/1h/last_price/20240102.npy")
+    StorageUtils.visualize_npy_data("./data/1h/low_price/20240102.npy")
 
 
 def main() -> None:

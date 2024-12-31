@@ -1,13 +1,20 @@
 import logging
+import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
-from typing import Any, Dict, List, Optional, Union, cast, overload
+from pathlib import Path
+from typing import Any, Dict, List, Optional, overload
 
 import pandas as pd
+from rich.console import Console
+from rich.logging import RichHandler
+from rich.panel import Panel
+from rich.progress import BarColumn, Progress, SpinnerColumn, TextColumn, TimeElapsedColumn
 
 from cryptoservice.client import BinanceClientFactory
 from cryptoservice.config import settings
 from cryptoservice.data import StorageUtils
-from cryptoservice.exceptions import InvalidSymbolError, MarketDataFetchError, MarketDataStoreError
+from cryptoservice.exceptions import InvalidSymbolError, MarketDataFetchError
 from cryptoservice.interfaces import IMarketDataService
 from cryptoservice.models import (
     DailyMarketTicker,
@@ -18,8 +25,12 @@ from cryptoservice.models import (
     SortBy,
     SymbolTicker,
 )
-from cryptoservice.utils import CacheManager, DataConverter
+from cryptoservice.utils import DataConverter
 
+# 配置 rich logger
+logging.basicConfig(
+    level=logging.INFO, format="%(message)s", handlers=[RichHandler(rich_tracebacks=True)]
+)
 logger = logging.getLogger(__name__)
 
 
@@ -27,45 +38,29 @@ class MarketDataService(IMarketDataService):
     """市场数据服务实现类."""
 
     def __init__(self, api_key: str, api_secret: str) -> None:
-        """初始化市场数据服务.
-
-        Args:
-            api_key: 用户API密钥
-            api_secret: 用户API密钥
-        """
+        """初始化市场数据服务."""
         self.client = BinanceClientFactory.create_client(api_key, api_secret)
-        self.cache = CacheManager(ttl_seconds=settings.CACHE_TTL)
         self.converter = DataConverter()
+        self.console = Console()
 
     @overload
-    def get_symbol_ticker(self, symbol: str) -> SymbolTicker:
-        ...
+    def get_symbol_ticker(self, symbol: str) -> SymbolTicker: ...
 
     @overload
-    def get_symbol_ticker(self) -> List[SymbolTicker]:
-        ...
+    def get_symbol_ticker(self) -> List[SymbolTicker]: ...
 
     def get_symbol_ticker(self, symbol: str | None = None) -> SymbolTicker | List[SymbolTicker]:
         try:
-            cached_data = self.cache.get(f"ticker_{symbol}")
-            if cached_data:
-                return cast(Union[SymbolTicker, List[SymbolTicker]], cached_data)
-
             ticker = self.client.get_symbol_ticker(symbol=symbol)
             if not ticker:
                 raise InvalidSymbolError(f"Invalid symbol: {symbol}")
 
             if isinstance(ticker, list):
-                market_tickers: Union[SymbolTicker, List[SymbolTicker]] = [
-                    SymbolTicker.from_binance_ticker(t) for t in ticker
-                ]
-            else:
-                market_tickers = SymbolTicker.from_binance_ticker(ticker)
-            self.cache.set(f"ticker_{symbol}", market_tickers)
-            return market_tickers
+                return [SymbolTicker.from_binance_ticker(t) for t in ticker]
+            return SymbolTicker.from_binance_ticker(ticker)
 
         except Exception as e:
-            logger.error(f"Error fetching ticker for {symbol}: {e}")
+            logger.error(f"[red]Error fetching ticker for {symbol}: {e}[/red]")
             raise MarketDataFetchError(f"Failed to fetch ticker: {e}")
 
     def get_top_coins(
@@ -75,47 +70,31 @@ class MarketDataService(IMarketDataService):
         quote_asset: Optional[str] = None,
     ) -> List[DailyMarketTicker]:
         try:
-            cache_key = f"top_coins_{limit}_{sort_by.value}_{quote_asset}"
-            cached_data = self.cache.get(cache_key)
-            if cached_data:
-                return cast(List[DailyMarketTicker], cached_data)
-
             tickers = self.client.get_ticker()
             market_tickers = [DailyMarketTicker.from_binance_ticker(t) for t in tickers]
 
             if quote_asset:
                 market_tickers = [t for t in market_tickers if t.symbol.endswith(quote_asset)]
 
-            sorted_tickers = sorted(
+            return sorted(
                 market_tickers,
                 key=lambda x: getattr(x, "quote_volume"),
                 reverse=True,
             )[:limit]
 
-            self.cache.set(cache_key, sorted_tickers)
-            return sorted_tickers
-
         except Exception as e:
-            logger.error(f"Error getting top coins: {e}")
+            logger.error(f"[red]Error getting top coins: {e}[/red]")
             raise MarketDataFetchError(f"Failed to get top coins: {e}")
 
     def get_market_summary(self, interval: Freq = Freq.d1) -> Dict[str, Any]:
         try:
-            cache_key = f"market_summary_{interval}"
-            cached_data = self.cache.get(cache_key)
-            if cached_data:
-                return cast(Dict[str, Any], cached_data)
-
             summary: Dict[str, Any] = {"snapshot_time": datetime.now(), "data": {}}
-
             tickers = [ticker.to_dict() for ticker in self.get_symbol_ticker()]
             summary["data"] = tickers
-
-            self.cache.set(cache_key, summary)
             return summary
 
         except Exception as e:
-            logger.error(f"Error getting market summary: {e}")
+            logger.error(f"[red]Error getting market summary: {e}[/red]")
             raise MarketDataFetchError(f"Failed to get market summary: {e}")
 
     def get_historical_klines(
@@ -128,20 +107,12 @@ class MarketDataService(IMarketDataService):
     ) -> List[KlineMarketTicker]:
         """获取历史行情数据."""
         try:
-            # 处理时间参数
             if isinstance(start_time, str):
                 start_time = datetime.strptime(start_time, "%Y%m%d")
             if isinstance(end_time, str):
                 end_time = datetime.strptime(end_time, "%Y%m%d")
             end_time = end_time or datetime.now()
 
-            # 尝试从缓存获取
-            cache_key = f"historical_{symbol}_{start_time}_{end_time}_{interval}"
-            cached_data = self.cache.get(cache_key)
-            if cached_data:
-                return cast(List[KlineMarketTicker], cached_data)
-
-            # 从 Binance 获取历史数据
             klines = self.client.get_historical_klines(
                 symbol=symbol,
                 interval=interval,
@@ -151,118 +122,148 @@ class MarketDataService(IMarketDataService):
                 klines_type=HistoricalKlinesType.to_binance(klines_type),
             )
 
-            # 转换为 MarketTicker 对象
-            tickers = [KlineMarketTicker.from_binance_kline(k) for k in klines]
-
-            self.cache.set(cache_key, tickers)
-            return tickers
+            return [KlineMarketTicker.from_binance_kline(k) for k in klines]
 
         except Exception as e:
-            logger.error(f"Error getting historical data for {symbol}: {e}")
+            logger.error(f"[red]Error getting historical data for {symbol}: {e}[/red]")
             raise MarketDataFetchError(f"Failed to get historical data: {e}")
 
     def get_orderbook(self, symbol: str, limit: int = 100) -> Dict[str, Any]:
         """获取订单簿数据."""
         try:
-            cache_key = f"orderbook_{symbol}_{limit}"
-            cached_data = self.cache.get(cache_key)
-            if cached_data:
-                return cast(Dict[str, Any], cached_data)
-
             depth = self.client.get_order_book(symbol=symbol, limit=limit)
-            orderbook = {
+            return {
                 "lastUpdateId": depth["lastUpdateId"],
                 "bids": depth["bids"],
                 "asks": depth["asks"],
                 "timestamp": datetime.now(),
             }
 
-            self.cache.set(cache_key, orderbook)
-            return orderbook
-
         except Exception as e:
-            logger.error(f"Error getting orderbook for {symbol}: {e}")
+            logger.error(f"[red]Error getting orderbook for {symbol}: {e}[/red]")
             raise MarketDataFetchError(f"Failed to get orderbook: {e}")
+
+    def _fetch_symbol_data(
+        self,
+        symbol: str,
+        start_ts: int,
+        end_ts: int,
+        interval: Freq,
+        batch_size: int,
+        progress: Progress,
+    ) -> List[PerpetualMarketTicker]:
+        """单个交易对数据获取的工作函数"""
+        data = []
+        current_ts = start_ts
+
+        # 创建进度任务
+        batch_task = progress.add_task(f"[yellow]获取 {symbol} 数据", total=None, visible=True)
+
+        while current_ts < end_ts:
+            # 添加限流控制
+            time.sleep(0.1)  # 简单的请求间隔
+
+            progress.update(
+                batch_task,
+                description=f"[yellow]获取 {symbol} 数据 ({pd.Timestamp(current_ts, unit='ms')})",
+            )
+
+            klines = self.client.futures_historical_klines(
+                symbol=symbol,
+                interval=interval,
+                start_str=current_ts,
+                end_str=end_ts,
+                limit=batch_size,
+            )
+
+            if not klines:
+                break
+
+            tickers = [PerpetualMarketTicker.from_binance_futures(symbol, k) for k in klines]
+            data.extend(tickers)
+            current_ts = klines[-1][6] + 1
+
+        progress.remove_task(batch_task)
+        return data
 
     def get_perpetual_data(
         self,
         symbols: List[str],
         start_time: str,
         end_time: str | None = None,
-        freq: Freq = Freq.h1,
-        store: bool = False,
+        interval: Freq = Freq.h1,
         batch_size: int = 500,
-        market: str = "SWAP",
-        features: Optional[List[str]] = None,
-    ) -> List[PerpetualMarketTicker]:
+        data_path: Path | str = settings.DATA_STORAGE["PERPETUAL_DATA"],
+        max_workers: int = 5,
+    ) -> List[List[PerpetualMarketTicker]]:
         try:
-            all_data = []
             start_ts = int(pd.Timestamp(start_time).timestamp() * 1000)
             end_ts = int(pd.Timestamp(end_time).timestamp() * 1000)
+            all_data: List[List[PerpetualMarketTicker]] = []  # 使用字典存储，键为symbol
 
-            for symbol in symbols:
-                data = []
-                current_ts = start_ts
+            # 1. 先获取所有数据
+            with Progress(
+                SpinnerColumn(),
+                TextColumn("[progress.description]{task.description}"),
+                BarColumn(),
+                TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
+                TimeElapsedColumn(),
+            ) as progress:
+                overall_task = progress.add_task("[cyan]处理所有交易对", total=len(symbols))
 
-                while current_ts < end_ts:
-                    # 获取一批数据
-                    klines = self.client.futures_historical_klines(
-                        symbol=symbol,
-                        interval=freq,
-                        start_str=current_ts,
-                        end_str=end_ts,
-                        limit=batch_size,
-                    )
+                with ThreadPoolExecutor(max_workers=max_workers) as executor:
+                    future_to_symbol = {
+                        executor.submit(
+                            self._fetch_symbol_data,
+                            symbol,
+                            start_ts,
+                            end_ts,
+                            interval,
+                            batch_size,
+                            progress,
+                        ): symbol
+                        for symbol in symbols
+                    }
 
-                    if not klines:
-                        break
+                    for future in as_completed(future_to_symbol):
+                        symbol = future_to_symbol[future]
+                        try:
+                            data = future.result()
+                            all_data.append(data)
+                            progress.advance(overall_task)
+                        except Exception as e:
+                            logger.error(f"[red]Error processing {symbol}: {e}[/red]")
 
-                    # 转换为 MarketTicker 对象
-                    tickers = [
-                        PerpetualMarketTicker.from_binance_futures(symbol, k) for k in klines
-                    ]
-                    data.extend(tickers)
+            # 2. 数据全部获取完成后，统一进行存储
+            StorageUtils.store_universe(symbols, data_path)
+            try:
+                StorageUtils.store_feature_data(all_data, interval, data_path)
+            except Exception as e:
+                logger.error(f"[red]Error storing data for {symbol}: {e}[/red]")
+                raise MarketDataFetchError(f"Failed to store data: {e}")
 
-                    # 更新时间戳
-                    current_ts = klines[-1][6] + 1
-
-                all_data.extend(data)
-
-            if store:
-                try:
-                    # 按日期分组
-                    grouped_data: Dict[str, List[PerpetualMarketTicker]] = {}
-                    for ticker in all_data:
-                        if ticker.open_time is None:
-                            continue
-                        date = datetime.fromtimestamp(ticker.open_time // 1000).strftime("%Y%m%d")
-                        if date not in grouped_data:
-                            grouped_data[date] = []
-                        grouped_data[date].append(ticker)
-
-                    # 存储交易对信息
-                    StorageUtils.store_universe(symbols, market)
-
-                    # 存储每个特征的数据
-                    if features is None:
-                        features = ["cls", "hgh", "low", "opn", "vwap", "vol", "amt", "num"]
-
-                    for date, daily_data in grouped_data.items():
-                        print([key for key in daily_data[0].__dict__.keys()], date)
-                        for feature in features:
-                            StorageUtils.store_feature_data(
-                                daily_data, date, freq, market, feature, symbols
-                            )
-
-                    logger.info("数据存储完成")
-                except Exception as e:
-                    logger.error(f"Error storing perpetual data: {e}")
-                    raise MarketDataStoreError(f"Failed to store perpetual data: {e}")
+            # 完成后显示汇总信息
+            self.console.print(
+                Panel(
+                    f"✨ 数据获取完成\n"
+                    f"📊 处理交易对: {len(symbols)}\n"
+                    f"📅 时间范围: {datetime.strptime(start_time, '%Y%m%d').strftime('%Y-%m-%d')} 至 "
+                    f"{datetime.strptime(end_time, '%Y%m%d').strftime('%Y-%m-%d') if end_time else datetime.now().strftime('%Y-%m-%d')}\n"
+                    f"⏱️  数据间隔: {interval}",
+                    title="处理完成",
+                    border_style="green",
+                )
+            )
 
             return all_data
 
-        except MarketDataStoreError:
-            raise  # 直接重新抛出存储错误
         except Exception as e:
-            logger.error(f"Error fetching perpetual data: {e}")
+            self.console.print(
+                Panel(
+                    f"❌ [red]Error: {str(e)}[/red]",
+                    title="[red]Processing Failed[/red]",
+                    border_style="red",
+                )
+            )
+            logger.error(f"[red]Failed to fetch perpetual data: {e}[/red]")
             raise MarketDataFetchError(f"Failed to fetch perpetual data: {e}")

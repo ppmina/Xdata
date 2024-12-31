@@ -1,6 +1,6 @@
 from decimal import Decimal
 
-from cryptoservice.models.market_ticker import DailyMarketTicker, KlineMarketTicker, SymbolTicker
+from cryptoservice.models import DailyMarketTicker, KlineMarketTicker, SymbolTicker
 
 
 def test_market_ticker_from_24h_ticker() -> None:

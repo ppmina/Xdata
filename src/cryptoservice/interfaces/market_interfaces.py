@@ -1,7 +1,9 @@
 from abc import ABC, abstractmethod
 from datetime import datetime
+from pathlib import Path
 from typing import Any, Dict, List, Optional, Union, overload
 
+from cryptoservice.config import settings
 from cryptoservice.models import (
     DailyMarketTicker,
     Freq,
@@ -48,12 +50,10 @@ class IMarketDataService(ABC):
         pass
 
     @overload
-    def get_symbol_ticker(self, symbol: str) -> SymbolTicker:
-        ...
+    def get_symbol_ticker(self, symbol: str) -> SymbolTicker: ...
 
     @overload
-    def get_symbol_ticker(self) -> List[SymbolTicker]:
-        ...
+    def get_symbol_ticker(self) -> List[SymbolTicker]: ...
 
     @abstractmethod
     def get_symbol_ticker(self, symbol: str | None = None) -> SymbolTicker | List[SymbolTicker]:
@@ -111,23 +111,23 @@ class IMarketDataService(ABC):
         symbols: List[str],
         start_time: str,  # YYYYMMDD
         end_time: str | None = None,  # YYYYMMDD
-        freq: Freq = Freq.h1,
-        store: bool = False,
+        interval: Freq = Freq.h1,
         batch_size: int = 500,
-    ) -> List[PerpetualMarketTicker]:
+        data_path: Path | str = settings.DATA_STORAGE["PERPETUAL_DATA"],
+        max_workers: int = 5,
+    ) -> List[List[PerpetualMarketTicker]]:
         """获取永续合约历史数据.
 
         Args:
             symbols: 交易对列表
             start_time: 开始时间 (YYYYMMDD)
             end_time: 结束时间 (YYYYMMDD)
-            freq: 数据频率 (1m, 1h, 4h, 1d等)
-            store: 是否存储数据
+            interval: 数据频率 (1m, 1h, 4h, 1d等)
             batch_size: 每次请求的数据量
-            market: 市场类型 (如 'SWAP')
-            features: 需要存储的特征列表 ['cls', 'hgh', 'low', 'opn', 'vwap', 'vol', 'amt', 'num']
+            data_path: 数据存储路径
+            max_workers: 并发线程数
 
         Returns:
-            List[PerpetualMarketTicker]: 市场数据列表
+            List[List[PerpetualMarketTicker]]: 市场数据列表
         """
         pass

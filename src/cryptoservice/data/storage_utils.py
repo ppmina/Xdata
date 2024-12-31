@@ -1,11 +1,17 @@
 """数据存储工具函数."""
 
 import logging
+from datetime import datetime
 from pathlib import Path
 from typing import List
 
 import numpy as np
 import pandas as pd
+from rich.console import Console
+from rich.live import Live
+from rich.panel import Panel
+from rich.progress import BarColumn, Progress, SpinnerColumn, TextColumn, TimeElapsedColumn
+from rich.table import Table
 
 from cryptoservice.config import settings
 from cryptoservice.models import Freq, PerpetualMarketTicker
@@ -21,13 +27,35 @@ class StorageUtils:
     visualize_npy_data: 可视化 npy 数据
     """
 
+    console = Console()
+
+    @staticmethod
+    def _resolve_path(data_path: Path | str, base_dir: Path | str | None = None) -> Path:
+        """解析路径，将相对路径转换为绝对路径.
+
+        Args:
+            data_path: 输入路径，可以是相对路径或绝对路径
+            base_dir: 基准目录，用于解析相对路径。如果为 None，则使用当前目录
+
+        Returns:
+            Path: 解析后的绝对路径
+        """
+        try:
+            path = Path(data_path)
+            if not path.is_absolute():
+                base = Path(base_dir) if base_dir else Path.cwd()
+                path = base / path
+            return path.resolve()
+        except Exception as e:
+            raise ValueError(f"Failed to resolve path '{data_path}': {str(e)}")
+
     @staticmethod
     def store_kdtv_data(
         data: List[PerpetualMarketTicker],
         date: str,
         freq: str,
         univ: str,
-        data_path: Path = settings.DATA_STORAGE["MARKET_DATA"],
+        data_path: Path | str = settings.DATA_STORAGE["MARKET_DATA"],
     ) -> None:
         """存储 KDTV 格式数据.
 
@@ -38,6 +66,7 @@ class StorageUtils:
             univ: 数据集名称
             data_path: 数据存储根目录
         """
+        data_path = StorageUtils._resolve_path(data_path)
         df = pd.DataFrame([d.__dict__ for d in data])
         df["D"] = pd.to_datetime(df["open_time"]).dt.strftime("%Y%m%d")
         df["T"] = pd.to_datetime(df["open_time"]).dt.strftime("%H%M%S")
@@ -52,79 +81,102 @@ class StorageUtils:
 
     @staticmethod
     def store_feature_data(
-        data: List[PerpetualMarketTicker],
-        date: str,
-        freq: Freq,
-        market: str,
-        feature: str,
-        symbols: List[str],
-        data_path: Path = settings.DATA_STORAGE["PERPETUAL_DATA"],
+        data: List[List[PerpetualMarketTicker]],
+        interval: Freq,
+        data_path: Path | str = settings.DATA_STORAGE["PERPETUAL_DATA"],
     ) -> None:
-        """存储特征数据.
+        """存储特征数据，按照 KDTV (Key-Date-Time-Value) 格式组织.
 
         Args:
-            data: 市场数据列表
-            date: 日期 (YYYYMMDD)
-            freq: 频率 (如 'H1')
-            market: 市场类型 (如 'SWAP')
-            feature: 特征名称
-            symbols: 交易对列表
+            data: 市场数据嵌套列表，每个内部列表包含一组市场数据
+            interval: 频率 (如 'h1')
             data_path: 数据存储根目录
         """
-        feature_mapping = {
-            "cls": "last_price",
-            "hgh": "high_price",
-            "low": "low_price",
-            "opn": "open_price",
-            "vwap": "weighted_avg_price",
-            "vol": "volume",
-            "amt": "quote_volume",
-            "num": "count",
-        }
+        data_path = StorageUtils._resolve_path(data_path)
+
         try:
-            df = pd.DataFrame([d.__dict__ for d in data])
-            # 转换时间戳为UTC时间
-            df["datetime"] = pd.to_datetime(df["open_time"], unit="ms", utc=True)
-            # 使用日期和小时组合作为索引
-            df["time_key"] = df["datetime"].dt.strftime("%Y%m%d_%H")
+            with Progress(
+                SpinnerColumn(),
+                TextColumn("[progress.description]{task.description}"),
+                BarColumn(),
+                TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
+                TimeElapsedColumn(),
+            ) as progress:
+                flattened_data = [item for sublist in data for item in sublist]
+                # 获取起始日期
+                start_date = pd.Timestamp(flattened_data[0].open_time, unit="ms").date()
+                end_date = pd.Timestamp(flattened_data[-1].open_time, unit="ms").date()
+                storage_task = progress.add_task(
+                    "[green]存储数据", total=len(pd.date_range(start_date, end_date, freq="D"))
+                )
 
-            # 调试信息
-            logger.info(f"Time range: {df['datetime'].min()} to {df['datetime'].max()}")
-            logger.info(f"Time key distribution:\n{df.groupby('time_key').size()}")
+                df = pd.DataFrame([d.__dict__ for d in flattened_data])
+                df["datetime"] = pd.to_datetime(df["open_time"], unit="ms", utc=True)
 
-            # 透视表转换
-            feature_data = df.pivot(
-                index="time_key", columns="symbol", values=feature_mapping[feature]
-            ).reindex(columns=symbols)
+                # 构建 KDTV 格式
+                df["D"] = df["datetime"].dt.strftime("%Y%m%d")  # Date
+                df["T"] = df["datetime"].dt.strftime("%H%M%S")  # Time
+                df["K"] = df["symbol"]  # Key (symbol)
 
-            # 只保留小时部分作为最终索引
-            feature_data.index = [int(idx.split("_")[1]) for idx in feature_data.index]
+                # 设置多级索引
+                df = df.set_index(["K", "D", "T"]).sort_index()
 
-            save_path = data_path / freq / market / feature / f"{date}.npy"
-            save_path.parent.mkdir(parents=True, exist_ok=True)
-            np.save(save_path, feature_data.values)
+                # 定义需要保存的数据列（Value）
+                value_columns = [
+                    "count",
+                    "last_price",
+                    "volume",
+                    "quote_volume",
+                    "high_price",
+                    "low_price",
+                    "open_price",
+                    "taker_buy_volume",
+                    "taker_buy_quote_volume",
+                ]
+
+                # 按日期分组并重塑数据为二维数组 (symbols × time)
+                for date in pd.date_range(start_date, end_date, freq="D"):
+                    date_str = date.strftime("%Y%m%d")
+                    date_data = df[df.index.get_level_values("D") == date_str]
+
+                    for column in value_columns:
+                        # 重塑数据为二维数组，行为symbols，列为时间点
+                        pivot_data = date_data[column].unstack(level="T")  # K × T matrix
+                        array = pivot_data.values
+
+                        save_path = data_path / interval / column / f"{date_str}.npy"
+                        save_path.parent.mkdir(parents=True, exist_ok=True)
+                        np.save(save_path, array)
+                    progress.advance(storage_task)
+
+                # 保存列名信息
+                columns_path = data_path / interval / "columns.csv"
+                symbols = df["symbol"].unique().tolist()
+                with open(columns_path, "w") as f:
+                    f.write(",".join(symbols))  # 将列表转换为逗号分隔的字符串
+
         except Exception as e:
-            logger.error(f"Error storing feature data: {e}")
+            logger.exception("特征数据存储失败")
             raise
 
     @staticmethod
     def store_universe(
-        symbols: List[str], market: str, data_path: Path = settings.DATA_STORAGE["PERPETUAL_DATA"]
+        symbols: List[str], data_path: Path | str = settings.DATA_STORAGE["PERPETUAL_DATA"]
     ) -> None:
         """存储交易对列表.
 
         Args:
             symbols: 交易对列表
-            market: 市场类型
             data_path: 数据存储根目录
         """
-        save_path = data_path / f"univ_TOKEN_{market}.pkl"
+        data_path = StorageUtils._resolve_path(data_path)
+        save_path = data_path / f"universe_token.pkl"
         save_path.parent.mkdir(parents=True, exist_ok=True)
         pd.Series(symbols).to_pickle(save_path)
 
     @staticmethod
     def visualize_npy_data(
-        file_path: Path,
+        file_path: Path | str,
         max_rows: int = 10,
         headers: List[str] | None = None,
         index: List[str] | None = None,
@@ -138,16 +190,12 @@ class StorageUtils:
             index: 行索引
 
         Raises:
-            FileNotFoundError: 文件不��在
+            FileNotFoundError: 文件不存在
             ValueError: 数据格式错误
         """
+        file_path = StorageUtils._resolve_path(file_path)
+
         try:
-            import numpy as np
-            from rich.console import Console
-            from rich.table import Table
-
-            console = Console()
-
             # 检查文件是否存在
             if not file_path.exists():
                 raise FileNotFoundError(f"File not found: {file_path}")
@@ -157,10 +205,7 @@ class StorageUtils:
                 raise ValueError(f"Invalid file format: {file_path.suffix}, expected .npy")
 
             # 加载数据
-            try:
-                data = np.load(file_path, allow_pickle=True)
-            except Exception as e:
-                raise ValueError(f"Failed to load numpy data: {e}")
+            data = np.load(file_path, allow_pickle=True)
 
             # 验证数据维度
             if not isinstance(data, np.ndarray):
@@ -171,7 +216,9 @@ class StorageUtils:
             # 限制显示行数
             if len(data) > max_rows:
                 data = data[:max_rows]
-                console.print(f"[yellow]Showing first {max_rows} rows of {len(data)} total rows[/]")
+                StorageUtils.console.print(
+                    f"[yellow]Showing first {max_rows} rows of {len(data)} total rows[/]"
+                )
 
             # 创建表格
             table = Table(show_header=True, header_style="bold magenta")
@@ -189,7 +236,9 @@ class StorageUtils:
 
             # 验证并添加行
             if index and len(index) < len(data):
-                console.print("[yellow]Warning: Index length is less than data length[/]")
+                StorageUtils.console.print(
+                    "[yellow]Warning: Index length is less than data length[/]"
+                )
 
             for i, row in enumerate(data):
                 try:
@@ -199,12 +248,11 @@ class StorageUtils:
                     ]
                     table.add_row(idx, *formatted_values)
                 except Exception as e:
-                    console.print(f"[yellow]Warning: Error formatting row {i}: {e}[/]")
+                    StorageUtils.console.print(f"[yellow]Warning: Error formatting row {i}: {e}[/]")
                     continue
 
-            console.print(table)
+            StorageUtils.console.print(table)
 
         except Exception as e:
-            console = Console(stderr=True)
-            console.print(f"[red]Error visualizing data: {e}[/]")
+            logger.exception("数据可视化失败: {}", str(e))
             raise

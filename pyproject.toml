@@ -7,7 +7,7 @@ name = "cryptoservice"
 version = "0.1.1"
 description = "A cryptocurrency trading info package"
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.10,<3.13"
 dependencies = [
     "python-binance>=1.0.22",
     "pyyaml>=6.0.2",
@@ -32,8 +32,7 @@ dev-all = ["cryptoservice[test,dev]"]
 [tool.semantic_release]
 version_variable = ["src/cryptoservice/__init__.py:__version__"]
 branch = "main"
-upload_to_pypi = true
-build_command = "pip install build && python -m build"
+upload_to_pypi = false
 commit_message = "chore(release): v{version}"
 tag_format = "v{version}"
 major_on_zero = false
@@ -41,7 +40,7 @@ changelog_components = "semantic_release.changelog.changelog_headers,semantic_re
 
 [tool.black]
 line-length = 100
-target-version = ["py310"]
+target-version = ["py312"]
 include = "\\.pyi?$"
 
 [tool.isort]
@@ -50,7 +49,7 @@ multi_line_output = 3
 line_length = 100
 
 [tool.mypy]
-python_version = "3.10"
+python_version = "3.12"
 warn_return_any = true
 warn_unused_configs = true
 disallow_untyped_defs = true
