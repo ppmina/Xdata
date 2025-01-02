@@ -1,12 +1,25 @@
 # CHANGELOG
 
 
+## v0.3.3 (2025-01-02)
+
+### Bug Fixes
+
+- Ci webhook test
+  ([`1587c53`](https://github.com/Mrzai/Xdata/commit/1587c532e6d55f53d9c322cfc22ead0ad1e51af0))
+
+
 ## v0.3.2 (2025-01-02)
 
 ### Bug Fixes
 
 - Ci webhook test
   ([`d4a452b`](https://github.com/Mrzai/Xdata/commit/d4a452b8c11fe5f2526a1c595b9689cc4a14c894))
+
+### Chores
+
+- **release**: V0.3.2
+  ([`06cd7a4`](https://github.com/Mrzai/Xdata/commit/06cd7a46e272f884ac387ea1bd6ffd91ba0e33c1))
 
 
 ## v0.3.1 (2025-01-02)
