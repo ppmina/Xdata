@@ -1,7 +1,20 @@
 # CHANGELOG
 
 
+## v0.2.4 (2025-01-02)
+
+### Bug Fixes
+
+- Import issue
+  ([`1cdcb95`](https://github.com/Mrzai/Xdata/commit/1cdcb954662a24dfe1de88a840409e7352b6ab37))
+
+
 ## v0.2.3 (2025-01-02)
+
+### Chores
+
+- **release**: V0.2.3
+  ([`7abaa45`](https://github.com/Mrzai/Xdata/commit/7abaa45f1a75fb4f28ca70ebd81e5aa37bdc3053))
 
 
 ## v0.2.2 (2024-12-31)
