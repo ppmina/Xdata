@@ -1,7 +1,20 @@
 # CHANGELOG
 
 
+## v0.3.1 (2025-01-02)
+
+
 ## v0.3.0 (2025-01-02)
+
+### Bug Fixes
+
+- Ci something
+  ([`2550449`](https://github.com/Mrzai/Xdata/commit/2550449b824df0603880ce646e9015ad646744f9))
+
+### Chores
+
+- **release**: V0.3.0
+  ([`f7c1074`](https://github.com/Mrzai/Xdata/commit/f7c107469777d2c3d42ad98c43fd06fb1285cc17))
 
 ### Features
 
