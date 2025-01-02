@@ -3,7 +3,7 @@ import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional, overload
+from typing import Any, Dict, List, overload
 
 import pandas as pd
 from rich.console import Console
@@ -35,10 +35,15 @@ logger = logging.getLogger(__name__)
 
 
 class MarketDataService(IMarketDataService):
-    """市场数据服务实现类."""
+    """市场数据服务实现类"""
 
     def __init__(self, api_key: str, api_secret: str) -> None:
-        """初始化市场数据服务."""
+        """初始化市场数据服务
+
+        Args:
+            api_key: 用户API密钥
+            api_secret: 用户API密钥
+        """
         self.client = BinanceClientFactory.create_client(api_key, api_secret)
         self.converter = DataConverter()
         self.console = Console()
@@ -67,7 +72,7 @@ class MarketDataService(IMarketDataService):
         self,
         limit: int = settings.DEFAULT_LIMIT,
         sort_by: SortBy = SortBy.QUOTE_VOLUME,
-        quote_asset: Optional[str] = None,
+        quote_asset: str | None = None,
     ) -> List[DailyMarketTicker]:
         try:
             tickers = self.client.get_ticker()
@@ -105,7 +110,6 @@ class MarketDataService(IMarketDataService):
         interval: Freq = Freq.h1,
         klines_type: HistoricalKlinesType = HistoricalKlinesType.SPOT,
     ) -> List[KlineMarketTicker]:
-        """获取历史行情数据."""
         try:
             if isinstance(start_time, str):
                 start_time = datetime.strptime(start_time, "%Y%m%d")
@@ -129,7 +133,6 @@ class MarketDataService(IMarketDataService):
             raise MarketDataFetchError(f"Failed to get historical data: {e}")
 
     def get_orderbook(self, symbol: str, limit: int = 100) -> Dict[str, Any]:
-        """获取订单簿数据."""
         try:
             depth = self.client.get_order_book(symbol=symbol, limit=limit)
             return {
@@ -152,7 +155,6 @@ class MarketDataService(IMarketDataService):
         batch_size: int,
         progress: Progress,
     ) -> List[PerpetualMarketTicker]:
-        """单个交易对数据获取的工作函数"""
         data = []
         current_ts = start_ts
 

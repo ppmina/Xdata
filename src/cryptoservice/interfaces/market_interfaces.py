@@ -1,7 +1,7 @@
-from abc import ABC, abstractmethod
+from abc import abstractmethod
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Union, overload
+from typing import Any, Dict, List, Optional, Protocol, overload
 
 from cryptoservice.config import settings
 from cryptoservice.models import (
@@ -14,29 +14,27 @@ from cryptoservice.models import (
 )
 
 
-class IMarketDataService(ABC):
-    """市场数据服务接口."""
+class IMarketDataService(Protocol):
+    """市场数据服务接口"""
 
-    @abstractmethod
     def get_top_coins(
         self,
         limit: int = 100,
         sort_by: SortBy = SortBy.QUOTE_VOLUME,
         quote_asset: Optional[str] = None,
-    ) -> List[DailyMarketTicker]:
-        """获取排名靠前的币种数据.
+    ) -> List[DailyMarketTicker]: ...
 
-        Args:
-            limit: 返回的币种数量
-            sort_by: 排序依据
-            quote_asset: 计价币种 (如 USDT)
+    """获取排名靠前的币种数据.
 
-        Returns:
-            List[DailyMarketTicker]: 排序后的市场数据列表
-        """
-        pass
+    Args:
+        limit: 返回的币种数量
+        sort_by: 排序依据
+        quote_asset: 计价币种 (如 USDT)
 
-    @abstractmethod
+    Returns:
+        List[DailyMarketTicker]: 排序后的市场数据列表
+    """
+
     def get_market_summary(self, interval: Freq = Freq.d1) -> Dict[str, Any]:
         """获取市场概况.
 
@@ -75,8 +73,8 @@ class IMarketDataService(ABC):
     def get_historical_klines(
         self,
         symbol: str,
-        start_time: Union[str, datetime],
-        end_time: Optional[Union[str, datetime]] = None,
+        start_time: str | datetime,
+        end_time: str | datetime | None = None,
         interval: Freq = Freq.d1,
     ) -> List[KlineMarketTicker]:
         """获取历史行情数据.
