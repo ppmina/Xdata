@@ -5,12 +5,9 @@ on:
     branches:
       - main
     paths:
-      - 'src/**'
-      - 'tests/**'
+      - 'src/cryptoservice/**'
       - 'setup.py'
       - 'pyproject.toml'
-      - '.github/workflows/**'
-      - 'src/cryptoservice/__init__.py'
   workflow_dispatch:
   release:
     types: [published]
@@ -93,3 +90,19 @@ jobs:
           TWINE_USERNAME: __token__
           TWINE_PASSWORD: ${{ secrets.PYPI_API_TOKEN }}
         run: twine upload dist/*
+
+      - name: Send Webhook Notification
+        if: success()
+        uses: distributhor/workflow-webhook@v3
+        with:
+          webhook_url: ${{ secrets.WEBHOOK_URL }}
+          data: |
+            {
+              "package": "cryptoservice",
+              "version": "${{ steps.release.outputs.version }}",
+              "status": "success",
+              "timestamp": "${{ github.event.head_commit.timestamp }}",
+              "commit": "${{ github.sha }}",
+              "author": "${{ github.actor }}",
+              "message": "Package published successfully to PyPI"
+            }
