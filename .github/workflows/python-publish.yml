@@ -112,7 +112,7 @@ jobs:
               "commit": "${{ github.sha }}",
               "author": "${{ github.actor }}",
               "message": "Package published successfully to PyPI",
-              "changelog": ${{ toJSON(steps.changelog.outputs.changelog) }},
+              "changelog": ${{ steps.changelog.outputs.changelog != '' && toJSON(steps.changelog.outputs.changelog) || '"No changelog"' }},
               "features": {
                 "new": ${{ contains(steps.changelog.outputs.changelog, '### Feature') }},
                 "fixes": ${{ contains(steps.changelog.outputs.changelog, '### Fix') }},
