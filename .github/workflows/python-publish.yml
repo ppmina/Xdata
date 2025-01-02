@@ -91,6 +91,15 @@ jobs:
           TWINE_PASSWORD: ${{ secrets.PYPI_API_TOKEN }}
         run: twine upload dist/*
 
+      - name: Get Changelog
+        id: changelog
+        if: steps.release.outputs.released == 'true'
+        run: |
+          CHANGELOG=$(cat CHANGELOG.md | sed -n "/## v${{ steps.release.outputs.version }}/,/## v/p" | sed '$d')
+          echo "changelog<<EOF" >> $GITHUB_OUTPUT
+          echo "$CHANGELOG" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
       - name: Send Webhook Notification
         if: success()
         uses: distributhor/workflow-webhook@v3
@@ -100,9 +109,15 @@ jobs:
             {
               "package": "cryptoservice",
               "version": "${{ steps.release.outputs.version }}",
-              "status": "success",
-              "timestamp": "${{ github.event.head_commit.timestamp }}",
               "commit": "${{ github.sha }}",
               "author": "${{ github.actor }}",
-              "message": "Package published successfully to PyPI"
+              "message": "Package published successfully to PyPI",
+              "changelog": ${{ toJSON(steps.changelog.outputs.changelog) }},
+              "features": {
+                "new": ${{ contains(steps.changelog.outputs.changelog, '### Feature') }},
+                "fixes": ${{ contains(steps.changelog.outputs.changelog, '### Fix') }},
+                "breaking": ${{ contains(steps.changelog.outputs.changelog, 'BREAKING CHANGE') }}
+              },
+              "repository": "${{ github.repository }}",
+              "release_url": "https://github.com/${{ github.repository }}/releases/tag/v${{ steps.release.outputs.version }}"
             }
