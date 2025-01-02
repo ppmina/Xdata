@@ -40,40 +40,67 @@ api_key = os.getenv("BINANCE_API_KEY")
 api_secret = os.getenv("BINANCE_API_SECRET")
 
 # 创建服务实例
-service = MarketDataService(api_key, api_secret)
+market_service = MarketDataService(api_key, api_secret)
 
-# 获取单个交易对的行情数据
-ticker = service.get_symbol_ticker("BTCUSDT")
+演示各种市场数据功能
 
-# 获取排名靠前的币种数据
-top_coins = service.get_top_coins(
-    limit=10,
-    sort_by=SortBy.QUOTE_VOLUME,
-    quote_asset="USDT"
-)
+    # 1. 获取单个交易对的实时行情
+    btc_ticker = market_service.get_symbol_ticker("BTCUSDT")
+    logger.info(f"BTCUSDT 实时行情: {btc_ticker}")
 
-# 获取市场概况
-summary = service.get_market_summary(interval=Freq.d1)
+    # 2. 获取所有交易对的实时行情
+    all_tickers = market_service.get_symbol_ticker()
+    logger.info(f"获取到 {len(all_tickers)} 个交易对的行情")
 
-# 获取历史K线数据
-klines = service.get_historical_klines(
-    symbol="BTCUSDT",
-    start_time="20240101",
-    end_time="20240102",
-    interval=Freq.h1,
-    klines_type=HistoricalKlinesType.SPOT
-)
+    # 3. 获取成交量排名前10的USDT交易对
+    top_coins = market_service.get_top_coins(
+        limit=10, sort_by=SortBy.QUOTE_VOLUME, quote_asset="USDT"
+    )
+    logger.info("成交量TOP10的USDT交易对:")
+    for coin in top_coins:
+        logger.info(f"{coin.symbol}: 成交量 {coin.quote_volume}")
 
-# 获取永续合约数据
-perpetual_data = service.get_perpetual_data(
-    symbols=["BTCUSDT", "ETHUSDT"],
-    start_time="20240101",
-    end_time="20240102",
-    freq=Freq.h1,
-    store=True,  # 是否存储数据
-    market="SWAP",
-    features=["cls", "hgh", "low", "opn", "vwap", "vol"]
-)
+    # 4. 获取市场概览
+    market_summary = market_service.get_market_summary(interval=Freq.h1)
+    logger.info(f"市场概览时间: {market_summary['snapshot_time']}")
+
+    # 5. 获取历史K线数据
+    historical_data = market_service.get_historical_klines(
+        symbol="ETHUSDT",
+        start_time="20240101",
+        end_time="20240103",
+        interval=Freq.h4,
+        klines_type=HistoricalKlinesType.SPOT,
+    )
+    logger.info(f"获取到 {len(historical_data)} 条 ETHUSDT 历史数据")
+
+    # 6. 获取订单簿数据
+    orderbook = market_service.get_orderbook("BTCUSDT", limit=10)
+    logger.info(f"BTCUSDT 订单簿深度: {len(orderbook['bids'])} 档")
+
+    # 7. 获取永续合约数据
+    perpetual_data = market_service.get_perpetual_data(
+        symbols=[
+            "BTCUSDT",
+            "ETHUSDT",
+            "BNBUSDT",
+            "SOLUSDT",
+            "ADAUSDT",
+            "XRPUSDT",
+            "DOGEUSDT",
+            "DOTUSDT",
+            "AVAXUSDT",
+            "LTCUSDT",
+        ],
+        start_time="20240101",
+        end_time="20240103",
+        interval=Freq.h1,
+        data_path="data",
+    )
+    StorageUtils.visualize_npy_data("./data/1h/count/20240102.npy")
+    StorageUtils.visualize_npy_data("./data/1h/high_price/20240102.npy")
+    StorageUtils.visualize_npy_data("./data/1h/last_price/20240102.npy")
+    StorageUtils.visualize_npy_data("./data/1h/low_price/20240102.npy")
 ```
 
 ## 开发环境设置
