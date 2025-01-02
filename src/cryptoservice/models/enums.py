@@ -6,12 +6,12 @@ from binance import enums as binance_enums
 
 
 class SortBy(Enum):
-    """排序方式枚举."""
+    """排序方式枚举"""
 
     VOLUME = "volume"
-    PRICE_CHANGE = "priceChange"
-    PRICE_CHANGE_PERCENT = "priceChangePercent"
-    QUOTE_VOLUME = "quoteVolume"
+    PRICE_CHANGE = "price_change"
+    PRICE_CHANGE_PERCENT = "price_change_percent"
+    QUOTE_VOLUME = "quote_volume"
 
 
 class InstType(IntEnum):

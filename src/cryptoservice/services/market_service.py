@@ -55,6 +55,14 @@ class MarketDataService(IMarketDataService):
     def get_symbol_ticker(self) -> List[SymbolTicker]: ...
 
     def get_symbol_ticker(self, symbol: str | None = None) -> SymbolTicker | List[SymbolTicker]:
+        """获取单个或所有交易对的行情数据
+
+        Args:
+            symbol | List[symbol]: 交易对名称
+
+        Returns:
+            SymbolTicker | List[SymbolTicker]: 单个交易对的行情数据或所有交易对的行情数据
+        """
         try:
             ticker = self.client.get_symbol_ticker(symbol=symbol)
             if not ticker:
@@ -74,6 +82,16 @@ class MarketDataService(IMarketDataService):
         sort_by: SortBy = SortBy.QUOTE_VOLUME,
         quote_asset: str | None = None,
     ) -> List[DailyMarketTicker]:
+        """获取前N个交易对
+
+        Args:
+            limit: 数量
+            sort_by: 排序方式
+            quote_asset: 基准资产
+
+        Returns:
+            List[DailyMarketTicker]: 前N个交易对
+        """
         try:
             tickers = self.client.get_ticker()
             market_tickers = [DailyMarketTicker.from_binance_ticker(t) for t in tickers]
@@ -83,7 +101,7 @@ class MarketDataService(IMarketDataService):
 
             return sorted(
                 market_tickers,
-                key=lambda x: getattr(x, "quote_volume"),
+                key=lambda x: getattr(x, sort_by.value),
                 reverse=True,
             )[:limit]
 
@@ -92,6 +110,14 @@ class MarketDataService(IMarketDataService):
             raise MarketDataFetchError(f"Failed to get top coins: {e}")
 
     def get_market_summary(self, interval: Freq = Freq.d1) -> Dict[str, Any]:
+        """获取市场概览
+
+        Args:
+            interval: 时间间隔
+
+        Returns:
+            Dict[str, Any]: 市场概览
+        """
         try:
             summary: Dict[str, Any] = {"snapshot_time": datetime.now(), "data": {}}
             tickers = [ticker.to_dict() for ticker in self.get_symbol_ticker()]
@@ -110,6 +136,18 @@ class MarketDataService(IMarketDataService):
         interval: Freq = Freq.h1,
         klines_type: HistoricalKlinesType = HistoricalKlinesType.SPOT,
     ) -> List[KlineMarketTicker]:
+        """获取历史行情数据
+
+        Args:
+            symbol: 交易对名称
+            start_time: 开始时间
+            end_time: 结束时间
+            interval: 时间间隔
+            klines_type: 行情类型
+
+        Returns:
+            List[KlineMarketTicker]: 历史行情数据
+        """
         try:
             if isinstance(start_time, str):
                 start_time = datetime.strptime(start_time, "%Y%m%d")
@@ -133,6 +171,15 @@ class MarketDataService(IMarketDataService):
             raise MarketDataFetchError(f"Failed to get historical data: {e}")
 
     def get_orderbook(self, symbol: str, limit: int = 100) -> Dict[str, Any]:
+        """获取订单簿
+
+        Args:
+            symbol: 交易对名称
+            limit: 数量
+
+        Returns:
+            Dict[str, Any]: 订单簿
+        """
         try:
             depth = self.client.get_order_book(symbol=symbol, limit=limit)
             return {
@@ -155,6 +202,19 @@ class MarketDataService(IMarketDataService):
         batch_size: int,
         progress: Progress,
     ) -> List[PerpetualMarketTicker]:
+        """获取永续合约数据
+
+        Args:
+            symbol: 交易对名称
+            start_ts: 开始时间
+            end_ts: 结束时间
+            interval: 时间间隔
+            batch_size: 批量大小
+            progress: 进度条
+
+        Returns:
+            List[PerpetualMarketTicker]: 永续合约数据
+        """
         data = []
         current_ts = start_ts
 
@@ -198,6 +258,20 @@ class MarketDataService(IMarketDataService):
         batch_size: int = 500,
         max_workers: int = 5,
     ) -> List[List[PerpetualMarketTicker]]:
+        """获取永续合约数据
+
+        Args:
+            symbols: 交易对列表
+            start_time: 开始时间
+            data_path: 数据存储路径
+            end_time: 结束时间
+            interval: 时间间隔
+            batch_size: 批量大小
+            max_workers: 最大工作线程数
+
+        Returns:
+            List[List[PerpetualMarketTicker]]: 永续合约数据
+        """
         try:
             start_ts = int(pd.Timestamp(start_time).timestamp() * 1000)
             end_ts = int(pd.Timestamp(end_time).timestamp() * 1000)
