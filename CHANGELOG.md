@@ -1,12 +1,25 @@
 # CHANGELOG
 
 
+## v0.3.0 (2025-01-02)
+
+### Features
+
+- New type infomation
+  ([`7467b2a`](https://github.com/Mrzai/Xdata/commit/7467b2a56efbc25d965d31103159900f9faa13ed))
+
+
 ## v0.2.4 (2025-01-02)
 
 ### Bug Fixes
 
 - Import issue
   ([`1cdcb95`](https://github.com/Mrzai/Xdata/commit/1cdcb954662a24dfe1de88a840409e7352b6ab37))
+
+### Chores
+
+- **release**: V0.2.4
+  ([`c7bd156`](https://github.com/Mrzai/Xdata/commit/c7bd15616793fa16163b8b988cc3ea0ef13a3e44))
 
 
 ## v0.2.3 (2025-01-02)
