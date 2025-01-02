@@ -1,6 +1,5 @@
 import logging
 import os
-from pathlib import Path
 
 from dotenv import load_dotenv
 from rich.console import Console
