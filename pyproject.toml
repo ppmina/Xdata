@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "cryptoservice"
-version = "0.2.2"
+version = "0.2.3"
 description = "A cryptocurrency trading info package"
 readme = "README.md"
 requires-python = ">=3.10,<3.13"
@@ -30,6 +30,7 @@ dev = ["pre-commit>=2.0.0", "python-dotenv>=0.15.0"]
 dev-all = ["cryptoservice[test,dev]"]
 
 [tool.semantic_release]
+version_variable = "src/cryptoservice/__init__.py:__version__"
 version_toml = ["pyproject.toml:project.version"]
 branch = "main"
 upload_to_pypi = false
