@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from datetime import datetime
 from decimal import Decimal
 from typing import Any, Dict, List
 
@@ -148,48 +149,69 @@ class KlineMarketTicker(BaseMarketTicker):
 
 
 @dataclass
-class PerpetualMarketTicker(BaseMarketTicker):
-    """永续合约行情数据类.
+class PerpetualMarketTicker:
+    """永续合约市场数据模型.
 
     Attributes:
-        symbol: 交易对
-        last_price: 最新价格
-        open_time: 开盘时间
-        open_price: 开盘价
-        high_price: 最高价
-        low_price: 最低价
-        volume: 成交量
-        close_time: 收盘时间
-        quote_volume: 成交额
-        count: 计数
-        taker_buy_volume: 买方成交量
-        taker_buy_quote_volume: 买方成交额
+        symbol: str  # 交易对名称，如 "BTCUSDT"
+        open_time: datetime  # K线开始时间
+        open_price: Decimal  # 这根K线期间的第一笔成交价
+        high_price: Decimal  # 这根K线期间的最高成交价
+        low_price: Decimal   # 这根K线期间的最低成交价
+        close_price: Decimal # 这根K线期间的最后一笔成交价
+        volume: Decimal      # 这根K线期间的成交量(基础币种)
+        close_time: datetime # K线结束时间
+        quote_volume: Decimal # 这根K线期间的成交额(计价币种)
+        trades_count: int     # 这根K线期间的成交笔数
+        taker_buy_volume: Decimal     # 主动买入的成交量(基础币种)
+        taker_buy_quote_volume: Decimal # 主动买入的成交额(计价币种)
     """
 
-    open_time: int
+    symbol: str
+    open_time: datetime
     open_price: Decimal
     high_price: Decimal
     low_price: Decimal
+    close_price: Decimal
     volume: Decimal
-    close_time: int
+    close_time: datetime
     quote_volume: Decimal
-    count: int
+    trades_count: int
     taker_buy_volume: Decimal
     taker_buy_quote_volume: Decimal
 
     @classmethod
-    def from_binance_futures(cls, symbol: str, kline: list) -> "PerpetualMarketTicker":
+    def from_binance_futures(cls, symbol: str, kline: List[Any]) -> "PerpetualMarketTicker":
+        """从 Binance 永续合约K线数据创建实例.
+
+        Args:
+            symbol: 交易对名称
+            kline: Binance K线数据列表 [
+                Open time,
+                Open,
+                High,
+                Low,
+                Close,
+                Volume,
+                Close time,
+                Quote asset volume,
+                Number of trades,
+                Taker buy base volume,
+                Taker buy quote volume,
+                Ignore
+            ]
+        """
         return cls(
             symbol=symbol,
-            open_time=kline[0],
+            open_time=datetime.fromtimestamp(kline[0] / 1000),
             open_price=Decimal(str(kline[1])),
             high_price=Decimal(str(kline[2])),
             low_price=Decimal(str(kline[3])),
-            last_price=Decimal(str(kline[4])),
+            close_price=Decimal(str(kline[4])),
             volume=Decimal(str(kline[5])),
-            close_time=kline[6],
+            close_time=datetime.fromtimestamp(kline[6] / 1000),
             quote_volume=Decimal(str(kline[7])),
-            count=kline[8],
+            trades_count=int(kline[8]),
             taker_buy_volume=Decimal(str(kline[9])),
             taker_buy_quote_volume=Decimal(str(kline[10])),
         )

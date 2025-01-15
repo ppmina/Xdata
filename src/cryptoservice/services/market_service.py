@@ -1,11 +1,14 @@
+import asyncio
 import logging
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, overload
+from typing import Any, Dict, List, Optional, overload
 
+import aiohttp
 import pandas as pd
+from aiohttp import TCPConnector
 from rich.console import Console
 from rich.logging import RichHandler
 from rich.panel import Panel
@@ -47,6 +50,7 @@ class MarketDataService(IMarketDataService):
         self.client = BinanceClientFactory.create_client(api_key, api_secret)
         self.converter = DataConverter()
         self.console = Console()
+        self.connector: Optional[TCPConnector] = None
 
     @overload
     def get_symbol_ticker(self, symbol: str) -> SymbolTicker: ...
@@ -318,19 +322,6 @@ class MarketDataService(IMarketDataService):
                 logger.error(f"[red]Error storing data for {symbol}: {e}[/red]")
                 raise MarketDataFetchError(f"Failed to store data: {e}")
 
-            # 完成后显示汇总信息
-            self.console.print(
-                Panel(
-                    f"✨ 数据获取完成\n"
-                    f"📊 处理交易对: {len(symbols)}\n"
-                    f"📅 时间范围: {datetime.strptime(start_time, '%Y%m%d').strftime('%Y-%m-%d')} 至 "
-                    f"{datetime.strptime(end_time, '%Y%m%d').strftime('%Y-%m-%d') if end_time else datetime.now().strftime('%Y-%m-%d')}\n"
-                    f"⏱️  数据间隔: {interval}",
-                    title="处理完成",
-                    border_style="green",
-                )
-            )
-
             return all_data
 
         except Exception as e:
@@ -343,3 +334,55 @@ class MarketDataService(IMarketDataService):
             )
             logger.error(f"[red]Failed to fetch perpetual data: {e}[/red]")
             raise MarketDataFetchError(f"Failed to fetch perpetual data: {e}")
+
+    async def get_connector_info(self) -> dict:
+        """获取连接器状态信息."""
+        if not self.connector:
+            self.connector = TCPConnector(
+                limit=100,  # 最大连接数
+                enable_cleanup_closed=True,  # 自动清理关闭的连接
+                force_close=True,  # 强制关闭
+                ttl_dns_cache=300,  # DNS缓存时间
+            )
+
+        return {
+            "limit": self.connector.limit,
+            "total_connections": len(self.connector._conns),  # 当前连接总数
+            "acquired_connections": len(self.connector._acquired),  # 已获取的连接数
+            "connector_key": self.connector.key,  # 连接器密钥
+            "is_closed": self.connector.closed,  # 是否已关闭
+            "force_close": self.connector.force_close,  # 是否强制关闭
+            "enable_cleanup_closed": self.connector.enable_cleanup_closed,  # 是否启用清理
+            "ttl_dns_cache": self.connector.ttl_dns_cache,  # DNS缓存时间
+            "verify_ssl": self.connector.verify_ssl,  # SSL验证
+        }
+
+    async def close(self) -> None:
+        """关闭连接器."""
+        if self.connector:
+            await self.connector.close()
+            self.connector = None
+
+    async def monitor_connections(self, interval: float = 1.0) -> None:
+        """监控连接状态.
+
+        Args:
+            interval: 监控间隔(秒)
+        """
+        while True:
+            info = await self.get_connector_info()
+            self.console.print(
+                Panel(
+                    "\n".join(
+                        [
+                            f"Total Connections: {info['total_connections']}",
+                            f"Acquired: {info['acquired_connections']}",
+                            f"Available: {info['limit'] - info['acquired_connections']}",
+                            f"Is Closed: {info['is_closed']}",
+                        ]
+                    ),
+                    title="Connection Monitor",
+                    border_style="blue",
+                )
+            )
+            await asyncio.sleep(interval)

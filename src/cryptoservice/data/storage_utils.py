@@ -123,16 +123,17 @@ class StorageUtils:
 
                 # 定义需要保存的数据列（Value）
                 value_columns = [
-                    "count",
-                    "last_price",
-                    "volume",
+                    "close_price",
                     "quote_volume",
                     "high_price",
                     "low_price",
                     "open_price",
+                    "volume",
+                    "trades_count",
                     "taker_buy_volume",
                     "taker_buy_quote_volume",
                 ]
+                custom_value_columns = ["taker_sell_volume", "taker_sell_quote_volume"]
 
                 # 按日期分组并重塑数据为二维数组 (symbols × time)
                 for date in pd.date_range(start_date, end_date, freq="D"):
@@ -144,6 +145,20 @@ class StorageUtils:
                         pivot_data = date_data[column].unstack(level="T")  # K × T matrix
                         array = pivot_data.values
 
+                        save_path = data_path / interval / column / f"{date_str}.npy"
+                        save_path.parent.mkdir(parents=True, exist_ok=True)
+                        np.save(save_path, array)
+
+                    for column in custom_value_columns:
+                        if column == "taker_sell_volume":
+                            array = (
+                                date_data["volume"].values - date_data["taker_buy_volume"].values
+                            )
+                        elif column == "taker_sell_quote_volume":
+                            array = (
+                                date_data["quote_volume"].values
+                                - date_data["taker_buy_quote_volume"].values
+                            )
                         save_path = data_path / interval / column / f"{date_str}.npy"
                         save_path.parent.mkdir(parents=True, exist_ok=True)
                         np.save(save_path, array)
