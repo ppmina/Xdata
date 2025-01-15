@@ -34,7 +34,6 @@ version_variable = "src/cryptoservice/__init__.py:__version__"
 version_toml = ["pyproject.toml:project.version"]
 branch = "main"
 upload_to_pypi = false
-commit_parser = "semantic_release.history.angular_parser"
 commit_message = "chore(release): v{version}"
 tag_format = "v{version}"
 major_on_zero = false
