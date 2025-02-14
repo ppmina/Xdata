@@ -1,6 +1,20 @@
 # CHANGELOG
 
 
+## v0.4.0 (2025-02-14)
+
+### Features
+
+- Add sql support
+  ([`5e7c49a`](https://github.com/Mrzai/Xdata/commit/5e7c49af60da195491b285a0aebdfa02c8c59262))
+
+- Add sql support
+  ([`f8a1967`](https://github.com/Mrzai/Xdata/commit/f8a1967c07903c63202a2552c4031b519f0d77f8))
+
+- Add sql support
+  ([`cdf88d9`](https://github.com/Mrzai/Xdata/commit/cdf88d9ed324b95542a66894032630ebd6184f94))
+
+
 ## v0.3.4 (2025-01-15)
 
 ### Bug Fixes
