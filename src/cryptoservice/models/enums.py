@@ -15,6 +15,8 @@ class SortBy(Enum):
 
 
 class InstType(IntEnum):
+    """产品类型枚举"""
+
     UM = auto()
     Margin = auto()
     INDX = auto()
@@ -22,15 +24,21 @@ class InstType(IntEnum):
 
 
 class Market(IntEnum):
+    """市场枚举"""
+
     CN = auto()
     CRYPTO = auto()
 
 
 class Vendor(IntEnum):
+    """供应商枚举"""
+
     RQ = auto()
 
 
 class IndustrySrc(IntEnum):
+    """行业来源枚举"""
+
     CITICS = auto()
 
 
@@ -83,8 +91,26 @@ class OrderResponseType(str, Enum):
 
 
 class Freq(str, Enum):
-    """频率枚举"""
+    """频率枚举
+    s1: 1秒
+    m1: 1分钟
+    m3: 3分钟
+    m5: 5分钟
+    m15: 15分钟
+    m30: 30分钟
+    h1: 1小时
+    h2: 2小时
+    h4: 4小时
+    h6: 6小时
+    h8: 8小时
+    h12: 12小时
+    d1: 1天
+    d3: 3天
+    w1: 1周
+    M1: 1个月
+    """
 
+    s1 = binance_enums.KLINE_INTERVAL_1SECOND
     m1 = binance_enums.KLINE_INTERVAL_1MINUTE
     m3 = binance_enums.KLINE_INTERVAL_3MINUTE
     m5 = binance_enums.KLINE_INTERVAL_5MINUTE
@@ -113,13 +139,24 @@ class Freq(str, Enum):
         raise ValueError(f"Invalid Binance interval: {binance_interval}")
 
 
+class Univ(str, Enum):
+    """数据集枚举"""
+
+    CL60 = "CL60"
+    CALL = "CALL"
+
+
 class Status(IntEnum):
+    """状态枚举"""
+
     NORMAL = auto()
     SUSPEND = auto()
     ST = auto()
 
 
 class ReturnType(IntEnum):
+    """回报类型枚举"""
+
     C2C = auto()
     V2V = auto()
     V2VM = auto()

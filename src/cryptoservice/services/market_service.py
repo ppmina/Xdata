@@ -1,23 +1,22 @@
-import asyncio
 import logging
+import queue
+import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from contextlib import contextmanager, nullcontext
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional, overload
+from threading import Lock
+from typing import Any, Dict, Generator, List, Optional, overload
 
-import aiohttp
-import pandas as pd
-from aiohttp import TCPConnector
 from rich.console import Console
 from rich.logging import RichHandler
-from rich.panel import Panel
 from rich.progress import BarColumn, Progress, SpinnerColumn, TextColumn, TimeElapsedColumn
 
 from cryptoservice.client import BinanceClientFactory
 from cryptoservice.config import settings
-from cryptoservice.data import StorageUtils
-from cryptoservice.exceptions import InvalidSymbolError, MarketDataFetchError
+from cryptoservice.data import MarketDB
+from cryptoservice.exceptions import InvalidSymbolError, MarketDataFetchError, RateLimitError
 from cryptoservice.interfaces import IMarketDataService
 from cryptoservice.models import (
     DailyMarketTicker,
@@ -36,6 +35,37 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+cache_lock = Lock()
+
+
+class DatabaseConnectionPool:
+    """数据库连接池实现"""
+
+    def __init__(self, db_path: Path, max_connections: int = 5):
+        self.db_path = db_path
+        self.max_connections = max_connections
+        self.connections: queue.Queue[MarketDB] = queue.Queue(maxsize=max_connections)
+        self._lock = threading.Lock()
+
+        # 预创建连接
+        for _ in range(max_connections):
+            self.connections.put(MarketDB(db_path))
+
+    @contextmanager
+    def get_connection(self) -> Generator[MarketDB, None, None]:
+        """获取数据库连接"""
+        connection = self.connections.get()
+        try:
+            yield connection
+        finally:
+            self.connections.put(connection)
+
+    def close_all(self) -> None:
+        """关闭所有连接"""
+        while not self.connections.empty():
+            connection = self.connections.get()
+            connection.close()
+
 
 class MarketDataService(IMarketDataService):
     """市场数据服务实现类"""
@@ -49,8 +79,7 @@ class MarketDataService(IMarketDataService):
         """
         self.client = BinanceClientFactory.create_client(api_key, api_secret)
         self.converter = DataConverter()
-        self.console = Console()
-        self.connector: Optional[TCPConnector] = None
+        self.db_pool: Optional[DatabaseConnectionPool] = None
 
     @overload
     def get_symbol_ticker(self, symbol: str) -> SymbolTicker: ...
@@ -174,83 +203,43 @@ class MarketDataService(IMarketDataService):
             logger.error(f"[red]Error getting historical data for {symbol}: {e}[/red]")
             raise MarketDataFetchError(f"Failed to get historical data: {e}")
 
-    def get_orderbook(self, symbol: str, limit: int = 100) -> Dict[str, Any]:
-        """获取订单簿
-
-        Args:
-            symbol: 交易对名称
-            limit: 数量
-
-        Returns:
-            Dict[str, Any]: 订单簿
-        """
-        try:
-            depth = self.client.get_order_book(symbol=symbol, limit=limit)
-            return {
-                "lastUpdateId": depth["lastUpdateId"],
-                "bids": depth["bids"],
-                "asks": depth["asks"],
-                "timestamp": datetime.now(),
-            }
-
-        except Exception as e:
-            logger.error(f"[red]Error getting orderbook for {symbol}: {e}[/red]")
-            raise MarketDataFetchError(f"Failed to get orderbook: {e}")
-
     def _fetch_symbol_data(
         self,
         symbol: str,
-        start_ts: int,
-        end_ts: int,
+        start_ts: str,
+        end_ts: str,
         interval: Freq,
-        batch_size: int,
-        progress: Progress,
+        klines_type: HistoricalKlinesType = HistoricalKlinesType.SPOT,
     ) -> List[PerpetualMarketTicker]:
-        """获取永续合约数据
-
-        Args:
-            symbol: 交易对名称
-            start_ts: 开始时间
-            end_ts: 结束时间
-            interval: 时间间隔
-            batch_size: 批量大小
-            progress: 进度条
-
-        Returns:
-            List[PerpetualMarketTicker]: 永续合约数据
-        """
-        data = []
-        current_ts = start_ts
-
-        # 创建进度任务
-        batch_task = progress.add_task(f"[yellow]获取 {symbol} 数据", total=None, visible=True)
-
-        while current_ts < end_ts:
-            # 添加限流控制
+        """获取单个交易对的数据."""
+        try:
             time.sleep(0.1)  # 简单的请求间隔
 
-            progress.update(
-                batch_task,
-                description=f"[yellow]获取 {symbol} 数据 ({pd.Timestamp(current_ts, unit='ms')})",
-            )
-
-            klines = self.client.futures_historical_klines(
+            klines = self.client.get_historical_klines_generator(
                 symbol=symbol,
                 interval=interval,
-                start_str=current_ts,
+                start_str=start_ts,
                 end_str=end_ts,
-                limit=batch_size,
+                klines_type=HistoricalKlinesType.to_binance(klines_type),
             )
 
             if not klines:
-                break
+                logger.warning(f"No data available for {symbol} in specified time range")
+                raise MarketDataFetchError(
+                    f"No data available for {symbol} between {start_ts} and {end_ts}"
+                )
 
-            tickers = [PerpetualMarketTicker.from_binance_futures(symbol, k) for k in klines]
-            data.extend(tickers)
-            current_ts = klines[-1][6] + 1
+            # 直接传递原始数据，不做类型转换
+            return [
+                PerpetualMarketTicker(
+                    symbol=symbol, open_time=kline[0], raw_data=kline  # 保存原始数据
+                )
+                for kline in klines
+            ]
 
-        progress.remove_task(batch_task)
-        return data
+        except Exception as e:
+            logger.error(f"Failed to fetch data for {symbol}: {e}")
+            raise MarketDataFetchError(f"Failed to fetch data for {symbol}: {e}")
 
     def get_perpetual_data(
         self,
@@ -259,78 +248,107 @@ class MarketDataService(IMarketDataService):
         data_path: Path | str,
         end_time: str | None = None,
         interval: Freq = Freq.h1,
-        batch_size: int = 500,
-        max_workers: int = 5,
-    ) -> List[List[PerpetualMarketTicker]]:
-        """获取永续合约数据
+        max_workers: int = 1,
+        max_retries: int = 3,
+        progress: Progress | None = None,
+    ) -> None:
+        """获取永续合约数据并存储.
 
         Args:
             symbols: 交易对列表
-            start_time: 开始时间
+            start_time: 开始时间 (YYYY-MM-DD)
             data_path: 数据存储路径
-            end_time: 结束时间
+            end_time: 结束时间 (YYYY-MM-DD)
             interval: 时间间隔
-            batch_size: 批量大小
-            max_workers: 最大工作线程数
-
-        Returns:
-            List[List[PerpetualMarketTicker]]: 永续合约数据
+            max_workers: 最大线程数
+            max_retries: 最大重试次数
+            progress: 进度显示器
         """
         try:
-            start_ts = int(pd.Timestamp(start_time).timestamp() * 1000)
-            end_ts = int(pd.Timestamp(end_time).timestamp() * 1000)
-            all_data: List[List[PerpetualMarketTicker]] = []  # 使用字典存储，键为symbol
+            if not symbols:
+                raise ValueError("Symbols list cannot be empty")
 
-            # 1. 先获取所有数据
-            with Progress(
-                SpinnerColumn(),
-                TextColumn("[progress.description]{task.description}"),
-                BarColumn(),
-                TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
-                TimeElapsedColumn(),
-            ) as progress:
+            data_path = Path(data_path)
+            end_time = end_time or datetime.now().strftime("%Y-%m-%d")
+            db_path = data_path / "market.db"
+
+            # 初始化数据库连接池
+            if self.db_pool is None:
+                self.db_pool = DatabaseConnectionPool(db_path, max_workers)
+
+            # 进度显示器设置
+            should_close_progress = False
+            if progress is None:
+                progress = Progress(
+                    SpinnerColumn(),
+                    TextColumn("[progress.description]{task.description}"),
+                    BarColumn(),
+                    TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
+                    TimeElapsedColumn(),
+                )
+                should_close_progress = True
+
+            def process_symbol(symbol: str) -> None:
+                """处理单个交易对的数据获取"""
+                retry_count = 0
+                while retry_count < max_retries:
+                    try:
+                        data = self._fetch_symbol_data(
+                            symbol=symbol,
+                            start_ts=start_time,
+                            end_ts=end_time,
+                            interval=interval,
+                            klines_type=HistoricalKlinesType.FUTURES,
+                        )
+
+                        if data:
+                            # 确保 db_pool 不为 None
+                            assert self.db_pool is not None, "Database pool is not initialized"
+                            with self.db_pool.get_connection() as db:
+                                db.store_data([data], interval)
+                            return
+                        else:
+                            logger.warning(f"No data available for {symbol}")
+                            return
+
+                    except RateLimitError:
+                        wait_time = min(2**retry_count + 1, 30)
+                        time.sleep(wait_time)
+                        retry_count += 1
+                    except Exception as e:
+                        if retry_count < max_retries - 1:
+                            retry_count += 1
+                            logger.warning(f"重试 {retry_count}/{max_retries} - {symbol}: {str(e)}")
+                            time.sleep(1)
+                        else:
+                            logger.error(f"处理失败 - {symbol}: {str(e)}")
+                            break
+
+            with progress if should_close_progress else nullcontext():
                 overall_task = progress.add_task("[cyan]处理所有交易对", total=len(symbols))
 
+                # 使用线程池并行处理
                 with ThreadPoolExecutor(max_workers=max_workers) as executor:
-                    future_to_symbol = {
-                        executor.submit(
-                            self._fetch_symbol_data,
-                            symbol,
-                            start_ts,
-                            end_ts,
-                            interval,
-                            batch_size,
-                            progress,
-                        ): symbol
-                        for symbol in symbols
-                    }
+                    futures = [executor.submit(process_symbol, symbol) for symbol in symbols]
 
-                    for future in as_completed(future_to_symbol):
-                        symbol = future_to_symbol[future]
+                    # 跟踪完成进度
+                    for future in as_completed(futures):
                         try:
-                            data = future.result()
-                            all_data.append(data)
-                            progress.advance(overall_task)
+                            future.result()
+                            progress.update(overall_task, advance=1)
                         except Exception as e:
-                            logger.error(f"[red]Error processing {symbol}: {e}[/red]")
+                            logger.error(f"处理失败: {e}")
 
-            # 2. 数据全部获取完成后，统一进行存储
-            StorageUtils.store_universe(symbols, data_path)
-            try:
-                StorageUtils.store_feature_data(all_data, interval, data_path)
-            except Exception as e:
-                logger.error(f"[red]Error storing data for {symbol}: {e}[/red]")
-                raise MarketDataFetchError(f"Failed to store data: {e}")
-
-            return all_data
+                # 写入汇总报告
+                log_path = data_path / "fetch_summary.txt"
+                with open(log_path, "w") as f:
+                    f.write(f"=== Final Fetch Summary ({datetime.now()}) ===\n")
+                    f.write(f"Total Symbols: {len(symbols)}\n")
+                    f.write(f"Date Range: {start_time} to {end_time}\n")
 
         except Exception as e:
-            self.console.print(
-                Panel(
-                    f"❌ [red]Error: {str(e)}[/red]",
-                    title="[red]Processing Failed[/red]",
-                    border_style="red",
-                )
-            )
-            logger.error(f"[red]Failed to fetch perpetual data: {e}[/red]")
+            logger.error(f"Failed to fetch perpetual data: {e}")
             raise MarketDataFetchError(f"Failed to fetch perpetual data: {e}")
+        finally:
+            if self.db_pool:
+                self.db_pool.close_all()

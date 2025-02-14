@@ -148,37 +148,55 @@ class KlineMarketTicker(BaseMarketTicker):
         )
 
 
-@dataclass
+class KlineIndex:
+    """K线数据索引定义
+
+    Attributes:
+        OPEN_TIME: 开盘时间
+        OPEN: 开盘价
+        HIGH: 最高价
+        LOW: 最低价
+        CLOSE: 收盘价
+        VOLUME: 成交量
+        CLOSE_TIME: 收盘时间
+        QUOTE_VOLUME: 成交额
+        TRADES_COUNT: 成交笔数
+        TAKER_BUY_VOLUME: 买方成交量
+        TAKER_BUY_QUOTE_VOLUME: 买方成交额
+        IGNORE: 忽略
+    """
+
+    OPEN_TIME = 0
+    OPEN = 1
+    HIGH = 2
+    LOW = 3
+    CLOSE = 4
+    VOLUME = 5
+    CLOSE_TIME = 6
+    QUOTE_VOLUME = 7
+    TRADES_COUNT = 8
+    TAKER_BUY_VOLUME = 9
+    TAKER_BUY_QUOTE_VOLUME = 10
+    IGNORE = 11
+
+
 class PerpetualMarketTicker:
     """永续合约市场数据模型.
 
+    轻量级实现，使用 __slots__ 来优化内存使用.
+
     Attributes:
-        symbol: str  # 交易对名称，如 "BTCUSDT"
-        open_time: datetime  # K线开始时间
-        open_price: Decimal  # 这根K线期间的第一笔成交价
-        high_price: Decimal  # 这根K线期间的最高成交价
-        low_price: Decimal   # 这根K线期间的最低成交价
-        close_price: Decimal # 这根K线期间的最后一笔成交价
-        volume: Decimal      # 这根K线期间的成交量(基础币种)
-        close_time: datetime # K线结束时间
-        quote_volume: Decimal # 这根K线期间的成交额(计价币种)
-        trades_count: int     # 这根K线期间的成交笔数
-        taker_buy_volume: Decimal     # 主动买入的成交量(基础币种)
-        taker_buy_quote_volume: Decimal # 主动买入的成交额(计价币种)
+        symbol: str  # 交易对名称
+        open_time: int  # K线开始时间戳（毫秒）
+        raw_data: List[Any]  # 原始K线数据
     """
 
-    symbol: str
-    open_time: datetime
-    open_price: Decimal
-    high_price: Decimal
-    low_price: Decimal
-    close_price: Decimal
-    volume: Decimal
-    close_time: datetime
-    quote_volume: Decimal
-    trades_count: int
-    taker_buy_volume: Decimal
-    taker_buy_quote_volume: Decimal
+    __slots__ = ["symbol", "open_time", "raw_data"]
+
+    def __init__(self, symbol: str, open_time: int, raw_data: List[Any]):
+        self.symbol = symbol
+        self.open_time = open_time
+        self.raw_data = raw_data
 
     @classmethod
     def from_binance_futures(cls, symbol: str, kline: List[Any]) -> "PerpetualMarketTicker":
@@ -196,22 +214,9 @@ class PerpetualMarketTicker:
                 Close time,
                 Quote asset volume,
                 Number of trades,
-                Taker buy base volume,
-                Taker buy quote volume,
+                Taker buy base asset volume,
+                Taker buy quote asset volume,
                 Ignore
             ]
         """
-        return cls(
-            symbol=symbol,
-            open_time=datetime.fromtimestamp(kline[0] / 1000),
-            open_price=Decimal(str(kline[1])),
-            high_price=Decimal(str(kline[2])),
-            low_price=Decimal(str(kline[3])),
-            close_price=Decimal(str(kline[4])),
-            volume=Decimal(str(kline[5])),
-            close_time=datetime.fromtimestamp(kline[6] / 1000),
-            quote_volume=Decimal(str(kline[7])),
-            trades_count=int(kline[8]),
-            taker_buy_volume=Decimal(str(kline[9])),
-            taker_buy_quote_volume=Decimal(str(kline[10])),
-        )
+        return cls(symbol=symbol, open_time=kline[KlineIndex.OPEN_TIME], raw_data=kline)

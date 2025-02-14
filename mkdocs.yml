@@ -1,0 +1,124 @@
+site_name: CryptoService
+site_description: 加密货币交易服务库
+site_author: Minnn
+repo_url: https://github.com/Mrzai/Xdata
+repo_name: cryptoservice
+
+theme:
+  name: material
+  language: zh
+  features:
+    - navigation.tabs
+    - navigation.sections
+    - navigation.top
+    - navigation.tracking
+    - navigation.indexes
+    - search.highlight
+    - search.share
+    - search.suggest
+    - content.code.copy
+    - content.code.annotate
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+  icon:
+    repo: fontawesome/brands/github
+
+markdown_extensions:
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.inlinehilite
+  - pymdownx.snippets
+  - pymdownx.superfences
+  - admonition
+  - pymdownx.details
+  - pymdownx.tabbed:
+      alternate_style: true
+  - attr_list
+  - md_in_html
+
+plugins:
+  - search
+  - mkdocstrings:
+      handlers:
+        python:
+          paths: [src]
+          options:
+            show_source: true
+            show_root_heading: true
+            show_category_heading: true
+            show_bases: true
+            docstring_style: google
+            docstring_section_style: spacy
+            merge_init_into_class: true
+            show_if_no_docstring: false
+            filters: ["!^_"]
+            heading_level: 2
+            members_order: source
+            show_signature_annotations: true
+  - gen-files:
+      scripts:
+        - docs/gen_ref_pages.py
+  - literate-nav:
+      nav_file: SUMMARY.md
+  - git-revision-date-localized:
+      enable_creation_date: true
+      type: datetime
+
+extra:
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/Mrzai
+  analytics:
+    provider: google
+    property: ${GOOGLE_ANALYTICS_KEY}
+
+nav:
+  - 首页: index.md
+  - 快速开始:
+    - 安装指南: getting-started/installation.md
+    - 基础用法: getting-started/basic-usage.md
+    - 配置说明: getting-started/configuration.md
+  - 功能指南:
+    - 市场数据:
+      - 实时行情: guides/market-data/realtime.md
+      - 历史数据: guides/market-data/historical.md
+      - 永续合约: guides/market-data/perpetual.md
+      - 数据存储: guides/market-data/storage.md
+    - 数据处理:
+      - KDTV格式: guides/data-processing/kdtv.md
+      - 数据库操作: guides/data-processing/database.md
+      - 数据可视化: guides/data-processing/visualization.md
+  - API文档:
+    - 服务:
+      - 市场数据服务: api/services/market_service.md
+      - WebSocket服务: api/services/websocket.md
+    - 数据:
+      - 数据库管理: api/data/storage_db.md
+      - 存储工具: api/data/storage_utils.md
+    - 模型:
+      - 市场数据模型: api/models/market_ticker.md
+      - 枚举类型: api/models/enums.md
+    - 工具:
+      - 数据转换: api/utils/converter.md
+      - 异常处理: api/utils/exceptions.md
+  - 示例:
+    - 基础示例: examples/basic.md
+    - 市场数据示例: examples/market_data.md
+    - 数据处理示例: examples/data_processing.md
+  - 参考:
+    - API参考: reference/
+    - 更新日志: changelog.md
+    - 贡献指南: contributing.md

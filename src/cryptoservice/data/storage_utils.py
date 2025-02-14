@@ -1,16 +1,12 @@
 """数据存储工具函数."""
 
 import logging
-from datetime import datetime
 from pathlib import Path
 from typing import List
 
 import numpy as np
 import pandas as pd
 from rich.console import Console
-from rich.live import Live
-from rich.panel import Panel
-from rich.progress import BarColumn, Progress, SpinnerColumn, TextColumn, TimeElapsedColumn
 from rich.table import Table
 
 from cryptoservice.config import settings
@@ -51,10 +47,9 @@ class StorageUtils:
 
     @staticmethod
     def store_kdtv_data(
-        data: List[PerpetualMarketTicker],
+        data: List[List[PerpetualMarketTicker]],
         date: str,
-        freq: str,
-        univ: str,
+        freq: Freq,
         data_path: Path | str,
     ) -> None:
         """存储 KDTV 格式数据.
@@ -62,121 +57,93 @@ class StorageUtils:
         Args:
             data: 市场数据列表
             date: 日期 (YYYYMMDD)
-            freq: 频率 (如 'H1')
-            univ: 数据集名称
-            data_path: 数据存储根目录
-        """
-        data_path = StorageUtils._resolve_path(data_path)
-        df = pd.DataFrame([d.__dict__ for d in data])
-        df["D"] = pd.to_datetime(df["open_time"]).dt.strftime("%Y%m%d")
-        df["T"] = pd.to_datetime(df["open_time"]).dt.strftime("%H%M%S")
-        df["K"] = df["symbol"]
-
-        df = df.set_index(["K", "D", "T"]).sort_index()
-        array = df[["last_price", "volume", "quote_volume", "high_price", "low_price"]].values
-
-        save_path = data_path / univ / freq / f"{date}.npy"
-        save_path.parent.mkdir(parents=True, exist_ok=True)
-        np.save(save_path, array)
-
-    @staticmethod
-    def store_feature_data(
-        data: List[List[PerpetualMarketTicker]],
-        interval: Freq,
-        data_path: Path | str = settings.DATA_STORAGE["PERPETUAL_DATA"],
-    ) -> None:
-        """存储特征数据，按照 KDTV (Key-Date-Time-Value) 格式组织.
-
-        Args:
-            data: 市场数据嵌套列表，每个内部列表包含一组市场数据
-            interval: 频率 (如 'h1')
+            freq: 频率
             data_path: 数据存储根目录
         """
         data_path = StorageUtils._resolve_path(data_path)
 
         try:
-            with Progress(
-                SpinnerColumn(),
-                TextColumn("[progress.description]{task.description}"),
-                BarColumn(),
-                TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
-                TimeElapsedColumn(),
-            ) as progress:
-                flattened_data = [item for sublist in data for item in sublist]
-                # 获取起始日期
-                start_date = pd.Timestamp(flattened_data[0].open_time, unit="ms").date()
-                end_date = pd.Timestamp(flattened_data[-1].open_time, unit="ms").date()
-                storage_task = progress.add_task(
-                    "[green]存储数据", total=len(pd.date_range(start_date, end_date, freq="D"))
+            # 展平数据并转换为 DataFrame
+            flattened_data = [item for sublist in data for item in sublist]
+            if not flattened_data:
+                return
+
+            # 转换为DataFrame
+            df = pd.DataFrame([d.__dict__ for d in flattened_data])
+            df["datetime"] = pd.to_datetime(df["open_time"])
+
+            # 构建 KDTV 格式
+            df["D"] = df["datetime"].dt.strftime("%Y%m%d")
+            df["T"] = df["datetime"].dt.strftime("%H%M%S")
+            df["K"] = df["symbol"]
+
+            # 设置多级索引
+            df = df.set_index(["K", "D", "T"]).sort_index()
+
+            # 获取当前日期的数据
+            date_data = df[df.index.get_level_values("D") == date]
+
+            # 定义需要保存的特征
+            features = [
+                "close_price",
+                "quote_volume",
+                "high_price",
+                "low_price",
+                "open_price",
+                "volume",
+                "trades_count",
+                "taker_buy_volume",
+                "taker_buy_quote_volume",
+            ]
+
+            # 为每个特征存储数据
+            for feature in features:
+                # 获取特征数据并重塑为矩阵
+                feature_data = date_data[feature]
+                pivot_data = pd.pivot_table(
+                    feature_data.reset_index(),
+                    values=feature,
+                    index="K",
+                    columns="T",
+                    aggfunc="first",
                 )
+                array = pivot_data.values
 
-                df = pd.DataFrame([d.__dict__ for d in flattened_data])
-                df["datetime"] = pd.to_datetime(df["open_time"], unit="ms", utc=True)
+                # 存储路径: data_path/freq/feature/YYYYMMDD.npy
+                save_path = data_path / freq / feature / f"{date}.npy"
+                save_path.parent.mkdir(parents=True, exist_ok=True)
+                np.save(save_path, array)
 
-                # 构建 KDTV 格式
-                df["D"] = df["datetime"].dt.strftime("%Y%m%d")  # Date
-                df["T"] = df["datetime"].dt.strftime("%H%M%S")  # Time
-                df["K"] = df["symbol"]  # Key (symbol)
+            # 计算并存储衍生特征
+            taker_sell_volume = date_data["volume"] - date_data["taker_buy_volume"]
+            taker_sell_quote_volume = (
+                date_data["quote_volume"] - date_data["taker_buy_quote_volume"]
+            )
 
-                # 设置多级索引
-                df = df.set_index(["K", "D", "T"]).sort_index()
-
-                # 定义需要保存的数据列（Value）
-                value_columns = [
-                    "close_price",
-                    "quote_volume",
-                    "high_price",
-                    "low_price",
-                    "open_price",
-                    "volume",
-                    "trades_count",
-                    "taker_buy_volume",
-                    "taker_buy_quote_volume",
-                ]
-                custom_value_columns = ["taker_sell_volume", "taker_sell_quote_volume"]
-
-                # 按日期分组并重塑数据为二维数组 (symbols × time)
-                for date in pd.date_range(start_date, end_date, freq="D"):
-                    date_str = date.strftime("%Y%m%d")
-                    date_data = df[df.index.get_level_values("D") == date_str]
-
-                    for column in value_columns:
-                        # 重塑数据为二维数组，行为symbols，列为时间点
-                        pivot_data = date_data[column].unstack(level="T")  # K × T matrix
-                        array = pivot_data.values
-
-                        save_path = data_path / interval / column / f"{date_str}.npy"
-                        save_path.parent.mkdir(parents=True, exist_ok=True)
-                        np.save(save_path, array)
-
-                    for column in custom_value_columns:
-                        if column == "taker_sell_volume":
-                            array = (
-                                date_data["volume"].values - date_data["taker_buy_volume"].values
-                            )
-                        elif column == "taker_sell_quote_volume":
-                            array = (
-                                date_data["quote_volume"].values
-                                - date_data["taker_buy_quote_volume"].values
-                            )
-                        save_path = data_path / interval / column / f"{date_str}.npy"
-                        save_path.parent.mkdir(parents=True, exist_ok=True)
-                        np.save(save_path, array)
-                    progress.advance(storage_task)
-
-                # 保存列名信息
-                columns_path = data_path / interval / "columns.csv"
-                symbols = df["symbol"].unique().tolist()
-                with open(columns_path, "w") as f:
-                    f.write(",".join(symbols))  # 将列表转换为逗号分隔的字符串
+            for feature, feature_data in [
+                ("taker_sell_volume", taker_sell_volume),
+                ("taker_sell_quote_volume", taker_sell_quote_volume),
+            ]:
+                pivot_data = pd.pivot_table(
+                    feature_data.reset_index(),
+                    values=feature,
+                    index="K",
+                    columns="T",
+                    aggfunc="first",
+                )
+                array = pivot_data.values
+                save_path = data_path / freq / feature / f"{date}.npy"
+                save_path.parent.mkdir(parents=True, exist_ok=True)
+                np.save(save_path, array)
 
         except Exception as e:
-            logger.exception("特征数据存储失败")
+            logger.exception("KDTV 数据存储失败")
             raise
 
     @staticmethod
     def store_universe(
-        symbols: List[str], data_path: Path | str = settings.DATA_STORAGE["PERPETUAL_DATA"]
+        symbols: List[str],
+        data_path: Path | str = settings.DATA_STORAGE["PERPETUAL_DATA"],
     ) -> None:
         """存储交易对列表.
 
@@ -185,9 +152,166 @@ class StorageUtils:
             data_path: 数据存储根目录
         """
         data_path = StorageUtils._resolve_path(data_path)
-        save_path = data_path / f"universe_token.pkl"
+        save_path = data_path / "universe_token.pkl"
         save_path.parent.mkdir(parents=True, exist_ok=True)
         pd.Series(symbols).to_pickle(save_path)
+
+    @staticmethod
+    def read_kdtv_data(
+        start_date: str,
+        end_date: str,
+        freq: Freq,
+        features: List[str] = [
+            "close_price",
+            "volume",
+            "quote_volume",
+            "high_price",
+            "low_price",
+            "open_price",
+            "trades_count",
+            "taker_buy_volume",
+            "taker_buy_quote_volume",
+        ],
+        data_path: Path | str = settings.DATA_STORAGE["PERPETUAL_DATA"],
+    ) -> pd.DataFrame:
+        """读取 KDTV 格式数据.
+
+        Args:
+            start_date: 开始日期 (YYYY-MM-DD)
+            end_date: 结束日期 (YYYY-MM-DD)
+            freq: 频率
+            features: 需要读取的特征列表
+            data_path: 数据存储根目录
+
+        Returns:
+            pd.DataFrame: 多级索引的 DataFrame (K, D, T)
+        """
+        try:
+            data_path = StorageUtils._resolve_path(data_path)
+
+            # 生成日期范围
+            dates = pd.date_range(start=start_date, end=end_date, freq="D")
+            dates = [d.strftime("%Y%m%d") for d in dates]
+
+            # 读取交易对列表
+            universe_path = data_path / freq / "universe_token.pkl"
+            if not universe_path.exists():
+                raise FileNotFoundError(f"Universe file not found: {universe_path}")
+            symbols = pd.read_pickle(universe_path)
+
+            all_data = []
+
+            # 按日期读取数据
+            for date in dates:
+                date_data = []
+
+                # 读取每个特征的数据
+                for feature in features:
+                    file_path = data_path / freq / feature / f"{date}.npy"
+                    if not file_path.exists():
+                        logger.warning(f"Data file not found: {file_path}")
+                        continue
+
+                    array = np.load(file_path, allow_pickle=True)
+                    if array.dtype == object:
+                        array = array.astype(np.float64)
+
+                    # 构建时间索引
+                    times = pd.date_range(
+                        start=pd.Timestamp(date), periods=array.shape[1], freq=freq
+                    )
+
+                    # 创建 DataFrame
+                    df = pd.DataFrame(
+                        array,
+                        index=symbols[: len(array)],
+                        columns=times,
+                    )
+                    df = df.stack()  # 将时间转为索引
+                    df.name = feature
+                    date_data.append(df)
+
+                if date_data:
+                    # 合并同一天的所有特征
+                    day_df = pd.concat(date_data, axis=1)
+                    day_df.index.names = ["symbol", "time"]
+                    all_data.append(day_df)
+
+            if not all_data:
+                raise ValueError("No valid data found")
+
+            # 合并所有日期的数据
+            result = pd.concat(all_data)
+            result.index.names = ["symbol", "time"]
+            return result
+
+        except Exception as e:
+            logger.exception(f"Failed to read KDTV data: {e}")
+            raise
+
+    @staticmethod
+    def read_and_visualize_kdtv(
+        date: str,
+        freq: Freq,
+        data_path: Path | str,
+        max_rows: int = 24,
+        max_symbols: int = 5,
+    ) -> None:
+        """读取并可视化 KDTV 格式数据.
+
+        Args:
+            date: 日期 (YYYY-MM-DD)
+            freq: 频率
+            data_path: 数据存储根目录
+            max_rows: 最大显示行数
+            max_symbols: 最大显示交易对数量
+        """
+        try:
+            # 修改调用方式，确保参数正确
+            df = StorageUtils.read_kdtv_data(
+                start_date=date,
+                end_date=date,  # 只读取单日数据
+                freq=freq,
+                data_path=data_path,
+            )
+
+            # 获取所有可用的交易对
+            available_symbols = df.index.get_level_values("symbol").unique()
+
+            # 限制显示的交易对数量
+            selected_symbols = available_symbols[:max_symbols]
+
+            if not selected_symbols.empty:
+                # 筛选数据
+                df = df.loc[selected_symbols].head(max_rows)
+
+                # 创建表格
+                table = Table(
+                    title=f"KDTV Data - {date} ({freq})",
+                    show_header=True,
+                    header_style="bold magenta",
+                )
+
+                # 添加列
+                table.add_column("Time", style="cyan")
+                table.add_column("Symbol", style="green")
+                for col in df.columns:
+                    table.add_column(col, justify="right")
+
+                # 添加数据行
+                for (symbol, time), row in df.iterrows():
+                    values = [
+                        f"{x:.4f}" if isinstance(x, (float, np.floating)) else str(x) for x in row
+                    ]
+                    table.add_row(str(time), symbol, *values)
+
+                StorageUtils.console.print(table)
+            else:
+                logger.warning("No data available to display")
+
+        except Exception as e:
+            logger.exception(f"Failed to visualize KDTV data: {e}")
+            raise
 
     @staticmethod
     def visualize_npy_data(

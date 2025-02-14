@@ -28,6 +28,15 @@ authors = [{ name = "Minnn", email = "minzzzai.s@gmail.com" }]
 test = ["pytest>=6.0.0", "pytest-cov>=2.10.0"]
 dev = ["pre-commit>=2.0.0", "python-dotenv>=0.15.0"]
 dev-all = ["cryptoservice[test,dev]"]
+docs = [
+    "mkdocs-material>=9.0",
+    "mkdocstrings[python]>=0.24",
+    "mkdocs-material-extensions>=1.3",
+    "mkdocs-git-revision-date-localized-plugin>=1.0",
+    "mkdocs-gen-files>=0.5.0",
+    "mkdocs-literate-nav>=0.6.0",
+    "mkdocs-section-index>=0.3.8",
+]
 
 [tool.semantic_release]
 version_variable = "src/cryptoservice/__init__.py:__version__"

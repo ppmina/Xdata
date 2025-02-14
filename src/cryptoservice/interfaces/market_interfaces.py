@@ -3,6 +3,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Protocol, overload
 
+from rich.progress import Progress
+
 from cryptoservice.config import settings
 from cryptoservice.models import (
     DailyMarketTicker,
@@ -91,19 +93,6 @@ class IMarketDataService(Protocol):
         pass
 
     @abstractmethod
-    def get_orderbook(self, symbol: str, limit: int = 100) -> Dict[str, Any]:
-        """获取订单簿数据.
-
-        Args:
-            symbol: 交易对名称
-            limit: 订单簿深度
-
-        Returns:
-            Dict[str, Any]: 订单簿数据，包含 bids 和 asks
-        """
-        pass
-
-    @abstractmethod
     def get_perpetual_data(
         self,
         symbols: List[str],
@@ -111,21 +100,21 @@ class IMarketDataService(Protocol):
         data_path: Path | str,
         end_time: str | None = None,
         interval: Freq = Freq.h1,
-        batch_size: int = 500,
         max_workers: int = 5,
-    ) -> List[List[PerpetualMarketTicker]]:
-        """获取永续合约历史数据.
+        max_retries: int = 3,
+        progress: Progress | None = None,
+    ) -> None:
+        """获取永续合约历史数据, 并存储到指定数据库.
 
         Args:
             symbols: 交易对列表
             start_time: 开始时间 (YYYYMMDD)
             end_time: 结束时间 (YYYYMMDD)
             interval: 数据频率 (1m, 1h, 4h, 1d等)
-            batch_size: 每次请求的数据量
-            data_path: 数据存储路径
+            data_path: 数据库路径
             max_workers: 并发线程数
+            max_retries: 最大重试次数
+            progress: 进度条
 
-        Returns:
-            List[List[PerpetualMarketTicker]]: 市场数据列表
         """
         pass

@@ -4,6 +4,7 @@ from .market_exceptions import (
     MarketDataFetchError,
     MarketDataParseError,
     MarketDataStoreError,
+    RateLimitError,
 )
 
 __all__ = [
@@ -12,4 +13,5 @@ __all__ = [
     "MarketDataParseError",
     "InvalidSymbolError",
     "MarketDataStoreError",
+    "RateLimitError",
 ]

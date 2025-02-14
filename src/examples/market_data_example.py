@@ -1,5 +1,6 @@
 import logging
 import os
+import os.path
 
 from dotenv import load_dotenv
 from rich.console import Console
@@ -7,7 +8,7 @@ from rich.logging import RichHandler
 from rich.traceback import install
 
 from cryptoservice import MarketDataService
-from cryptoservice.data import StorageUtils
+from cryptoservice.data import MarketDB, StorageUtils
 from cryptoservice.models import Freq, HistoricalKlinesType, SortBy
 
 # 设置 rich console 和 traceback
@@ -61,33 +62,63 @@ def demonstrate_market_data_features(market_service: MarketDataService) -> None:
     )
     logger.info(f"获取到 {len(historical_data)} 条 ETHUSDT 历史数据")
 
-    # 6. 获取订单簿数据
-    orderbook = market_service.get_orderbook("BTCUSDT", limit=10)
-    logger.info(f"BTCUSDT 订单簿深度: {len(orderbook['bids'])} 档")
+    # 6. 获取永续合约数据并保存
+    symbols = [
+        "BTCUSDT",
+        "ETHUSDT",
+        "BNBUSDT",
+        "SOLUSDT",
+        "ADAUSDT",
+    ]
+    start_time = "2024-01-01"
+    end_time = "2024-01-03"
+    interval = Freq.h1
+    data_path = "./data"
 
-    # 7. 获取永续合约数据
-    perpetual_data = market_service.get_perpetual_data(
-        symbols=[
-            "BTCUSDT",
-            "ETHUSDT",
-            "BNBUSDT",
-            "SOLUSDT",
-            "ADAUSDT",
-            "XRPUSDT",
-            "DOGEUSDT",
-            "DOTUSDT",
-            "AVAXUSDT",
-            "LTCUSDT",
-        ],
-        start_time="20240101",
-        end_time="20240103",
-        interval=Freq.h1,
-        data_path="data",
+    market_service.get_perpetual_data(
+        symbols=symbols,
+        start_time=start_time,
+        end_time=end_time,
+        interval=interval,
+        data_path=data_path,
     )
-    StorageUtils.visualize_npy_data("./data/1h/count/20240102.npy")
-    StorageUtils.visualize_npy_data("./data/1h/high_price/20240102.npy")
-    StorageUtils.visualize_npy_data("./data/1h/last_price/20240102.npy")
-    StorageUtils.visualize_npy_data("./data/1h/low_price/20240102.npy")
+
+    # 7. 从SQLite数据库读取数据
+    logger.info("\n=== 从SQLite数据库读取数据 ===")
+    db = MarketDB(f"{data_path}/market.db")
+
+    # 读取并显示数据
+    for symbol in symbols:
+        logger.info(f"\n查看 {symbol} 的数据:")
+        db.visualize_data(
+            symbol=symbol,
+            start_time=start_time,
+            end_time=end_time,
+            freq=interval,
+            max_rows=5,  # 只显示前5行
+        )
+
+    # 8. 从KDTV格式文件读取数据
+    logger.info("\n=== 从KDTV格式文件读取数据 ===")
+    kdtv_data = StorageUtils.read_kdtv_data(
+        start_date=start_time,
+        data_path=os.path.join(data_path, "market"),
+        end_date=end_time,
+        freq=interval,
+    )
+    logger.info(f"KDTV数据形状: {kdtv_data.shape}")
+    logger.info("\nKDTV数据示例:")
+    logger.info(kdtv_data.head())
+
+    # 9. 可视化KDTV数据
+    logger.info("\n=== 可视化KDTV数据 ===")
+    StorageUtils.read_and_visualize_kdtv(
+        date="2024-01-02",
+        freq=interval,
+        data_path=os.path.join(data_path, "market"),
+        max_rows=5,
+        max_symbols=3,
+    )
 
 
 def main() -> None:
