@@ -1,5 +1,7 @@
 [build-system]
-requires = ["hatchling"]
+requires = [
+    "hatchling",
+]
 build-backend = "hatchling.build"
 
 [project]
@@ -9,12 +11,12 @@ description = "A cryptocurrency trading info package"
 readme = "README.md"
 requires-python = ">=3.10,<3.13"
 dependencies = [
-    "python-binance>=1.0.22",
+    "python-binance>=1.0.27",
     "pyyaml>=6.0.2",
     "tomli>=2.2.1",
     "tomli-w>=1.0.0",
     "pandas>=2.2.3",
-    "pydantic-settings>=2.6.1",
+    "pydantic-settings>=2.7.1",
     "rich>=13.9.4",
 ]
 classifiers = [
@@ -22,12 +24,22 @@ classifiers = [
     "License :: OSI Approved :: MIT License",
     "Operating System :: OS Independent",
 ]
-authors = [{ name = "Minnn", email = "minzzzai.s@gmail.com" }]
+authors = [
+    { name = "Minnn", email = "minzzzai.s@gmail.com" },
+]
 
 [project.optional-dependencies]
-test = ["pytest>=6.0.0", "pytest-cov>=2.10.0"]
-dev = ["pre-commit>=2.0.0", "python-dotenv>=0.15.0"]
-dev-all = ["cryptoservice[test,dev]"]
+test = [
+    "pytest>=6.0.0",
+    "pytest-cov>=2.10.0",
+]
+dev = [
+    "pre-commit>=2.0.0",
+    "python-dotenv>=0.15.0",
+]
+dev-all = [
+    "cryptoservice[test,dev]",
+]
 docs = [
     "mkdocs-material>=9.0",
     "mkdocstrings[python]>=0.24",
@@ -40,7 +52,9 @@ docs = [
 
 [tool.semantic_release]
 version_variable = "src/cryptoservice/__init__.py:__version__"
-version_toml = ["pyproject.toml:project.version"]
+version_toml = [
+    "pyproject.toml:project.version",
+]
 branch = "main"
 upload_to_pypi = false
 commit_message = "chore(release): v{version}"
@@ -50,7 +64,9 @@ changelog_components = "semantic_release.changelog.changelog_headers,semantic_re
 
 [tool.black]
 line-length = 100
-target-version = ["py312"]
+target-version = [
+    "py312",
+]
 include = "\\.pyi?$"
 
 [tool.isort]
@@ -67,9 +83,15 @@ check_untyped_defs = true
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]
-testpaths = ["tests"]
-python_files = ["test_*.py"]
+testpaths = [
+    "tests",
+]
+python_files = [
+    "test_*.py",
+]
 addopts = "-v --cov=src/cryptoservice --cov-report=term-missing"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/cryptoservice"]
+packages = [
+    "src/cryptoservice",
+]
