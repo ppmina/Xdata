@@ -34,7 +34,8 @@ jobs:
             mkdocstrings[python] \
             mkdocs-material-extensions \
             mkdocs-git-revision-date-localized-plugin \
-            mkdocs-minify-plugin
+            mkdocs-minify-plugin \
+            mkdocs-gen-files
 
       - name: Deploy documentation
         run: mkdocs gh-deploy --force
