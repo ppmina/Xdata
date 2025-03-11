@@ -1,15 +1,12 @@
 import logging
-import queue
-import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from contextlib import contextmanager, nullcontext
+from contextlib import nullcontext
 from datetime import datetime
 from pathlib import Path
 from threading import Lock
-from typing import Any, Dict, Generator, List, Optional, overload
+from typing import Any, Dict, List, Optional, overload
 
-from rich.console import Console
 from rich.logging import RichHandler
 from rich.progress import BarColumn, Progress, SpinnerColumn, TextColumn, TimeElapsedColumn
 
@@ -38,35 +35,6 @@ logger = logging.getLogger(__name__)
 cache_lock = Lock()
 
 
-class DatabaseConnectionPool:
-    """数据库连接池实现"""
-
-    def __init__(self, db_path: Path, max_connections: int = 5):
-        self.db_path = db_path
-        self.max_connections = max_connections
-        self.connections: queue.Queue[MarketDB] = queue.Queue(maxsize=max_connections)
-        self._lock = threading.Lock()
-
-        # 预创建连接
-        for _ in range(max_connections):
-            self.connections.put(MarketDB(db_path))
-
-    @contextmanager
-    def get_connection(self) -> Generator[MarketDB, None, None]:
-        """获取数据库连接"""
-        connection = self.connections.get()
-        try:
-            yield connection
-        finally:
-            self.connections.put(connection)
-
-    def close_all(self) -> None:
-        """关闭所有连接"""
-        while not self.connections.empty():
-            connection = self.connections.get()
-            connection.close()
-
-
 class MarketDataService(IMarketDataService):
     """市场数据服务实现类"""
 
@@ -79,7 +47,7 @@ class MarketDataService(IMarketDataService):
         """
         self.client = BinanceClientFactory.create_client(api_key, api_secret)
         self.converter = DataConverter()
-        self.db_pool: Optional[DatabaseConnectionPool] = None
+        self.db: Optional[MarketDB] = None
 
     @overload
     def get_symbol_ticker(self, symbol: str) -> SymbolTicker: ...
@@ -247,7 +215,7 @@ class MarketDataService(IMarketDataService):
         start_time: str,
         data_path: Path | str,
         end_time: str | None = None,
-        interval: Freq = Freq.h1,
+        interval: Freq = Freq.m1,
         max_workers: int = 1,
         max_retries: int = 3,
         progress: Progress | None = None,
@@ -273,8 +241,8 @@ class MarketDataService(IMarketDataService):
             db_path = data_path / "market.db"
 
             # 初始化数据库连接池
-            if self.db_pool is None:
-                self.db_pool = DatabaseConnectionPool(db_path, max_workers)
+            if self.db is None:
+                self.db = MarketDB(db_path, use_pool=True, max_connections=max_workers)
 
             # 进度显示器设置
             should_close_progress = False
@@ -303,9 +271,8 @@ class MarketDataService(IMarketDataService):
 
                         if data:
                             # 确保 db_pool 不为 None
-                            assert self.db_pool is not None, "Database pool is not initialized"
-                            with self.db_pool.get_connection() as db:
-                                db.store_data([data], interval)
+                            assert self.db is not None, "Database pool is not initialized"
+                            self.db.store_data(data, interval)  # 直接传递 data，不需要包装成列表
                             return
                         else:
                             logger.warning(f"No data available for {symbol}")
@@ -339,16 +306,32 @@ class MarketDataService(IMarketDataService):
                         except Exception as e:
                             logger.error(f"处理失败: {e}")
 
-                # 写入汇总报告
-                log_path = data_path / "fetch_summary.txt"
-                with open(log_path, "w") as f:
-                    f.write(f"=== Final Fetch Summary ({datetime.now()}) ===\n")
-                    f.write(f"Total Symbols: {len(symbols)}\n")
-                    f.write(f"Date Range: {start_time} to {end_time}\n")
-
         except Exception as e:
             logger.error(f"Failed to fetch perpetual data: {e}")
             raise MarketDataFetchError(f"Failed to fetch perpetual data: {e}")
         finally:
-            if self.db_pool:
-                self.db_pool.close_all()
+            if self.db:
+                self.db.close()
+
+
+# if __name__ == "__main__":
+#     import os
+#     from dotenv import load_dotenv
+
+#     load_dotenv()
+
+#     api_key = os.getenv("BINANCE_API_KEY")
+#     api_secret = os.getenv("BINANCE_API_SECRET")
+#     if not api_key or not api_secret:
+#         raise ValueError(
+#             "BINANCE_API_KEY and BINANCE_API_SECRET must be set in environment variables"
+#         )
+
+#     service = MarketDataService(api_key, api_secret)
+#     service.get_perpetual_data(
+#         symbols=["BTCUSDT"],
+#         start_time="2024-01-08",
+#         end_time="2024-01-09",
+#         interval=Freq.m1,
+#         data_path="./data",
+#     )

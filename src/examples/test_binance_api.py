@@ -24,7 +24,7 @@ data = client.get_historical_klines(
     "1m",
     str(start_time),
     str(end_time),
-    klines_type=HistoricalKlinesType.FUTURES,
+    klines_type=HistoricalKlinesType.SPOT,
 )
 
 print(f"Retrieved {len(data)} klines")
