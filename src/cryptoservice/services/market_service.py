@@ -77,6 +77,62 @@ class MarketDataService(IMarketDataService):
             logger.error(f"[red]Error fetching ticker for {symbol}: {e}[/red]")
             raise MarketDataFetchError(f"Failed to fetch ticker: {e}")
 
+    def get_perpetual_symbols(self, only_trading: bool = True) -> List[str]:
+        """获取当前市场上所有永续合约交易对
+
+        Args:
+            only_trading: 是否只返回当前可交易的交易对
+
+        Returns:
+            List[str]: 永续合约交易对列表
+        """
+        try:
+            logger.info(f"获取当前永续合约交易对列表")
+            futures_info = self.client.futures_exchange_info()
+            perpetual_symbols = [
+                symbol["symbol"]
+                for symbol in futures_info["symbols"]
+                if symbol["contractType"] == "PERPETUAL"
+                and (not only_trading or symbol["status"] == "TRADING")
+            ]
+
+            return perpetual_symbols
+
+        except Exception as e:
+            logger.error(f"[red]获取永续合约交易对失败: {e}[/red]")
+            raise MarketDataFetchError(f"获取永续合约交易对失败: {e}")
+
+    def check_symbol_exists_on_date(self, symbol: str, date: str) -> bool:
+        """检查指定日期是否存在该交易对
+
+        Args:
+            symbol: 交易对名称
+            date: 日期，格式为 'YYYY-MM-DD'
+
+        Returns:
+            bool: 是否存在该交易对
+        """
+        try:
+            # 将日期转换为时间戳范围
+            start_time = int(
+                datetime.strptime(f"{date} 00:00:00", "%Y-%m-%d %H:%M:%S").timestamp() * 1000
+            )
+            end_time = int(
+                datetime.strptime(f"{date} 23:59:59", "%Y-%m-%d %H:%M:%S").timestamp() * 1000
+            )
+
+            # 尝试获取该时间范围内的K线数据
+            klines = self.client.futures_klines(
+                symbol=symbol, interval="1d", startTime=start_time, endTime=end_time, limit=1
+            )
+
+            # 如果有数据，说明该日期存在该交易对
+            return bool(klines and len(klines) > 0)
+
+        except Exception as e:
+            logger.debug(f"检查交易对 {symbol} 在 {date} 是否存在时出错: {e}")
+            return False
+
     def get_top_coins(
         self,
         limit: int = settings.DEFAULT_LIMIT,
@@ -177,11 +233,27 @@ class MarketDataService(IMarketDataService):
         start_ts: str,
         end_ts: str,
         interval: Freq,
-        klines_type: HistoricalKlinesType = HistoricalKlinesType.SPOT,
+        klines_type: HistoricalKlinesType = HistoricalKlinesType.FUTURES,
     ) -> List[PerpetualMarketTicker]:
-        """获取单个交易对的数据."""
+        """获取单个交易对的数据.
+
+        Args:
+            symbol: 交易对名称
+            start_ts: 开始时间 (YYYY-MM-DD)
+            end_ts: 结束时间 (YYYY-MM-DD)
+            interval: 时间间隔
+            klines_type: 行情类型
+        """
         try:
-            time.sleep(0.1)  # 简单的请求间隔
+
+            # 检查开始日期是否存在该交易对，但仅记录警告，不抛出异常
+            if klines_type == HistoricalKlinesType.FUTURES:
+                start_date = start_ts.split(" ")[0] if " " in start_ts else start_ts
+                if not self.check_symbol_exists_on_date(symbol, start_date):
+                    logger.warning(
+                        f"交易对 {symbol} 在开始日期 {start_date} 不存在或没有交易数据，尝试获取可用数据"
+                    )
+                    # 不再抛出异常，而是继续执行，让API返回有效的数据范围
 
             klines = self.client.get_historical_klines_generator(
                 symbol=symbol,
@@ -191,23 +263,28 @@ class MarketDataService(IMarketDataService):
                 klines_type=HistoricalKlinesType.to_binance(klines_type),
             )
 
-            if not klines:
-                logger.warning(f"No data available for {symbol} in specified time range")
-                raise MarketDataFetchError(
-                    f"No data available for {symbol} between {start_ts} and {end_ts}"
-                )
+            # 处理空数据情况
+            data = list(klines)
+            if not data:
+                logger.warning(f"未找到交易对 {symbol} 在 {start_ts} 到 {end_ts} 之间的数据")
+                return []  # 返回空列表而不是抛出异常
 
-            # 直接传递原始数据，不做类型转换
+            # 处理有数据的情况
             return [
                 PerpetualMarketTicker(
                     symbol=symbol, open_time=kline[0], raw_data=kline  # 保存原始数据
                 )
-                for kline in klines
+                for kline in data
             ]
 
         except Exception as e:
-            logger.error(f"Failed to fetch data for {symbol}: {e}")
-            raise MarketDataFetchError(f"Failed to fetch data for {symbol}: {e}")
+            logger.error(f"获取交易对 {symbol} 数据失败: {e}")
+            if isinstance(e, InvalidSymbolError):
+                # 对于无效交易对的情况，记录后返回空列表
+                return []
+            else:
+                # 对于其他异常，仍然抛出以便上层处理
+                raise MarketDataFetchError(f"获取交易对 {symbol} 数据失败: {e}")
 
     def get_perpetual_data(
         self,
@@ -278,6 +355,10 @@ class MarketDataService(IMarketDataService):
                             logger.warning(f"No data available for {symbol}")
                             return
 
+                    except InvalidSymbolError as e:
+                        # 对于交易对不存在的情况，记录信息后直接返回，不需要重试
+                        logger.warning(f"跳过交易对 {symbol}: {e}")
+                        return
                     except RateLimitError:
                         wait_time = min(2**retry_count + 1, 30)
                         time.sleep(wait_time)
@@ -314,24 +395,6 @@ class MarketDataService(IMarketDataService):
                 self.db.close()
 
 
-# if __name__ == "__main__":
-#     import os
-#     from dotenv import load_dotenv
-
-#     load_dotenv()
-
-#     api_key = os.getenv("BINANCE_API_KEY")
-#     api_secret = os.getenv("BINANCE_API_SECRET")
-#     if not api_key or not api_secret:
-#         raise ValueError(
-#             "BINANCE_API_KEY and BINANCE_API_SECRET must be set in environment variables"
-#         )
-
-#     service = MarketDataService(api_key, api_secret)
-#     service.get_perpetual_data(
-#         symbols=["BTCUSDT"],
-#         start_time="2024-01-08",
-#         end_time="2024-01-09",
-#         interval=Freq.m1,
-#         data_path="./data",
-#     )
+if __name__ == "__main__":
+    start_time = "2024-01-08"
+    print(start_time.split(" ")[0])
