@@ -6,7 +6,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "cryptoservice"
-version = "0.4.1"
+version = "0.5.0"
 description = "A cryptocurrency trading info package"
 readme = "README.md"
 requires-python = ">=3.10,<3.13"
