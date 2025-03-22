@@ -34,6 +34,9 @@ dist/
 # Ignore logs directory
 /logs/
 
+# Ignore .venv directory
+.venv/
+
 # 如果有这样的规则，需要添加例外
 *.txt
 !py.typed
