@@ -40,3 +40,9 @@ dist/
 # 如果有这样的规则，需要添加例外
 *.txt
 !py.typed
+
+# Ignore .ruff_cache directory
+.ruff_cache/
+
+# Ignore .pytest_cache directory
+.pytest_cache/

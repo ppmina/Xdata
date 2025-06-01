@@ -3,10 +3,11 @@ import logging
 import queue
 import sqlite3
 import threading
+from collections.abc import Callable, Generator
 from contextlib import contextmanager
 from pathlib import Path
 from types import TracebackType
-from typing import Any, Callable, Generator, List, Optional, Tuple, Type, TypeGuard
+from typing import Any, TypeGuard
 
 import numpy as np
 import pandas as pd
@@ -128,7 +129,9 @@ class MarketDB:
                 conn.close()
 
     def store_data(
-        self, data: List[PerpetualMarketTicker] | List[List[PerpetualMarketTicker]], freq: Freq
+        self,
+        data: list[PerpetualMarketTicker] | list[list[PerpetualMarketTicker]],
+        freq: Freq,
     ) -> None:
         """存储市场数据.
 
@@ -143,7 +146,7 @@ class MarketDB:
                 return
 
             # 使用类型守卫模式判断数据结构
-            def is_flat_list(data_list: Any) -> TypeGuard[List[PerpetualMarketTicker]]:
+            def is_flat_list(data_list: Any) -> TypeGuard[list[PerpetualMarketTicker]]:
                 """判断是否为单层PerpetualMarketTicker列表"""
                 return (
                     isinstance(data_list, list)
@@ -151,7 +154,9 @@ class MarketDB:
                     and all(isinstance(item, PerpetualMarketTicker) for item in data_list)
                 )
 
-            def is_nested_list(data_list: Any) -> TypeGuard[List[List[PerpetualMarketTicker]]]:
+            def is_nested_list(
+                data_list: Any,
+            ) -> TypeGuard[list[list[PerpetualMarketTicker]]]:
                 """判断是否为嵌套的PerpetualMarketTicker列表"""
                 return (
                     isinstance(data_list, list)
@@ -231,7 +236,7 @@ class MarketDB:
                     f"with frequency {freq.value}"
                 )
 
-        except Exception as e:
+        except Exception:
             logger.exception("Failed to store market data")
             raise
 
@@ -240,8 +245,8 @@ class MarketDB:
         start_time: str,
         end_time: str,
         freq: Freq,
-        symbols: List[str],
-        features: Optional[List[str]] = None,
+        symbols: list[str],
+        features: list[str] | None = None,
     ) -> pd.DataFrame:
         """读取市场数据.
 
@@ -282,7 +287,7 @@ class MarketDB:
                 FROM market_data
                 WHERE timestamp BETWEEN ? AND ?
                 AND freq = ?
-                AND symbol IN ({','.join('?' * len(symbols))})
+                AND symbol IN ({",".join("?" * len(symbols))})
                 ORDER BY symbol, timestamp
             """
             params = [start_ts, end_ts, freq.value] + symbols
@@ -298,7 +303,7 @@ class MarketDB:
             df = df.set_index(["symbol", "timestamp"])
             return df
 
-        except Exception as e:
+        except Exception:
             logger.exception("Failed to read market data")
             raise
 
@@ -306,7 +311,7 @@ class MarketDB:
         self,
         symbol: str,
         freq: Freq,
-    ) -> List[str]:
+    ) -> list[str]:
         """获取指定交易对的可用日期列表.
 
         Args:
@@ -327,7 +332,7 @@ class MarketDB:
                 cursor = conn.execute(query, (symbol, freq.value))
                 return [row[0] for row in cursor.fetchall()]
 
-        except Exception as e:
+        except Exception:
             logger.exception("Failed to get available dates")
             raise
 
@@ -337,8 +342,8 @@ class MarketDB:
         start_date: str,
         end_date: str,
         freq: Freq,
-        symbols: List[str],
-        target_freq: Optional[Freq] = None,
+        symbols: list[str],
+        target_freq: Freq | None = None,
         chunk_days: int = 30,  # 每次处理的天数
     ) -> None:
         """将数据库数据导出为npy文件格式，支持降采样.
@@ -408,13 +413,12 @@ class MarketDB:
                     # 将timestamps转换为datetime类型
                     datetime_timestamps = pd.to_datetime(timestamps)
                     # 现在可以安全地访问date属性
-                    dates = [ts.date() for ts in datetime_timestamps]
+                    _dates = [ts.date() for ts in datetime_timestamps]
 
                     # 或者使用更简洁的方式
-                    from datetime import datetime
 
                     # 显式转换为datetime对象列表
-                    datetime_list = [pd.Timestamp(ts).to_pydatetime() for ts in timestamps]
+                    _datetime_list = [pd.Timestamp(ts).to_pydatetime() for ts in timestamps]
                     # 然后访问date属性
                     day_data = df[
                         df.index.get_level_values("timestamp").isin(
@@ -540,7 +544,7 @@ class MarketDB:
                 table.add_column(col.replace("_", " ").title(), justify="right")
 
             # 添加行
-            def is_tuple_index(idx: Any) -> TypeGuard[Tuple[Any, pd.Timestamp]]:
+            def is_tuple_index(idx: Any) -> TypeGuard[tuple[Any, pd.Timestamp]]:
                 """判断索引是否为包含时间戳的元组"""
                 return isinstance(idx, tuple) and len(idx) > 1 and isinstance(idx[1], pd.Timestamp)
 
@@ -600,9 +604,9 @@ class MarketDB:
 
     def __exit__(
         self,
-        exc_type: Optional[Type[BaseException]],
-        exc_val: Optional[BaseException],
-        exc_tb: Optional[TracebackType],
+        exc_type: type[BaseException] | None,
+        exc_val: BaseException | None,
+        exc_tb: TracebackType | None,
     ) -> None:
         """退出上下文管理器时关闭数据库连接"""
         self.close()
