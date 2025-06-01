@@ -1,7 +1,5 @@
 [build-system]
-requires = [
-    "hatchling",
-]
+requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
@@ -24,22 +22,12 @@ classifiers = [
     "License :: OSI Approved :: MIT License",
     "Operating System :: OS Independent",
 ]
-authors = [
-    { name = "Minnn", email = "minzzzai.s@gmail.com" },
-]
+authors = [{ name = "Minnn", email = "minzzzai.s@gmail.com" }]
 
 [project.optional-dependencies]
-test = [
-    "pytest>=6.0.0",
-    "pytest-cov>=2.10.0",
-]
-dev = [
-    "pre-commit>=2.0.0",
-    "python-dotenv>=0.15.0",
-]
-dev-all = [
-    "cryptoservice[test,dev]",
-]
+test = ["pytest>=6.0.0", "pytest-cov>=2.10.0"]
+dev = ["pre-commit>=2.0.0", "python-dotenv>=0.15.0", "ruff>=0.4.0"]
+dev-all = ["cryptoservice[test,dev]"]
 docs = [
     "mkdocs-material>=9.0",
     "mkdocstrings[python]>=0.24",
@@ -52,9 +40,7 @@ docs = [
 
 [tool.semantic_release]
 version_variable = "src/cryptoservice/__init__.py:__version__"
-version_toml = [
-    "pyproject.toml:project.version",
-]
+version_toml = ["pyproject.toml:project.version"]
 branch = "main"
 upload_to_pypi = false
 commit_message = "chore(release): v{version}"
@@ -62,36 +48,69 @@ tag_format = "v{version}"
 major_on_zero = false
 changelog_components = "semantic_release.changelog.changelog_headers,semantic_release.changelog.compare_url"
 
-[tool.black]
+[tool.ruff]
+# 基本配置
 line-length = 100
-target-version = [
-    "py312",
-]
-include = "\\.pyi?$"
+target-version = "py312"
+# 启用的规则：
+# E/F - PyFlakes 和 Pycodestyle 错误
+# B - flake8-bugbear 错误检测
+# I - isort 导入排序
+# N - pep8-naming 命名规范
+# D - pydocstyle 文档字符串检查
+# UP - pyupgrade 现代 Python 特性
+# S - flake8-bandit 安全问题
+# C - flake8-comprehensions 列表推导式优化
+# SIM - flake8-simplify 代码简化
+# lint.select = ["E", "F", "B", "I", "N", "D", "UP", "S", "C", "SIM"]
+lint.select = ["E", "F", "B"]
+# 忽略某些不需要的规则
+lint.ignore = ["D203", "D213"]
 
-[tool.isort]
-profile = "black"
-multi_line_output = 3
-line_length = 100
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+line-ending = "auto"
+skip-magic-trailing-comma = false
+
+[tool.ruff.lint.isort]
+known-first-party = ["cryptoservice"]
+section-order = [
+    "future",
+    "standard-library",
+    "third-party",
+    "first-party",
+    "local-folder",
+]
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+
+[tool.ruff.lint.per-file-ignores]
+# 在测试文件中忽略一些规则
+"tests/*" = ["E501", "S101", "D100", "D101", "D102", "D103"]
+# 在配置文件中忽略一些规则
+"src/cryptoservice/config/*" = ["S105", "S106", "S107"]
+# 在类型定义文件中忽略一些规则
+"src/cryptoservice/types/*" = ["D101", "D102", "D106", "D107"]
 
 [tool.mypy]
 python_version = "3.12"
-warn_return_any = true
-warn_unused_configs = true
-disallow_untyped_defs = true
-check_untyped_defs = true
-ignore_missing_imports = true
 
 [tool.pytest.ini_options]
-testpaths = [
-    "tests",
-]
-python_files = [
-    "test_*.py",
-]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
 addopts = "-v --cov=src/cryptoservice --cov-report=term-missing"
 
 [tool.hatch.build.targets.wheel]
-packages = [
-    "src/cryptoservice",
+packages = ["src/cryptoservice"]
+
+[dependency-groups]
+dev = [
+    "mypy>=1.16.0",
+    "pandas-stubs>=2.2.3.250527",
+]
+test = [
+    "pytest>=8.3.5",
+    "pytest-cov>=6.1.1",
 ]

@@ -1,7 +1,6 @@
 import logging
 import time
 from datetime import datetime, timedelta
-from typing import List
 
 from rich.logging import RichHandler
 
@@ -9,15 +8,13 @@ from cryptoservice.models.enums import Freq
 
 
 class Tool:
-
     @staticmethod
     def get_timestamp() -> int:
         return int(time.time())
 
     @staticmethod
-    def gen_sample_time(freq: Freq) -> List[str]:
-        """
-        for CN: start time 9:15 end time 15:00
+    def gen_sample_time(freq: Freq) -> list[str]:
+        """For CN: start time 9:15 end time 15:00
         for CRYPTO: start time 9:15 end time 15:00
         """
         mapping = {
@@ -39,7 +36,7 @@ class Tool:
         return sample_time
 
     @staticmethod
-    def get_sample_time(freq: Freq = Freq.M1) -> List[str]:
+    def get_sample_time(freq: Freq = Freq.M1) -> list[str]:
         """Get sample time"""
         match freq:
             case Freq.s1:

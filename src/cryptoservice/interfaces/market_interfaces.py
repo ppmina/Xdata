@@ -1,18 +1,17 @@
 from abc import abstractmethod
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Protocol, overload
+from typing import Any, Protocol
 
 from rich.progress import Progress
 
-from cryptoservice.config import settings
 from cryptoservice.models import (
     DailyMarketTicker,
     Freq,
     KlineMarketTicker,
-    PerpetualMarketTicker,
     SortBy,
     SymbolTicker,
+    UniverseDefinition,
 )
 
 
@@ -23,8 +22,8 @@ class IMarketDataService(Protocol):
         self,
         limit: int = 100,
         sort_by: SortBy = SortBy.QUOTE_VOLUME,
-        quote_asset: Optional[str] = None,
-    ) -> List[DailyMarketTicker]: ...
+        quote_asset: str | None = None,
+    ) -> list[DailyMarketTicker]: ...
 
     """获取排名靠前的币种数据.
 
@@ -37,7 +36,7 @@ class IMarketDataService(Protocol):
         List[DailyMarketTicker]: 排序后的市场数据列表
     """
 
-    def get_market_summary(self, interval: Freq = Freq.d1) -> Dict[str, Any]:
+    def get_market_summary(self, interval: Freq = Freq.d1) -> dict[str, Any]:
         """获取市场概况.
 
         Args:
@@ -47,16 +46,10 @@ class IMarketDataService(Protocol):
         Returns:
             Dict[str, Any]: 市场概况数据
         """
-        pass
-
-    @overload
-    def get_symbol_ticker(self, symbol: str) -> SymbolTicker: ...
-
-    @overload
-    def get_symbol_ticker(self) -> List[SymbolTicker]: ...
+        ...
 
     @abstractmethod
-    def get_symbol_ticker(self, symbol: str | None = None) -> SymbolTicker | List[SymbolTicker]:
+    def get_symbol_ticker(self, symbol: str | None = None) -> SymbolTicker | list[SymbolTicker]:
         """获取单个或多个交易币的行情数据.
 
         Args:
@@ -78,7 +71,7 @@ class IMarketDataService(Protocol):
         start_time: str | datetime,
         end_time: str | datetime | None = None,
         interval: Freq = Freq.d1,
-    ) -> List[KlineMarketTicker]:
+    ) -> list[KlineMarketTicker]:
         """获取历史行情数据.
 
         Args:
@@ -95,7 +88,7 @@ class IMarketDataService(Protocol):
     @abstractmethod
     def get_perpetual_data(
         self,
-        symbols: List[str],
+        symbols: list[str],
         start_time: str,
         data_path: Path | str,
         end_time: str | None = None,
@@ -116,5 +109,84 @@ class IMarketDataService(Protocol):
             max_retries: 最大重试次数
             progress: 进度条
 
+        """
+        pass
+
+    @abstractmethod
+    def download_universe_data(
+        self,
+        universe_file: Path | str,
+        data_path: Path | str,
+        interval: Freq = Freq.h1,
+        max_workers: int = 4,
+        max_retries: int = 3,
+        include_buffer_days: int = 7,
+        extend_to_present: bool = True,
+    ) -> None:
+        """根据universe定义文件下载相应的历史数据到数据库.
+
+        Args:
+            universe_file: universe定义文件路径
+            data_path: 数据库存储路径
+            interval: 数据频率 (1m, 1h, 4h, 1d等)
+            max_workers: 并发线程数
+            max_retries: 最大重试次数
+            include_buffer_days: 在数据期间前后增加的缓冲天数
+            extend_to_present: 是否将数据扩展到当前日期
+
+        """
+        pass
+
+    @abstractmethod
+    def download_universe_data_by_periods(
+        self,
+        universe_file: Path | str,
+        data_path: Path | str,
+        interval: Freq = Freq.h1,
+        max_workers: int = 4,
+        max_retries: int = 3,
+        include_buffer_days: int = 7,
+    ) -> None:
+        """按周期分别下载universe数据（更精确的下载方式）.
+
+        Args:
+            universe_file: universe定义文件路径
+            data_path: 数据库存储路径
+            interval: 数据频率
+            max_workers: 并发线程数
+            max_retries: 最大重试次数
+            include_buffer_days: 缓冲天数
+
+        """
+        pass
+
+    @abstractmethod
+    def define_universe(
+        self,
+        start_date: str,
+        end_date: str,
+        t1_months: int,
+        t2_months: int,
+        t3_months: int,
+        top_k: int,
+        data_path: Path | str,
+        output_path: Path | str,
+        description: str | None = None,
+    ) -> UniverseDefinition:
+        """定义universe并保存到文件.
+
+        Args:
+            start_date: 开始日期 (YYYY-MM-DD 或 YYYYMMDD)
+            end_date: 结束日期 (YYYY-MM-DD 或 YYYYMMDD)
+            t1_months: T1时间窗口（月），用于计算mean daily amount
+            t2_months: T2滚动频率（月），universe重新选择的频率
+            t3_months: T3合约最小创建时间（月），用于筛除新合约
+            top_k: 选取的top合约数量
+            data_path: 历史数据路径（数据库路径）
+            output_path: universe输出文件路径
+            description: 描述信息
+
+        Returns:
+            UniverseDefinition: 定义的universe
         """
         pass

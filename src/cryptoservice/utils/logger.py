@@ -1,4 +1,4 @@
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from rich.console import Console
 from rich.panel import Panel
@@ -10,7 +10,7 @@ console = Console()
 
 def print_info(
     message: str,
-    title: Optional[str] = None,
+    title: str | None = None,
     style: str = "green",
 ) -> None:
     """打印信息面板.
@@ -25,8 +25,8 @@ def print_info(
 
 
 def print_dict(
-    data: Dict[str, Any],
-    title: Optional[str] = None,
+    data: dict[str, Any],
+    title: str | None = None,
 ) -> None:
     """打印字典数据为表格.
 
@@ -47,9 +47,9 @@ def print_dict(
 
 
 def print_table(
-    data: List[Any],
-    title: Optional[str] = None,
-    headers: Optional[List[str]] = None,
+    data: list[Any],
+    title: str | None = None,
+    headers: list[str] | None = None,
 ) -> None:
     """打印表格数据.
 
@@ -96,7 +96,7 @@ def print_table(
                 raise ValueError(f"Inconsistent row lengths: {row_lengths}")
 
             row_length = row_lengths.pop()
-            headers = headers or [f"Column {i+1}" for i in range(row_length)]
+            headers = headers or [f"Column {i + 1}" for i in range(row_length)]
 
             # 验证headers长度是否匹配数据
             if len(headers) != row_length:

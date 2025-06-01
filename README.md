@@ -10,6 +10,10 @@
 - 支持自定义数据格式和存储方式
 - 持续集成和自动发布
 
+## 文档
+
+详细的使用说明和 API 文档请访问我们的文档站点：[Crypto Service 文档](https://mrzai.github.io/cryptoservice/)
+
 ## 安装
 
 ```bash
@@ -32,7 +36,6 @@ BINANCE_API_SECRET=your_api_secret
 from dotenv import load_dotenv
 import os
 from cryptoservice import MarketDataService
-from cryptoservice.models import SortBy, Freq, HistoricalKlinesType
 
 # 加载环境变量
 load_dotenv()
@@ -42,66 +45,12 @@ api_secret = os.getenv("BINANCE_API_SECRET")
 # 创建服务实例
 market_service = MarketDataService(api_key, api_secret)
 
-演示各种市场数据功能
-
-    # 1. 获取单个交易对的实时行情
-    btc_ticker = market_service.get_symbol_ticker("BTCUSDT")
-    logger.info(f"BTCUSDT 实时行情: {btc_ticker}")
-
-    # 2. 获取所有交易对的实时行情
-    all_tickers = market_service.get_symbol_ticker()
-    logger.info(f"获取到 {len(all_tickers)} 个交易对的行情")
-
-    # 3. 获取成交量排名前10的USDT交易对
-    top_coins = market_service.get_top_coins(
-        limit=10, sort_by=SortBy.QUOTE_VOLUME, quote_asset="USDT"
-    )
-    logger.info("成交量TOP10的USDT交易对:")
-    for coin in top_coins:
-        logger.info(f"{coin.symbol}: 成交量 {coin.quote_volume}")
-
-    # 4. 获取市场概览
-    market_summary = market_service.get_market_summary(interval=Freq.h1)
-    logger.info(f"市场概览时间: {market_summary['snapshot_time']}")
-
-    # 5. 获取历史K线数据
-    historical_data = market_service.get_historical_klines(
-        symbol="ETHUSDT",
-        start_time="20240101",
-        end_time="20240103",
-        interval=Freq.h4,
-        klines_type=HistoricalKlinesType.SPOT,
-    )
-    logger.info(f"获取到 {len(historical_data)} 条 ETHUSDT 历史数据")
-
-    # 6. 获取订单簿数据
-    orderbook = market_service.get_orderbook("BTCUSDT", limit=10)
-    logger.info(f"BTCUSDT 订单簿深度: {len(orderbook['bids'])} 档")
-
-    # 7. 获取永续合约数据
-    perpetual_data = market_service.get_perpetual_data(
-        symbols=[
-            "BTCUSDT",
-            "ETHUSDT",
-            "BNBUSDT",
-            "SOLUSDT",
-            "ADAUSDT",
-            "XRPUSDT",
-            "DOGEUSDT",
-            "DOTUSDT",
-            "AVAXUSDT",
-            "LTCUSDT",
-        ],
-        start_time="20240101",
-        end_time="20240103",
-        interval=Freq.h1,
-        data_path="data",
-    )
-    StorageUtils.visualize_npy_data("./data/1h/count/20240102.npy")
-    StorageUtils.visualize_npy_data("./data/1h/high_price/20240102.npy")
-    StorageUtils.visualize_npy_data("./data/1h/last_price/20240102.npy")
-    StorageUtils.visualize_npy_data("./data/1h/low_price/20240102.npy")
+# 获取 BTCUSDT 的实时行情
+btc_ticker = market_service.get_symbol_ticker("BTCUSDT")
+print(f"BTCUSDT 实时行情: {btc_ticker}")
 ```
+
+更多使用示例请参考[文档站点](https://mrzai.github.io/cryptoservice/)。
 
 ## 开发环境设置
 
@@ -111,9 +60,22 @@ git clone https://github.com/Mrzai/cryptoservice.git
 cd cryptoservice
 ```
 
-2. 安装所有开发依赖：
+2. 安装 uv（推荐）：
+```bash
+# macOS/Linux
+./scripts/setup_uv.sh
+
+# Windows
+.\scripts\setup_uv.ps1
+```
+
+或者手动安装依赖：
 ```bash
 pip install -e ".[dev-all]"  # 安装所有开发依赖
+```
+通过uv安装
+```bash
+uv pip install -e ".[dev-all]"
 ```
 
 3. 安装 pre-commit hooks：
@@ -146,7 +108,7 @@ MIT License
 
 ## 联系方式
 
-- GitHub Issues: [https://github.com/Mrzai/cryptoservice/issues](https://github.com/Mrzai/cryptoservice/issues)
+- GitHub Issues: [https://github.com/ppmina/xdata/issues](https://github.com/ppmina/xdata/issues)
 - Email: minzzzai.s@gmail.com
 
 ## 提交规范

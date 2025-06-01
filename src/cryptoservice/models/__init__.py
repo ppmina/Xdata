@@ -6,6 +6,7 @@ from .market_ticker import (
     PerpetualMarketTicker,
     SymbolTicker,
 )
+from .universe import UniverseConfig, UniverseDefinition, UniverseSnapshot
 
 __all__ = [
     "SymbolTicker",
@@ -17,4 +18,7 @@ __all__ = [
     "HistoricalKlinesType",
     "Univ",
     "KlineIndex",
+    "UniverseConfig",
+    "UniverseDefinition",
+    "UniverseSnapshot",
 ]

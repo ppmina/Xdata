@@ -43,7 +43,7 @@ class StorageUtils:
                 path = base / path
             return path.resolve()
         except Exception as e:
-            raise ValueError(f"Failed to resolve path '{data_path}': {str(e)}")
+            raise ValueError(f"Failed to resolve path '{data_path}': {str(e)}") from e
 
     @staticmethod
     def store_kdtv_data(
@@ -136,7 +136,7 @@ class StorageUtils:
                 save_path.parent.mkdir(parents=True, exist_ok=True)
                 np.save(save_path, array)
 
-        except Exception as e:
+        except Exception:
             logger.exception("KDTV 数据存储失败")
             raise
 
@@ -161,17 +161,7 @@ class StorageUtils:
         start_date: str,
         end_date: str,
         freq: Freq,
-        features: List[str] = [
-            "close_price",
-            "volume",
-            "quote_volume",
-            "high_price",
-            "low_price",
-            "open_price",
-            "trades_count",
-            "taker_buy_volume",
-            "taker_buy_quote_volume",
-        ],
+        features: List[str] | None = None,
         data_path: Path | str = settings.DATA_STORAGE["PERPETUAL_DATA"],
     ) -> pd.DataFrame:
         """读取 KDTV 格式数据.
@@ -186,6 +176,19 @@ class StorageUtils:
         Returns:
             pd.DataFrame: 多级索引的 DataFrame (K, D, T)
         """
+        if features is None:
+            features = [
+                "close_price",
+                "volume",
+                "quote_volume",
+                "high_price",
+                "low_price",
+                "open_price",
+                "trades_count",
+                "taker_buy_volume",
+                "taker_buy_quote_volume",
+            ]
+
         try:
             data_path = StorageUtils._resolve_path(data_path)
 

@@ -1,15 +1,15 @@
 import logging
-from typing import Optional
 
 from binance import Client
-from rich import print as rprint
 from rich.logging import RichHandler
 
 from cryptoservice.exceptions import MarketDataError
 
 # 设置 rich logger
 logging.basicConfig(
-    level=logging.INFO, format="%(message)s", handlers=[RichHandler(rich_tracebacks=True)]
+    level=logging.INFO,
+    format="%(message)s",
+    handlers=[RichHandler(rich_tracebacks=True)],
 )
 logger = logging.getLogger(__name__)
 
@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 class BinanceClientFactory:
     """Binance客户端工厂类."""
 
-    _instance: Optional[Client] = None
+    _instance: Client | None = None
 
     @classmethod
     def create_client(cls, api_key: str, api_secret: str) -> Client:
@@ -45,7 +45,7 @@ class BinanceClientFactory:
         return cls._instance
 
     @classmethod
-    def get_client(cls) -> Optional[Client]:
+    def get_client(cls) -> Client | None:
         """获取现有的客户端实例."""
         return cls._instance
 
