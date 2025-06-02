@@ -80,7 +80,7 @@ plugins:
 extra:
   social:
     - icon: fontawesome/brands/github
-      link: https://github.com/Mrzai
+      link: https://github.com/ppmina
   analytics:
     provider: google
     property: ${GOOGLE_ANALYTICS_KEY}

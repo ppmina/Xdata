@@ -119,5 +119,14 @@ addopts = "-v --cov=src/cryptoservice --cov-report=term-missing"
 packages = ["src/cryptoservice"]
 
 [dependency-groups]
-dev = ["mypy>=1.16.0", "pandas-stubs>=2.2.3.250527"]
+dev = [
+    "mkdocs>=1.6.1",
+    "mkdocs-gen-files>=0.5.0",
+    "mkdocs-git-revision-date-localized-plugin>=1.4.7",
+    "mkdocs-literate-nav>=0.6.2",
+    "mkdocs-material>=9.6.14",
+    "mkdocstrings[python]>=0.29.1",
+    "mypy>=1.16.0",
+    "pandas-stubs>=2.2.3.250527",
+]
 test = ["pytest>=8.3.5", "pytest-cov>=6.1.1"]
