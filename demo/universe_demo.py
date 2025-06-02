@@ -48,6 +48,10 @@ def define_universe(
             output_path=output_path,  # 必须指定输出路径
             description=f"Universe from {start_date} to {end_date}",
             strict_date_range=False,
+            # API延迟控制参数 - 可根据需要调整
+            api_delay_seconds=0.5,  # 每个API请求之间延迟0.5秒
+            batch_delay_seconds=1.0,  # 每批次之间延迟2秒
+            batch_size=5,  # 每3个请求为一批
         )
 
         print("✅ Universe定义完成!")
@@ -57,7 +61,9 @@ def define_universe(
 
         if universe_def.snapshots:
             snapshot = universe_def.snapshots[0]
-            print(f"   - 示例快照: {snapshot.effective_date}, 交易对数量: {len(snapshot.symbols)}")
+            print(
+                f"   - 示例快照: {snapshot.effective_date}, 交易对数量: {len(snapshot.symbols)}"
+            )
             print(f"   - 前5个交易对: {snapshot.symbols[:5]}")
 
         return universe_def
@@ -252,15 +258,18 @@ def export_data(
             print(f"   - 前5个交易对: {symbols[:5]}")
 
             # 创建快照专用的导出目录
-            snapshot_export_path = export_base_path / f"snapshot_{snapshot.effective_date}"
+            snapshot_export_path = (
+                export_base_path / f"snapshot_{snapshot.effective_date}"
+            )
 
             # 使用新的时间戳导出方法
             db.export_to_files_by_timestamp(
                 output_path=snapshot_export_path,
                 start_ts=period_start_ts,
                 end_ts=period_end_ts,
-                freq=Freq.h1,  # 可以根据需要调整
+                freq=Freq.d1,  # 使用与下载时一致的频率
                 symbols=symbols,
+                chunk_days=100,  # 增大chunk_days以避免小数据量的分块问题
             )
 
             print(f"   ✅ 快照数据已导出到: {snapshot_export_path}")

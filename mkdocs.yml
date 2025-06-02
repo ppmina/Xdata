@@ -75,12 +75,13 @@ plugins:
       nav_file: SUMMARY.md
   - git-revision-date-localized:
       enable_creation_date: true
+      enable_git_follow: false
       type: datetime
 
 extra:
   social:
     - icon: fontawesome/brands/github
-      link: https://github.com/Mrzai
+      link: https://github.com/ppmina
   analytics:
     provider: google
     property: ${GOOGLE_ANALYTICS_KEY}
@@ -97,11 +98,16 @@ nav:
       - 历史数据: guides/market-data/historical.md
       - 永续合约: guides/market-data/perpetual.md
       - 数据存储: guides/market-data/storage.md
+      - Universe管理: guides/market-data/universe.md
     - 数据处理:
       - KDTV格式: guides/data-processing/kdtv.md
       - 数据库操作: guides/data-processing/database.md
       - 数据可视化: guides/data-processing/visualization.md
+    - Universe:
+      - Universe定义: guides/universe-definition.md
+      - Schema指南: universe_schema_guide.md
   - API文档:
+    - 概览: api/models.md
     - 服务:
       - 市场数据服务: api/services/market_service.md
       - WebSocket服务: api/services/websocket.md
@@ -111,9 +117,7 @@ nav:
     - 模型:
       - 市场数据模型: api/models/market_ticker.md
       - 枚举类型: api/models/enums.md
-    - 工具:
-      - 数据转换: api/utils/converter.md
-      - 异常处理: api/utils/exceptions.md
+      - Universe模型: api/models/universe.md
   - 示例:
     - 基础示例: examples/basic.md
     - 市场数据示例: examples/market_data.md
@@ -122,3 +126,4 @@ nav:
     - API参考: reference/
     - 更新日志: changelog.md
     - 贡献指南: contributing.md
+    - 开发指南: development_guide.md

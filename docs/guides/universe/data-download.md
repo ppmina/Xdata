@@ -334,7 +334,9 @@ with Progress() as progress:
 
 ## 下一步
 
-- 了解 [数据分析](../data-processing/analysis.md) 功能
-- 探索 [回测框架](../backtesting/overview.md)
-- 查看 [性能优化](../optimization/performance.md) 指南
-- 学习 [实时交易](../trading/real-time.md) 实现
+数据下载完成后，您可以：
+
+- 使用 [数据可视化](../data-processing/visualization.md) 分析数据
+- 查看 [数据库操作](../data-processing/database.md) 了解更多查询方法
+- 参考 [基础示例](../../examples/basic.md) 学习完整工作流程
+- 阅读 [API文档](../../api/services/market_service.md) 了解更多选项

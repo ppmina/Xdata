@@ -176,6 +176,9 @@ class IMarketDataService(Protocol):
         output_path: Path | str,
         description: str | None = None,
         strict_date_range: bool = False,
+        api_delay_seconds: float = 1.0,
+        batch_delay_seconds: float = 3.0,
+        batch_size: int = 5,
     ) -> UniverseDefinition:
         """定义universe并保存到文件.
 
@@ -189,6 +192,9 @@ class IMarketDataService(Protocol):
             output_path: universe输出文件路径
             description: 描述信息
             strict_date_range: 是否严格限制在输入的日期范围内
+            api_delay_seconds: 每个API请求之间的延迟秒数，默认1.0秒
+            batch_delay_seconds: 每批次请求之间的延迟秒数，默认3.0秒
+            batch_size: 每批次的请求数量，默认5个
 
         Returns:
             UniverseDefinition: 定义的universe

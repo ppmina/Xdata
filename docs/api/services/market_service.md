@@ -1,80 +1,67 @@
-# 市场数据服务
+# MarketDataService API 参考
 
-::: cryptoservice.services.market_service.MarketDataService
-    options:
-        show_root_heading: true
-        show_source: true
-        heading_level: 2
-        members:
-            - __init__
-            - get_symbol_ticker
-            - get_top_coins
-            - get_market_summary
-            - get_historical_klines
-            - get_perpetual_data
-            - _fetch_symbol_data
+MarketDataService 是 CryptoService 的核心服务类，提供完整的加密货币市场数据获取和处理功能。
 
-## 初始化
+## 📋 类初始化
 
-```python
-from cryptoservice import MarketDataService
+### `MarketDataService(api_key, api_secret)`
 
-service = MarketDataService(api_key="your_api_key", api_secret="your_api_secret")
-```
-
-## 实时行情
-
-### get_symbol_ticker
-
-获取单个或所有交易对的实时行情数据。
-
-```python
-def get_symbol_ticker(self, symbol: str | None = None) -> SymbolTicker | List[SymbolTicker]
-```
+初始化市场数据服务。
 
 **参数:**
-- `symbol`: 交易对名称，如果为 None 则返回所有交易对的行情
+- `api_key` (str): Binance API 密钥
+- `api_secret` (str): Binance API 密钥
 
-**返回:**
-- 单个交易对返回 `SymbolTicker` 对象
-- 所有交易对返回 `List[SymbolTicker]`
+**示例:**
+```python
+from cryptoservice.services import MarketDataService
+
+service = MarketDataService(
+    api_key="your_api_key",
+    api_secret="your_api_secret"
+)
+```
+
+## 📊 实时行情方法
+
+### `get_symbol_ticker(symbol=None)`
+
+获取单个或所有交易对的实时行情。
+
+**参数:**
+- `symbol` (str, optional): 交易对名称，如 "BTCUSDT"。为 None 时返回所有交易对
+
+**返回值:**
+- `SymbolTicker` 或 `list[SymbolTicker]`: 行情数据
 
 **示例:**
 ```python
 # 获取单个交易对
-btc_ticker = service.get_symbol_ticker("BTCUSDT")
-print(f"BTC价格: {btc_ticker.last_price}")
+ticker = service.get_symbol_ticker("BTCUSDT")
+print(f"价格: {ticker.last_price}")
 
 # 获取所有交易对
 all_tickers = service.get_symbol_ticker()
-for ticker in all_tickers[:5]:
-    print(f"{ticker.symbol}: {ticker.last_price}")
+print(f"总计: {len(all_tickers)} 个交易对")
 ```
 
-### get_top_coins
+### `get_top_coins(limit=50, sort_by=SortBy.QUOTE_VOLUME, quote_asset=None)`
 
-获取按指定条件排序的前N个交易对。
-
-```python
-def get_top_coins(
-    self,
-    limit: int = 10,
-    sort_by: SortBy = SortBy.QUOTE_VOLUME,
-    quote_asset: str | None = None
-) -> List[DailyMarketTicker]
-```
+获取热门交易对排行榜。
 
 **参数:**
-- `limit`: 返回的交易对数量
-- `sort_by`: 排序方式，支持 `SortBy` 枚举中的选项
-- `quote_asset`: 基准资产，如 "USDT"
+- `limit` (int): 返回数量，默认 50
+- `sort_by` (SortBy): 排序方式，默认按成交量
+- `quote_asset` (str, optional): 基准资产过滤，如 "USDT"
 
-**返回:**
-- `List[DailyMarketTicker]`: 排序后的交易对列表
+**返回值:**
+- `list[DailyMarketTicker]`: 排序后的交易对列表
 
 **示例:**
 ```python
-# 获取USDT交易对中成交量最大的10个
+from cryptoservice.models import SortBy
+
+# 获取成交量前10的USDT交易对
 top_coins = service.get_top_coins(
     limit=10,
     sort_by=SortBy.QUOTE_VOLUME,
@@ -82,55 +69,42 @@ top_coins = service.get_top_coins(
 )
 ```
 
-### get_market_summary
+### `get_market_summary(interval=Freq.d1)`
 
-获取市场概览数据。
-
-```python
-def get_market_summary(self, interval: Freq = Freq.d1) -> Dict[str, Any]
-```
+获取市场概览信息。
 
 **参数:**
-- `interval`: 时间间隔，默认为日线数据
+- `interval` (Freq): 时间间隔，默认日线
 
-**返回:**
-- 包含市场概览数据的字典
+**返回值:**
+- `dict`: 包含快照时间和市场数据的字典
 
 **示例:**
 ```python
-summary = service.get_market_summary(interval=Freq.h1)
-print(f"数据时间: {summary['snapshot_time']}")
+summary = service.get_market_summary()
+print(f"快照时间: {summary['snapshot_time']}")
 ```
 
-## 历史数据
+## 📈 历史数据方法
 
-### get_historical_klines
+### `get_historical_klines(symbol, start_time, end_time=None, interval=Freq.h1, klines_type=HistoricalKlinesType.SPOT)`
 
-获取历史K线数据。
-
-```python
-def get_historical_klines(
-    self,
-    symbol: str,
-    start_time: str | datetime,
-    end_time: str | datetime | None = None,
-    interval: Freq = Freq.h1,
-    klines_type: HistoricalKlinesType = HistoricalKlinesType.SPOT
-) -> List[KlineMarketTicker]
-```
+获取K线历史数据。
 
 **参数:**
-- `symbol`: 交易对名称
-- `start_time`: 开始时间，支持字符串或datetime对象
-- `end_time`: 结束时间，支持字符串或datetime对象
-- `interval`: 时间间隔
-- `klines_type`: K线类型，支持现货、永续合约等
+- `symbol` (str): 交易对名称
+- `start_time` (str | datetime): 开始时间
+- `end_time` (str | datetime, optional): 结束时间，默认当前时间
+- `interval` (Freq): 时间间隔，默认1小时
+- `klines_type` (HistoricalKlinesType): K线类型，现货或期货
 
-**返回:**
-- `List[KlineMarketTicker]`: K线数据列表
+**返回值:**
+- `list[KlineMarketTicker]`: K线数据列表
 
 **示例:**
 ```python
+from cryptoservice.models import Freq, HistoricalKlinesType
+
 klines = service.get_historical_klines(
     symbol="BTCUSDT",
     start_time="2024-01-01",
@@ -140,122 +114,161 @@ klines = service.get_historical_klines(
 )
 ```
 
-## 永续合约数据
+### `get_perpetual_data(symbols, start_time, db_path, end_time=None, interval=Freq.m1, max_workers=1, max_retries=3, progress=None)`
 
-### get_perpetual_data
-
-获取永续合约数据并存储。
-
-```python
-def get_perpetual_data(
-    self,
-    symbols: List[str],
-    start_time: str,
-    data_path: Path | str,
-    end_time: str | None = None,
-    interval: Freq = Freq.h1,
-    max_workers: int = 1,
-    max_retries: int = 3,
-    progress: Progress | None = None
-) -> None
-```
+批量获取永续合约数据并存储到数据库。
 
 **参数:**
-- `symbols`: 交易对列表
-- `start_time`: 开始时间 (YYYY-MM-DD)
-- `data_path`: 数据存储路径
-- `end_time`: 结束时间 (YYYY-MM-DD)
-- `interval`: 时间间隔
-- `max_workers`: 最大线程数
-- `max_retries`: 最大重试次数
-- `progress`: 进度显示器
+- `symbols` (list[str]): 交易对列表
+- `start_time` (str): 开始日期 (YYYY-MM-DD)
+- `db_path` (Path | str): 数据库文件路径 **(必须)**
+- `end_time` (str, optional): 结束日期
+- `interval` (Freq): 数据间隔，默认1分钟
+- `max_workers` (int): 最大并发线程数，默认1
+- `max_retries` (int): 最大重试次数，默认3
+- `progress` (Progress, optional): 进度显示器
 
 **示例:**
 ```python
 service.get_perpetual_data(
     symbols=["BTCUSDT", "ETHUSDT"],
     start_time="2024-01-01",
+    db_path="./data/market.db",
     end_time="2024-01-02",
-    data_path="./data",
     interval=Freq.h1,
     max_workers=4
 )
 ```
 
-## 内部函数
+## 🎯 Universe 方法
 
-### _fetch_symbol_data
+### `define_universe(start_date, end_date, t1_months, t2_months, t3_months, top_k, output_path, description=None, strict_date_range=False)`
 
-获取单个交易对的数据。
-
-```python
-def _fetch_symbol_data(
-    self,
-    symbol: str,
-    start_ts: str,
-    end_ts: str,
-    interval: Freq,
-    klines_type: HistoricalKlinesType = HistoricalKlinesType.SPOT
-) -> List[PerpetualMarketTicker]
-```
+定义动态交易对选择策略。
 
 **参数:**
-- `symbol`: 交易对名称
-- `start_ts`: 开始时间戳
-- `end_ts`: 结束时间戳
-- `interval`: 时间间隔
-- `klines_type`: K线类型
+- `start_date` (str): 开始日期 (YYYY-MM-DD)
+- `end_date` (str): 结束日期 (YYYY-MM-DD)
+- `t1_months` (int): 数据回看期(月)
+- `t2_months` (int): 重平衡频率(月)
+- `t3_months` (int): 最小合约存在时间(月)
+- `top_k` (int): 选择交易对数量
+- `output_path` (Path | str): 输出文件路径 **(必须)**
+- `description` (str, optional): 描述信息
+- `strict_date_range` (bool): 是否严格限制日期范围，默认 False
 
-**返回:**
-- `List[PerpetualMarketTicker]`: 市场数据列表
+**返回值:**
+- `UniverseDefinition`: Universe定义对象
 
-## 错误处理
+**示例:**
+```python
+universe_def = service.define_universe(
+    start_date="2024-01-01",
+    end_date="2024-12-31",
+    t1_months=1,      # 基于1个月数据
+    t2_months=1,      # 每月重平衡
+    t3_months=3,      # 排除3个月内新币
+    top_k=10,         # 选择前10个
+    output_path="./universe.json",
+    description="Top 10 crypto universe"
+)
+```
 
-所有函数可能抛出以下异常：
+### `download_universe_data(universe_file, db_path, data_path=None, interval=Freq.h1, max_workers=4, max_retries=3, include_buffer_days=7, extend_to_present=True)`
 
-- `MarketDataFetchError`: 获取数据失败
+根据Universe定义下载历史数据。
+
+**参数:**
+- `universe_file` (Path | str): Universe定义文件路径 **(必须)**
+- `db_path` (Path | str): 数据库文件路径 **(必须)**
+- `data_path` (Path | str, optional): 额外数据文件路径
+- `interval` (Freq): 数据频率，默认1小时
+- `max_workers` (int): 并发线程数，默认4
+- `max_retries` (int): 最大重试次数，默认3
+- `include_buffer_days` (int): 缓冲天数，默认7
+- `extend_to_present` (bool): 是否延伸到当前，默认 True
+
+**示例:**
+```python
+service.download_universe_data(
+    universe_file="./universe.json",
+    db_path="./data/market.db",
+    interval=Freq.h1,
+    max_workers=4,
+    include_buffer_days=7,
+    extend_to_present=False
+)
+```
+
+### `download_universe_data_by_periods(universe_file, db_path, data_path=None, interval=Freq.h1, max_workers=4, max_retries=3, include_buffer_days=7)`
+
+按周期分别下载Universe数据（更精确的方式）。
+
+参数与 `download_universe_data` 类似，但按每个重平衡周期分别下载。
+
+## 🔍 辅助方法
+
+### `get_perpetual_symbols(only_trading=True)`
+
+获取所有永续合约交易对列表。
+
+**参数:**
+- `only_trading` (bool): 是否只返回可交易的，默认 True
+
+**返回值:**
+- `list[str]`: 永续合约交易对列表
+
+**示例:**
+```python
+symbols = service.get_perpetual_symbols(only_trading=True)
+print(f"当前可交易永续合约: {len(symbols)} 个")
+```
+
+## ⚠️ 异常处理
+
+### 常见异常类型
+
+- `MarketDataFetchError`: 数据获取失败
 - `InvalidSymbolError`: 无效的交易对
-- `RateLimitError`: API请求速率限制
-- `MarketDataParseError`: 数据解析错误
+- `RateLimitError`: 请求频率限制
 
-## 最佳实践
+**示例:**
+```python
+from cryptoservice.exceptions import MarketDataFetchError, InvalidSymbolError
 
-1. **错误处理**
-   ```python
-   try:
-       data = service.get_historical_klines(...)
-   except MarketDataFetchError as e:
-       logger.error(f"获取数据失败: {e}")
-   except InvalidSymbolError as e:
-       logger.error(f"无效的交易对: {e}")
-   ```
+try:
+    ticker = service.get_symbol_ticker("INVALID")
+except InvalidSymbolError as e:
+    print(f"无效交易对: {e}")
+except MarketDataFetchError as e:
+    print(f"获取失败: {e}")
+```
 
-2. **并行处理**
-   ```python
-   service.get_perpetual_data(
-       symbols=symbols,
-       start_time=start_time,
-       end_time=end_time,
-       max_workers=4  # 使用4个线程并行处理
-   )
-   ```
+## 📝 使用注意事项
 
-3. **进度显示**
-   ```python
-   from rich.progress import Progress
+### 1. API 频率限制
+- 建议使用合理的 `max_workers` 参数
+- 避免过于频繁的请求
+- 遇到频率限制时会自动重试
 
-   with Progress() as progress:
-       service.get_perpetual_data(
-           symbols=symbols,
-           start_time=start_time,
-           end_time=end_time,
-           progress=progress
-       )
-   ```
+### 2. 路径参数
+- `db_path` 和 `output_path` 必须明确指定
+- 路径可以是相对路径或绝对路径
+- 程序会自动创建必要的目录
 
-## 相关链接
+### 3. 数据完整性
+- 新上市的交易对可能缺少历史数据
+- 程序会自动处理数据缺失情况
+- 建议设置合理的缓冲天数
 
-- [实时行情指南](../../guides/market-data/realtime.md)
-- [历史数据指南](../../guides/market-data/historical.md)
-- [永续合约指南](../../guides/market-data/perpetual.md)
-- [数据存储指南](../../guides/market-data/storage.md)
+### 4. 内存使用
+- 大批量数据下载会占用较多内存
+- 建议分批处理大量交易对
+- 及时释放不需要的数据
+
+## 🔗 相关文档
+
+- [基础用法指南](../../getting-started/basic-usage.md)
+- [Universe定义指南](../../guides/universe-definition.md)
+- [完整示例](../../examples/basic.md)
+- [数据模型参考](../models/market_ticker.md)

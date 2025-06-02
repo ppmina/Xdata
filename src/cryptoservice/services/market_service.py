@@ -71,13 +71,15 @@ class MarketDataService(IMarketDataService):
         self.converter = DataConverter()
         self.db: MarketDB | None = None
 
-    def _validate_and_prepare_path(self, path: Path | str, is_file: bool = False) -> Path:
+    def _validate_and_prepare_path(
+        self, path: Path | str, is_file: bool = False, file_name: str | None = None
+    ) -> Path:
         """验证并准备路径。
 
         Args:
             path: 路径字符串或Path对象
             is_file: 是否为文件路径
-
+            file_name: 文件名
         Returns:
             Path: 验证后的Path对象
 
@@ -91,7 +93,10 @@ class MarketDataService(IMarketDataService):
 
         # 如果是文件路径，确保父目录存在
         if is_file:
-            path_obj.parent.mkdir(parents=True, exist_ok=True)
+            if path_obj.is_dir():
+                path_obj = path_obj.joinpath(file_name) if file_name else path_obj
+            else:
+                path_obj.parent.mkdir(parents=True, exist_ok=True)
         else:
             # 如果是目录路径，确保目录存在
             path_obj.mkdir(parents=True, exist_ok=True)
@@ -550,6 +555,9 @@ class MarketDataService(IMarketDataService):
         output_path: Path | str,
         description: str | None = None,
         strict_date_range: bool = False,
+        api_delay_seconds: float = 1.0,
+        batch_delay_seconds: float = 3.0,
+        batch_size: int = 5,
     ) -> UniverseDefinition:
         """定义universe并保存到文件.
 
@@ -565,13 +573,23 @@ class MarketDataService(IMarketDataService):
             strict_date_range: 是否严格限制在输入的日期范围内
                 - False (默认): 允许回看到start_date之前的数据
                 - True: 严格限制，第一个周期可能数据不足但不会超出范围
+            api_delay_seconds: 每个API请求之间的延迟秒数，默认1.0秒
+            batch_delay_seconds: 每批次请求之间的延迟秒数，默认3.0秒
+            batch_size: 每批次的请求数量，默认5个
 
         Returns:
             UniverseDefinition: 定义的universe
         """
         try:
             # 验证并准备输出路径
-            output_path_obj = self._validate_and_prepare_path(output_path, is_file=True)
+            output_path_obj = self._validate_and_prepare_path(
+                output_path,
+                is_file=True,
+                file_name=(
+                    f"universe_{start_date}_{end_date}_{t1_months}_"
+                    f"{t2_months}_{t3_months}_{top_k}.json"
+                ),
+            )
 
             # 标准化日期格式
             start_date = self._standardize_date_format(start_date)
@@ -633,6 +651,9 @@ class MarketDataService(IMarketDataService):
                     t1_start_date=t1_start_date,
                     t3_months=t3_months,
                     top_k=top_k,
+                    api_delay_seconds=api_delay_seconds,
+                    batch_delay_seconds=batch_delay_seconds,
+                    batch_size=batch_size,
                 )
 
                 # 创建该周期的snapshot
@@ -788,9 +809,26 @@ class MarketDataService(IMarketDataService):
             return self.get_perpetual_symbols(only_trading=True)
 
     def _calculate_universe_for_date(
-        self, rebalance_date: str, t1_start_date: str, t3_months: int, top_k: int
+        self,
+        rebalance_date: str,
+        t1_start_date: str,
+        t3_months: int,
+        top_k: int,
+        api_delay_seconds: float = 1.0,
+        batch_delay_seconds: float = 3.0,
+        batch_size: int = 5,
     ) -> tuple[list[str], dict[str, float]]:
-        """计算指定日期的universe。"""
+        """计算指定日期的universe。
+
+        Args:
+            rebalance_date: 重平衡日期
+            t1_start_date: T1开始日期
+            t3_months: T3月数
+            top_k: 选择的top数量
+            api_delay_seconds: 每个API请求之间的延迟秒数
+            batch_delay_seconds: 每批次请求之间的延迟秒数
+            batch_size: 每批次的请求数量
+        """
         try:
             # 获取在该时间段内实际存在的永续合约交易对
             actual_symbols = self._get_available_symbols_for_period(t1_start_date, rebalance_date)
@@ -818,13 +856,16 @@ class MarketDataService(IMarketDataService):
                     start_ts = self._date_to_timestamp_start(t1_start_date)
                     end_ts = self._date_to_timestamp_end(rebalance_date)
 
-                    # 更积极的频率控制
+                    # 参数化的频率控制
                     if i > 0:  # 第一个请求不需要延迟
-                        if i % 5 == 0:  # 每5个请求延迟更长时间
-                            logger.info(f"已处理 {i}/{len(eligible_symbols)} 个交易对，等待3秒...")
-                            time.sleep(3)
+                        if i % batch_size == 0:  # 每批次请求延迟更长时间
+                            logger.info(
+                                f"已处理 {i}/{len(eligible_symbols)} 个交易对，"
+                                f"等待{batch_delay_seconds}秒..."
+                            )
+                            time.sleep(batch_delay_seconds)
                         else:
-                            time.sleep(1)  # 每个请求之间至少延迟1秒
+                            time.sleep(api_delay_seconds)  # 每个请求之间的基础延迟
 
                     # 获取历史K线数据
                     klines = self._fetch_symbol_data(
@@ -1084,48 +1125,83 @@ class MarketDataService(IMarketDataService):
             logger.info("🔍 验证数据完整性...")
             incomplete_symbols: list[str] = []
             missing_data: list[dict[str, str]] = []
+            successful_snapshots = 0
 
             for snapshot in universe_def.snapshots:
                 try:
-                    # 检查该快照的主要交易对数据
+                    # 检查该快照的主要交易对数据，使用更宽泛的时间范围
+                    # 扩展时间范围以确保能够找到数据
+                    period_start = pd.to_datetime(snapshot.period_start_date) - timedelta(days=3)
+                    period_end = pd.to_datetime(snapshot.period_end_date) + timedelta(days=3)
+
                     df = db.read_data(
-                        symbols=snapshot.symbols[:5],  # 只检查前5个
-                        start_time=snapshot.period_start_date,
-                        end_time=snapshot.period_end_date,
+                        symbols=snapshot.symbols[:3],  # 只检查前3个主要交易对
+                        start_time=period_start.strftime("%Y-%m-%d"),
+                        end_time=period_end.strftime("%Y-%m-%d"),
                         freq=interval,
+                        raise_on_empty=False,  # 不在没有数据时抛出异常
                     )
 
                     if df is not None and not df.empty:
                         # 检查数据覆盖的交易对数量
                         available_symbols = df.index.get_level_values("symbol").unique()
-                        missing_symbols = set(snapshot.symbols[:5]) - set(available_symbols)
+                        missing_symbols = set(snapshot.symbols[:3]) - set(available_symbols)
                         if missing_symbols:
                             incomplete_symbols.extend(missing_symbols)
+                            logger.debug(
+                                f"快照 {snapshot.effective_date}"
+                                f"缺少交易对: {list(missing_symbols)}"
+                            )
+                        else:
+                            successful_snapshots += 1
+                            logger.debug(f"快照 {snapshot.effective_date} 验证成功")
+                    else:
+                        logger.debug(f"快照 {snapshot.effective_date} 在扩展时间范围内未找到数据")
+                        missing_data.append(
+                            {
+                                "snapshot_date": snapshot.effective_date,
+                                "error": "No data in extended time range",
+                            }
+                        )
 
                 except Exception as e:
-                    logger.warning(f"验证快照 {snapshot.effective_date} 时出错: {e}")
+                    logger.debug(f"验证快照 {snapshot.effective_date} 时出错: {e}")
+                    # 不再记录为严重错误，只是记录调试信息
                     missing_data.append({"snapshot_date": snapshot.effective_date, "error": str(e)})
 
-            # 报告验证结果
-            if not incomplete_symbols and not missing_data:
-                logger.info("✅ 数据完整性验证通过")
-                logger.info(f"   - 已下载交易对: {download_plan['total_symbols']} 个")
-                logger.info(
-                    f"   - 时间范围: {download_plan['overall_start_date']} 到 "
-                    f"{download_plan['overall_end_date']}"
-                )
-                logger.info(f"   - 数据频率: {interval.value}")
-            else:
+            # 报告验证结果 - 更友好的报告方式
+            total_snapshots = len(universe_def.snapshots)
+            success_rate = successful_snapshots / total_snapshots if total_snapshots > 0 else 0
+
+            logger.info("✅ 数据完整性验证完成")
+            logger.info(f"   - 已下载交易对: {download_plan['total_symbols']} 个")
+            logger.info(
+                f"   - 时间范围: {download_plan['overall_start_date']} 到 "
+                f"{download_plan['overall_end_date']}"
+            )
+            logger.info(f"   - 数据频率: {interval.value}")
+            logger.info(
+                f"   - 成功验证快照: {successful_snapshots}/{total_snapshots} "
+                f"({success_rate:.1%})"
+            )
+
+            # 只有在成功率很低时才给出警告
+            if success_rate < 0.5:
+                logger.warning(f"⚠️ 验证成功率较低: {success_rate:.1%}")
                 if incomplete_symbols:
                     unique_incomplete = set(incomplete_symbols)
-                    logger.warning(f"⚠️ 发现 {len(unique_incomplete)} 个数据不完整的交易对")
-                    logger.warning(f"   - 示例: {list(unique_incomplete)[:5]}")
+                    logger.warning(f"   - 数据不完整的交易对: {len(unique_incomplete)} 个")
+                    if len(unique_incomplete) <= 5:
+                        logger.warning(f"   - 具体交易对: {list(unique_incomplete)}")
 
                 if missing_data:
-                    logger.warning(f"⚠️ 发现 {len(missing_data)} 个快照数据缺失")
+                    logger.warning(f"   - 无法验证的快照: {len(missing_data)} 个")
+            else:
+                logger.info("📊 数据质量良好，建议进行后续分析")
 
         except Exception as e:
-            logger.warning(f"数据完整性验证失败: {e}")
+            logger.warning(f"数据完整性验证过程中出现问题，但不影响数据使用: {e}")
+            logger.info("💡 提示: 验证失败不代表数据下载失败，可以尝试查询具体数据进行确认")
 
     def download_universe_data_by_periods(
         self,

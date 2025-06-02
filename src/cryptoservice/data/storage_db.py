@@ -431,9 +431,11 @@ class MarketDB:
             start_timestamp = int(start_ts)
             end_timestamp = int(end_ts)
 
-            # 转换时间戳为日期字符串
-            start_date = pd.Timestamp(start_timestamp, unit="ms").strftime("%Y-%m-%d")
-            end_date = pd.Timestamp(end_timestamp, unit="ms").strftime("%Y-%m-%d")
+            # 转换时间戳为日期字符串 - 使用本地时区，与生成时保持一致
+            from datetime import datetime
+
+            start_date = datetime.fromtimestamp(start_timestamp / 1000).strftime("%Y-%m-%d")
+            end_date = datetime.fromtimestamp(end_timestamp / 1000).strftime("%Y-%m-%d")
 
             logger.info(f"Converting timestamps to dates: {start_date} to {end_date}")
 
@@ -476,111 +478,145 @@ class MarketDB:
         try:
             output_path = Path(output_path)
 
-            # 计算日期范围
+            # 创建日期范围
             date_range = pd.date_range(start=start_date, end=end_date, freq="D")
+            total_days = len(date_range)
 
-            # 按chunk_days分块处理
-            for chunk_start in range(0, len(date_range), chunk_days):
-                chunk_end = min(chunk_start + chunk_days, len(date_range))
-                chunk_start_date = date_range[chunk_start].strftime("%Y-%m-%d")
-                chunk_end_date = date_range[chunk_end - 1].strftime("%Y-%m-%d")
+            # 如果总天数少于等于chunk_days，直接处理整个范围，不分块
+            if total_days <= chunk_days:
+                logger.info(
+                    f"Processing all data from {start_date} to {end_date} "
+                    f"(total: {total_days} days)"
+                )
 
-                logger.info(f"Processing data from {chunk_start_date} to {chunk_end_date}")
-
-                # 读取数据块
+                # 读取所有数据
                 try:
                     df = self.read_data(
-                        chunk_start_date,
-                        chunk_end_date,
+                        start_date,
+                        end_date,
                         freq,
                         symbols,
                         raise_on_empty=False,
                     )
                 except ValueError as e:
                     if "No data found" in str(e):
-                        logger.warning(
-                            f"No data found for period {chunk_start_date} to {chunk_end_date}"
-                        )
-                        continue
+                        logger.warning(f"No data found for period {start_date} to {end_date}")
+                        return
                     else:
                         raise
 
                 if df.empty:
-                    logger.warning(
-                        f"No data found for period {chunk_start_date} to {chunk_end_date}"
-                    )
-                    continue
+                    logger.warning(f"No data found for period {start_date} to {end_date}")
+                    return
 
                 # 如果需要降采样
                 if target_freq is not None:
                     df = self._resample_data(df, target_freq)
                     freq = target_freq
 
-                # 定义需要导出的特征
-                features = [
-                    "close_price",
-                    "volume",
-                    "quote_volume",
-                    "high_price",
-                    "low_price",
-                    "open_price",
-                    "trades_count",
-                    "taker_buy_volume",
-                    "taker_buy_quote_volume",
-                    "taker_sell_volume",
-                    "taker_sell_quote_volume",
-                ]
+                # 处理所有数据
+                self._process_dataframe_for_export(df, output_path, freq, date_range)
 
-                # 处理当前数据块中的每一天
-                chunk_dates = pd.date_range(chunk_start_date, chunk_end_date, freq="D")
-                for date in chunk_dates:
-                    date_str = date.strftime("%Y%m%d")
-                    # 保存交易对顺序
-                    symbols_path = output_path / freq.value / date_str / "universe_token.pkl"
-                    symbols_path.parent.mkdir(parents=True, exist_ok=True)
-                    pd.Series(df.index.get_level_values("symbol").unique()).to_pickle(symbols_path)
+            else:
+                # 按chunk_days分块处理（用于大量数据）
+                for chunk_start in range(0, len(date_range), chunk_days):
+                    chunk_end = min(chunk_start + chunk_days, len(date_range))
+                    chunk_start_date = date_range[chunk_start].strftime("%Y-%m-%d")
+                    chunk_end_date = date_range[chunk_end - 1].strftime("%Y-%m-%d")
 
-                    # 获取当天数据
-                    timestamps = df.index.get_level_values("timestamp")
-                    # 将timestamps转换为datetime类型
-                    datetime_timestamps = pd.to_datetime(timestamps)
-                    # 现在可以安全地访问date属性
-                    _dates = [ts.date() for ts in datetime_timestamps]
+                    logger.info(f"Processing data from {chunk_start_date} to {chunk_end_date}")
 
-                    # 或者使用更简洁的方式
-
-                    # 显式转换为datetime对象列表
-                    _datetime_list = [pd.Timestamp(ts).to_pydatetime() for ts in timestamps]
-                    # 然后访问date属性
-                    day_data = df[
-                        df.index.get_level_values("timestamp").isin(
-                            [ts for ts in timestamps if pd.Timestamp(ts).date() == date.date()]
+                    # 读取数据块
+                    try:
+                        df = self.read_data(
+                            chunk_start_date,
+                            chunk_end_date,
+                            freq,
+                            symbols,
+                            raise_on_empty=False,
                         )
-                    ]
-                    if day_data.empty:
+                    except ValueError as e:
+                        if "No data found" in str(e):
+                            logger.warning(
+                                f"No data found for period {chunk_start_date} to {chunk_end_date}"
+                            )
+                            continue
+                        else:
+                            raise
+
+                    if df.empty:
+                        logger.warning(
+                            f"No data found for period {chunk_start_date} to {chunk_end_date}"
+                        )
                         continue
 
-                    # 为每个特征创建并存储数据
-                    for feature in features:
-                        # 重塑数据为 K x T 矩阵
-                        pivot_data = day_data[feature].unstack(level="timestamp")
-                        array = pivot_data.values
+                    # 如果需要降采样
+                    if target_freq is not None:
+                        df = self._resample_data(df, target_freq)
+                        freq = target_freq
 
-                        # 创建存储路径
-                        save_path = output_path / freq.value / date_str / feature
-                        save_path.mkdir(parents=True, exist_ok=True)
+                    # 处理当前数据块
+                    chunk_dates = pd.date_range(chunk_start_date, chunk_end_date, freq="D")
+                    self._process_dataframe_for_export(df, output_path, freq, chunk_dates)
 
-                        # 保存为npy格式
-                        np.save(save_path / f"{date_str}.npy", array)
-
-                # 清理内存
-                del df
+                    # 清理内存
+                    del df
 
             logger.info(f"Successfully exported data to {output_path}")
 
         except Exception as e:
             logger.exception(f"Failed to export data: {e}")
             raise
+
+    def _process_dataframe_for_export(
+        self, df: pd.DataFrame, output_path: Path, freq: Freq, dates: pd.DatetimeIndex
+    ) -> None:
+        """处理DataFrame并导出为文件的辅助方法"""
+        # 定义需要导出的特征
+        features = [
+            "close_price",
+            "volume",
+            "quote_volume",
+            "high_price",
+            "low_price",
+            "open_price",
+            "trades_count",
+            "taker_buy_volume",
+            "taker_buy_quote_volume",
+            "taker_sell_volume",
+            "taker_sell_quote_volume",
+        ]
+
+        # 处理每一天
+        for date in dates:
+            date_str = date.strftime("%Y%m%d")
+            # 保存交易对顺序
+            symbols_path = output_path / freq.value / date_str / "universe_token.pkl"
+            symbols_path.parent.mkdir(parents=True, exist_ok=True)
+            pd.Series(df.index.get_level_values("symbol").unique()).to_pickle(symbols_path)
+
+            # 获取当天数据
+            timestamps = df.index.get_level_values("timestamp")
+            day_data = df[
+                df.index.get_level_values("timestamp").isin(
+                    [ts for ts in timestamps if pd.Timestamp(ts).date() == date.date()]
+                )
+            ]
+            if day_data.empty:
+                continue
+
+            # 为每个特征创建并存储数据
+            for feature in features:
+                # 重塑数据为 K x T 矩阵
+                pivot_data = day_data[feature].unstack(level="timestamp")
+                array = pivot_data.values
+
+                # 创建存储路径
+                save_path = output_path / freq.value / date_str / feature
+                save_path.mkdir(parents=True, exist_ok=True)
+
+                # 保存为npy格式
+                np.save(save_path / f"{date_str}.npy", array)
 
     def _resample_data(self, df: pd.DataFrame, target_freq: Freq) -> pd.DataFrame:
         """对数据进行降采样处理.
