@@ -247,6 +247,7 @@ class MarketDB:
         freq: Freq,
         symbols: list[str],
         features: list[str] | None = None,
+        raise_on_empty: bool = True,
     ) -> pd.DataFrame:
         """读取市场数据.
 
@@ -256,6 +257,7 @@ class MarketDB:
             freq: 数据频率
             symbols: 交易对列表
             features: 需要读取的特征列表，None表示读取所有特征
+            raise_on_empty: 当没有数据时是否抛出异常，False则返回空DataFrame
 
         Returns:
             pd.DataFrame: 市场数据，多级索引 (symbol, timestamp)
@@ -265,47 +267,114 @@ class MarketDB:
             start_ts = int(pd.Timestamp(start_time).timestamp() * 1000)
             end_ts = int(pd.Timestamp(end_time).timestamp() * 1000)
 
-            # 构建查询
-            if features is None:
-                features = [
-                    "open_price",
-                    "high_price",
-                    "low_price",
-                    "close_price",
-                    "volume",
-                    "quote_volume",
-                    "trades_count",
-                    "taker_buy_volume",
-                    "taker_buy_quote_volume",
-                    "taker_sell_volume",
-                    "taker_sell_quote_volume",
-                ]
-
-            columns = ", ".join(features)
-            query = f"""
-                SELECT symbol, timestamp, {columns}
-                FROM market_data
-                WHERE timestamp BETWEEN ? AND ?
-                AND freq = ?
-                AND symbol IN ({",".join("?" * len(symbols))})
-                ORDER BY symbol, timestamp
-            """
-            params = [start_ts, end_ts, freq.value] + symbols
-
-            # 执行查询
-            with self._get_connection() as conn:
-                df = pd.read_sql_query(query, conn, params=params, parse_dates={"timestamp": "ms"})
-
-            if df.empty:
-                raise ValueError("No data found for the specified criteria")
-
-            # 设置多级索引
-            df = df.set_index(["symbol", "timestamp"])
-            return df
+            return self._read_data_by_timestamp(
+                start_ts, end_ts, freq, symbols, features, raise_on_empty
+            )
 
         except Exception:
             logger.exception("Failed to read market data")
             raise
+
+    def read_data_by_timestamp(
+        self,
+        start_ts: int | str,
+        end_ts: int | str,
+        freq: Freq,
+        symbols: list[str],
+        features: list[str] | None = None,
+        raise_on_empty: bool = True,
+    ) -> pd.DataFrame:
+        """使用时间戳读取市场数据.
+
+        Args:
+            start_ts: 开始时间戳 (毫秒，int或str)
+            end_ts: 结束时间戳 (毫秒，int或str)
+            freq: 数据频率
+            symbols: 交易对列表
+            features: 需要读取的特征列表，None表示读取所有特征
+            raise_on_empty: 当没有数据时是否抛出异常，False则返回空DataFrame
+
+        Returns:
+            pd.DataFrame: 市场数据，多级索引 (symbol, timestamp)
+        """
+        try:
+            # 确保时间戳为整数
+            start_timestamp = int(start_ts)
+            end_timestamp = int(end_ts)
+
+            return self._read_data_by_timestamp(
+                start_timestamp, end_timestamp, freq, symbols, features, raise_on_empty
+            )
+
+        except Exception:
+            logger.exception("Failed to read market data by timestamp")
+            raise
+
+    def _read_data_by_timestamp(
+        self,
+        start_ts: int,
+        end_ts: int,
+        freq: Freq,
+        symbols: list[str],
+        features: list[str] | None = None,
+        raise_on_empty: bool = True,
+    ) -> pd.DataFrame:
+        """使用时间戳读取市场数据的内部实现.
+
+        Args:
+            start_ts: 开始时间戳 (毫秒)
+            end_ts: 结束时间戳 (毫秒)
+            freq: 数据频率
+            symbols: 交易对列表
+            features: 需要读取的特征列表
+            raise_on_empty: 当没有数据时是否抛出异常，False则返回空DataFrame
+
+        Returns:
+            pd.DataFrame: 市场数据
+        """
+        # 构建查询
+        if features is None:
+            features = [
+                "open_price",
+                "high_price",
+                "low_price",
+                "close_price",
+                "volume",
+                "quote_volume",
+                "trades_count",
+                "taker_buy_volume",
+                "taker_buy_quote_volume",
+                "taker_sell_volume",
+                "taker_sell_quote_volume",
+            ]
+
+        columns = ", ".join(features)
+        query = f"""
+            SELECT symbol, timestamp, {columns}
+            FROM market_data
+            WHERE timestamp BETWEEN ? AND ?
+            AND freq = ?
+            AND symbol IN ({",".join("?" * len(symbols))})
+            ORDER BY symbol, timestamp
+        """
+        params = [start_ts, end_ts, freq.value] + symbols
+
+        # 执行查询
+        with self._get_connection() as conn:
+            df = pd.read_sql_query(query, conn, params=params, parse_dates={"timestamp": "ms"})
+
+        if df.empty:
+            if raise_on_empty:
+                raise ValueError("No data found for the specified criteria")
+            else:
+                # 返回空的DataFrame，但保持正确的结构
+                empty_df = pd.DataFrame(columns=["symbol", "timestamp"] + features)
+                empty_df = empty_df.set_index(["symbol", "timestamp"])
+                return empty_df
+
+        # 设置多级索引
+        df = df.set_index(["symbol", "timestamp"])
+        return df
 
     def get_available_dates(
         self,
@@ -334,6 +403,53 @@ class MarketDB:
 
         except Exception:
             logger.exception("Failed to get available dates")
+            raise
+
+    def export_to_files_by_timestamp(
+        self,
+        output_path: Path | str,
+        start_ts: int | str,
+        end_ts: int | str,
+        freq: Freq,
+        symbols: list[str],
+        target_freq: Freq | None = None,
+        chunk_days: int = 30,  # 每次处理的天数
+    ) -> None:
+        """使用时间戳将数据库数据导出为npy文件格式，支持降采样.
+
+        Args:
+            output_path: 输出目录
+            start_ts: 开始时间戳 (毫秒，int或str)
+            end_ts: 结束时间戳 (毫秒，int或str)
+            freq: 原始数据频率
+            symbols: 交易对列表
+            target_freq: 目标频率，None表示不进行降采样
+            chunk_days: 每次处理的天数，用于控制内存使用
+        """
+        try:
+            # 确保时间戳为整数
+            start_timestamp = int(start_ts)
+            end_timestamp = int(end_ts)
+
+            # 转换时间戳为日期字符串
+            start_date = pd.Timestamp(start_timestamp, unit="ms").strftime("%Y-%m-%d")
+            end_date = pd.Timestamp(end_timestamp, unit="ms").strftime("%Y-%m-%d")
+
+            logger.info(f"Converting timestamps to dates: {start_date} to {end_date}")
+
+            # 使用现有的export_to_files方法
+            self.export_to_files(
+                output_path=output_path,
+                start_date=start_date,
+                end_date=end_date,
+                freq=freq,
+                symbols=symbols,
+                target_freq=target_freq,
+                chunk_days=chunk_days,
+            )
+
+        except Exception as e:
+            logger.exception(f"Failed to export data by timestamp: {e}")
             raise
 
     def export_to_files(
@@ -372,7 +488,23 @@ class MarketDB:
                 logger.info(f"Processing data from {chunk_start_date} to {chunk_end_date}")
 
                 # 读取数据块
-                df = self.read_data(chunk_start_date, chunk_end_date, freq, symbols)
+                try:
+                    df = self.read_data(
+                        chunk_start_date,
+                        chunk_end_date,
+                        freq,
+                        symbols,
+                        raise_on_empty=False,
+                    )
+                except ValueError as e:
+                    if "No data found" in str(e):
+                        logger.warning(
+                            f"No data found for period {chunk_start_date} to {chunk_end_date}"
+                        )
+                        continue
+                    else:
+                        raise
+
                 if df.empty:
                     logger.warning(
                         f"No data found for period {chunk_start_date} to {chunk_end_date}"

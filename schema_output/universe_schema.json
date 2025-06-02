@@ -1,0 +1,207 @@
+{
+  "schema": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "Universe Definition Schema",
+    "description": "Cryptocurrency universe definition with configuration and snapshots",
+    "type": "object",
+    "properties": {
+      "config": {
+        "type": "object",
+        "description": "Universe configuration parameters",
+        "properties": {
+          "start_date": {
+            "type": "string",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+            "description": "Start date in YYYY-MM-DD format"
+          },
+          "end_date": {
+            "type": "string",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+            "description": "End date in YYYY-MM-DD format"
+          },
+          "t1_months": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "T1 lookback window in months for calculating mean daily amount"
+          },
+          "t2_months": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "T2 rebalancing frequency in months"
+          },
+          "t3_months": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "T3 minimum contract existence time in months"
+          },
+          "top_k": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Number of top contracts to select"
+          }
+        },
+        "required": [
+          "start_date",
+          "end_date",
+          "t1_months",
+          "t2_months",
+          "t3_months",
+          "top_k"
+        ],
+        "additionalProperties": false
+      },
+      "snapshots": {
+        "type": "array",
+        "description": "Time series of universe snapshots",
+        "items": {
+          "type": "object",
+          "properties": {
+            "effective_date": {
+              "type": "string",
+              "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+              "description": "Rebalancing effective date"
+            },
+            "period_start_date": {
+              "type": "string",
+              "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+              "description": "Data calculation period start date"
+            },
+            "period_end_date": {
+              "type": "string",
+              "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+              "description": "Data calculation period end date"
+            },
+            "period_start_ts": {
+              "type": "string",
+              "pattern": "^\\d+$",
+              "description": "Data calculation period start timestamp in milliseconds"
+            },
+            "period_end_ts": {
+              "type": "string",
+              "pattern": "^\\d+$",
+              "description": "Data calculation period end timestamp in milliseconds"
+            },
+            "symbols": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "pattern": "^[A-Z0-9]+USDT$",
+                "description": "Trading pair symbol (e.g., BTCUSDT)"
+              },
+              "description": "List of selected trading pairs for this period"
+            },
+            "mean_daily_amounts": {
+              "type": "object",
+              "patternProperties": {
+                "^[A-Z0-9]+USDT$": {
+                  "type": "number",
+                  "minimum": 0,
+                  "description": "Mean daily trading volume in USDT"
+                }
+              },
+              "description": "Mean daily trading amounts for each symbol"
+            },
+            "metadata": {
+              "type": "object",
+              "description": "Additional metadata for this snapshot",
+              "properties": {
+                "t1_start_date": {
+                  "type": "string",
+                  "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+                },
+                "calculated_t1_start": {
+                  "type": "string",
+                  "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+                },
+                "period_adjusted": {
+                  "type": "boolean"
+                },
+                "strict_date_range": {
+                  "type": "boolean"
+                },
+                "selected_symbols_count": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "total_candidates": {
+                  "type": "integer",
+                  "minimum": 0
+                }
+              },
+              "additionalProperties": true
+            }
+          },
+          "required": [
+            "effective_date",
+            "period_start_date",
+            "period_end_date",
+            "period_start_ts",
+            "period_end_ts",
+            "symbols",
+            "mean_daily_amounts"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "creation_time": {
+        "type": "string",
+        "format": "date-time",
+        "description": "ISO 8601 timestamp when this universe definition was created"
+      },
+      "description": {
+        "type": [
+          "string",
+          "null"
+        ],
+        "description": "Optional description of this universe definition"
+      }
+    },
+    "required": [
+      "config",
+      "snapshots",
+      "creation_time"
+    ],
+    "additionalProperties": false
+  },
+  "version": "1.0.0",
+  "generated_at": "2025-06-02T16:36:17.602504",
+  "example": {
+    "config": {
+      "start_date": "2024-01-01",
+      "end_date": "2024-12-31",
+      "t1_months": 1,
+      "t2_months": 1,
+      "t3_months": 3,
+      "top_k": 10
+    },
+    "snapshots": [
+      {
+        "effective_date": "2024-01-31",
+        "period_start_date": "2023-12-31",
+        "period_end_date": "2024-01-31",
+        "period_start_ts": "1703980800000",
+        "period_end_ts": "1706745599000",
+        "symbols": [
+          "BTCUSDT",
+          "ETHUSDT",
+          "BNBUSDT"
+        ],
+        "mean_daily_amounts": {
+          "BTCUSDT": 1234567890.0,
+          "ETHUSDT": 987654321.0,
+          "BNBUSDT": 456789123.0
+        },
+        "metadata": {
+          "t1_start_date": "2023-12-31",
+          "calculated_t1_start": "2023-12-31",
+          "period_adjusted": false,
+          "strict_date_range": false,
+          "selected_symbols_count": 3,
+          "total_candidates": 100
+        }
+      }
+    ],
+    "creation_time": "2024-01-01T00:00:00",
+    "description": "Example universe definition for top cryptocurrency pairs"
+  }
+}

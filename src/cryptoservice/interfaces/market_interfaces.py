@@ -90,7 +90,7 @@ class IMarketDataService(Protocol):
         self,
         symbols: list[str],
         start_time: str,
-        data_path: Path | str,
+        db_path: Path | str,
         end_time: str | None = None,
         interval: Freq = Freq.h1,
         max_workers: int = 5,
@@ -104,7 +104,7 @@ class IMarketDataService(Protocol):
             start_time: 开始时间 (YYYYMMDD)
             end_time: 结束时间 (YYYYMMDD)
             interval: 数据频率 (1m, 1h, 4h, 1d等)
-            data_path: 数据库路径
+            db_path: 数据库文件路径
             max_workers: 并发线程数
             max_retries: 最大重试次数
             progress: 进度条
@@ -116,7 +116,8 @@ class IMarketDataService(Protocol):
     def download_universe_data(
         self,
         universe_file: Path | str,
-        data_path: Path | str,
+        db_path: Path | str,
+        data_path: Path | str | None = None,
         interval: Freq = Freq.h1,
         max_workers: int = 4,
         max_retries: int = 3,
@@ -127,7 +128,8 @@ class IMarketDataService(Protocol):
 
         Args:
             universe_file: universe定义文件路径
-            data_path: 数据库存储路径
+            db_path: 数据库文件路径
+            data_path: 数据文件存储路径 (可选)
             interval: 数据频率 (1m, 1h, 4h, 1d等)
             max_workers: 并发线程数
             max_retries: 最大重试次数
@@ -141,7 +143,8 @@ class IMarketDataService(Protocol):
     def download_universe_data_by_periods(
         self,
         universe_file: Path | str,
-        data_path: Path | str,
+        db_path: Path | str,
+        data_path: Path | str | None = None,
         interval: Freq = Freq.h1,
         max_workers: int = 4,
         max_retries: int = 3,
@@ -151,7 +154,8 @@ class IMarketDataService(Protocol):
 
         Args:
             universe_file: universe定义文件路径
-            data_path: 数据库存储路径
+            db_path: 数据库文件路径
+            data_path: 数据文件存储路径 (可选)
             interval: 数据频率
             max_workers: 并发线程数
             max_retries: 最大重试次数
@@ -169,9 +173,9 @@ class IMarketDataService(Protocol):
         t2_months: int,
         t3_months: int,
         top_k: int,
-        data_path: Path | str,
         output_path: Path | str,
         description: str | None = None,
+        strict_date_range: bool = False,
     ) -> UniverseDefinition:
         """定义universe并保存到文件.
 
@@ -182,9 +186,9 @@ class IMarketDataService(Protocol):
             t2_months: T2滚动频率（月），universe重新选择的频率
             t3_months: T3合约最小创建时间（月），用于筛除新合约
             top_k: 选取的top合约数量
-            data_path: 历史数据路径（数据库路径）
             output_path: universe输出文件路径
             description: 描述信息
+            strict_date_range: 是否严格限制在输入的日期范围内
 
         Returns:
             UniverseDefinition: 定义的universe

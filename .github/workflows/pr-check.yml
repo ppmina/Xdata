@@ -30,15 +30,15 @@ jobs:
 
     - name: Code quality with ruff
       run: |
-        uv run ruff check src/cryptoservice/
+        uv run ruff check src/
 
     - name: Code formatting with ruff
       run: |
-        uv run ruff format src/cryptoservice/ --check
+        uv run ruff format src/ --check
 
     - name: Type check with mypy
       run: |
-        uv run mypy src/cryptoservice/ --show-error-codes
+        uv run mypy src/ --show-error-codes
 
     - name: Run tests
       run: |
