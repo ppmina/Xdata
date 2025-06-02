@@ -8,6 +8,7 @@ import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from contextlib import nullcontext
 from datetime import datetime, timedelta
+from decimal import Decimal
 from pathlib import Path
 from threading import Lock
 from typing import Any
@@ -70,6 +71,33 @@ class MarketDataService(IMarketDataService):
         self.converter = DataConverter()
         self.db: MarketDB | None = None
 
+    def _validate_and_prepare_path(self, path: Path | str, is_file: bool = False) -> Path:
+        """验证并准备路径。
+
+        Args:
+            path: 路径字符串或Path对象
+            is_file: 是否为文件路径
+
+        Returns:
+            Path: 验证后的Path对象
+
+        Raises:
+            ValueError: 路径为空或无效时
+        """
+        if not path:
+            raise ValueError("路径不能为空，必须手动指定")
+
+        path_obj = Path(path)
+
+        # 如果是文件路径，确保父目录存在
+        if is_file:
+            path_obj.parent.mkdir(parents=True, exist_ok=True)
+        else:
+            # 如果是目录路径，确保目录存在
+            path_obj.mkdir(parents=True, exist_ok=True)
+
+        return path_obj
+
     def get_symbol_ticker(self, symbol: str | None = None) -> SymbolTicker | list[SymbolTicker]:
         """获取单个或所有交易对的行情数据。
 
@@ -117,6 +145,53 @@ class MarketDataService(IMarketDataService):
             logger.error(f"[red]获取永续合约交易对失败: {e}[/red]")
             raise MarketDataFetchError(f"获取永续合约交易对失败: {e}") from e
 
+    def _date_to_timestamp_range(self, date: str) -> tuple[str, str]:
+        """将日期字符串转换为时间戳范围（开始和结束）。
+
+        Args:
+            date: 日期字符串，格式为 'YYYY-MM-DD'
+
+        Returns:
+            tuple[str, str]: (开始时间戳, 结束时间戳)，都是毫秒级时间戳字符串
+            - 开始时间戳: 当天的 00:00:00
+            - 结束时间戳: 当天的 23:59:59
+        """
+        start_time = int(
+            datetime.strptime(f"{date} 00:00:00", "%Y-%m-%d %H:%M:%S").timestamp() * 1000
+        )
+        end_time = int(
+            datetime.strptime(f"{date} 23:59:59", "%Y-%m-%d %H:%M:%S").timestamp() * 1000
+        )
+        return str(start_time), str(end_time)
+
+    def _date_to_timestamp_start(self, date: str) -> str:
+        """将日期字符串转换为当天开始的时间戳。
+
+        Args:
+            date: 日期字符串，格式为 'YYYY-MM-DD'
+
+        Returns:
+            str: 当天 00:00:00 的毫秒级时间戳字符串
+        """
+        timestamp = int(
+            datetime.strptime(f"{date} 00:00:00", "%Y-%m-%d %H:%M:%S").timestamp() * 1000
+        )
+        return str(timestamp)
+
+    def _date_to_timestamp_end(self, date: str) -> str:
+        """将日期字符串转换为当天结束的时间戳。
+
+        Args:
+            date: 日期字符串，格式为 'YYYY-MM-DD'
+
+        Returns:
+            str: 当天 23:59:59 的毫秒级时间戳字符串
+        """
+        timestamp = int(
+            datetime.strptime(f"{date} 23:59:59", "%Y-%m-%d %H:%M:%S").timestamp() * 1000
+        )
+        return str(timestamp)
+
     def check_symbol_exists_on_date(self, symbol: str, date: str) -> bool:
         """检查指定日期是否存在该交易对。
 
@@ -129,12 +204,7 @@ class MarketDataService(IMarketDataService):
         """
         try:
             # 将日期转换为时间戳范围
-            start_time = int(
-                datetime.strptime(f"{date} 00:00:00", "%Y-%m-%d %H:%M:%S").timestamp() * 1000
-            )
-            end_time = int(
-                datetime.strptime(f"{date} 23:59:59", "%Y-%m-%d %H:%M:%S").timestamp() * 1000
-            )
+            start_time, end_time = self._date_to_timestamp_range(date)
 
             # 尝试获取该时间范围内的K线数据
             klines = self.client.futures_klines(
@@ -230,16 +300,56 @@ class MarketDataService(IMarketDataService):
             list[KlineMarketTicker]: 历史行情数据
         """
         try:
+            # 处理时间格式
             if isinstance(start_time, str):
                 start_time = datetime.fromisoformat(start_time)
-            if isinstance(end_time, str):
+            if end_time is None:
+                end_time = datetime.now()
+            elif isinstance(end_time, str):
                 end_time = datetime.fromisoformat(end_time)
 
-            # 这里应该调用相应的API获取历史数据
-            # 简化实现，返回空列表
+            # 转换为时间戳
+            start_ts = self._date_to_timestamp_start(start_time.strftime("%Y-%m-%d"))
+            end_ts = self._date_to_timestamp_end(end_time.strftime("%Y-%m-%d"))
+
             logger.info(f"获取 {symbol} 的历史数据 ({interval.value})")
 
-            return []
+            # 根据klines_type选择API
+            if klines_type == HistoricalKlinesType.FUTURES:
+                klines = self.client.futures_klines(
+                    symbol=symbol,
+                    interval=interval.value,
+                    startTime=start_ts,
+                    endTime=end_ts,
+                    limit=1500,
+                )
+            else:  # SPOT
+                klines = self.client.get_klines(
+                    symbol=symbol,
+                    interval=interval.value,
+                    startTime=start_ts,
+                    endTime=end_ts,
+                    limit=1500,
+                )
+
+            data = list(klines)
+            if not data:
+                logger.warning(f"未找到交易对 {symbol} 在指定时间段内的数据")
+                return []
+
+            # 转换为KlineMarketTicker对象
+            return [
+                KlineMarketTicker(
+                    symbol=symbol,
+                    last_price=Decimal(str(kline[4])),  # 收盘价作为最新价格
+                    open_price=Decimal(str(kline[1])),
+                    high_price=Decimal(str(kline[2])),
+                    low_price=Decimal(str(kline[3])),
+                    volume=Decimal(str(kline[5])),
+                    close_time=kline[6],
+                )
+                for kline in data
+            ]
 
         except Exception as e:
             logger.error(f"[red]Error getting historical data for {symbol}: {e}[/red]")
@@ -257,14 +367,15 @@ class MarketDataService(IMarketDataService):
 
         Args:
             symbol: 交易对名称
-            start_ts: 开始时间 (YYYY-MM-DD)
-            end_ts: 结束时间 (YYYY-MM-DD)
+            start_ts: 开始时间戳 (毫秒)
+            end_ts: 结束时间戳 (毫秒)
             interval: 时间间隔
             klines_type: 行情类型
         """
         try:
             # 检查交易对是否在指定日期存在
             if start_ts and end_ts:
+                # 将时间戳转换为日期字符串进行验证
                 start_date = datetime.fromtimestamp(int(start_ts) / 1000).strftime("%Y-%m-%d")
                 if not self.check_symbol_exists_on_date(symbol, start_date):
                     logger.warning(
@@ -311,7 +422,7 @@ class MarketDataService(IMarketDataService):
         self,
         symbols: list[str],
         start_time: str,
-        data_path: Path | str,
+        db_path: Path | str,
         end_time: str | None = None,
         interval: Freq = Freq.m1,
         max_workers: int = 1,
@@ -323,7 +434,7 @@ class MarketDataService(IMarketDataService):
         Args:
             symbols: 交易对列表
             start_time: 开始时间 (YYYY-MM-DD)
-            data_path: 数据存储路径
+            db_path: 数据库文件路径 (必须指定，如: /path/to/market.db)
             end_time: 结束时间 (YYYY-MM-DD)
             interval: 时间间隔
             max_workers: 最大线程数
@@ -334,12 +445,17 @@ class MarketDataService(IMarketDataService):
             if not symbols:
                 raise ValueError("Symbols list cannot be empty")
 
-            data_path = Path(data_path)
+            # 验证并准备数据库文件路径
+            db_file_path = self._validate_and_prepare_path(db_path, is_file=True)
             end_time = end_time or datetime.now().strftime("%Y-%m-%d")
 
-            # 初始化数据库连接
+            # 将日期字符串转换为时间戳
+            start_ts = self._date_to_timestamp_start(start_time)
+            end_ts = self._date_to_timestamp_end(end_time)
+
+            # 初始化数据库连接 - 直接使用指定的数据库文件路径
             if self.db is None:
-                self.db = MarketDB(str(data_path))
+                self.db = MarketDB(str(db_file_path))
 
             # 如果没有传入progress，创建一个默认的
             if progress is None:
@@ -357,8 +473,8 @@ class MarketDataService(IMarketDataService):
                     try:
                         data = self._fetch_symbol_data(
                             symbol=symbol,
-                            start_ts=start_time,
-                            end_ts=end_time or "",
+                            start_ts=start_ts,
+                            end_ts=end_ts,
                             interval=interval,
                         )
 
@@ -378,13 +494,20 @@ class MarketDataService(IMarketDataService):
                         return
                     except RateLimitError:
                         wait_time = min(2**retry_count + 1, 30)
+                        logger.warning(f"频率限制 - {symbol}: 等待 {wait_time} 秒")
                         time.sleep(wait_time)
                         retry_count += 1
                     except Exception as e:
-                        if retry_count < max_retries - 1:
+                        # 检查是否是API频率限制错误
+                        if "Too many requests" in str(e) or "APIError" in str(e):
+                            wait_time = min(2**retry_count + 10, 60)
+                            logger.warning(f"API错误 - {symbol}: 等待 {wait_time} 秒后重试")
+                            time.sleep(wait_time)
+                            retry_count += 1
+                        elif retry_count < max_retries - 1:
                             retry_count += 1
                             logger.warning(f"重试 {retry_count}/{max_retries} - {symbol}: {str(e)}")
-                            time.sleep(1)
+                            time.sleep(2)  # 增加基础延迟
                         else:
                             logger.error(f"处理失败 - {symbol}: {str(e)}")
                             break
@@ -409,6 +532,9 @@ class MarketDataService(IMarketDataService):
                         except Exception as e:
                             logger.error(f"处理失败: {e}")
 
+            logger.info("✅ Universe数据下载完成!")
+            logger.info(f"📁 数据已保存到: {db_file_path}")
+
         except Exception as e:
             logger.error(f"Failed to fetch perpetual data: {e}")
             raise MarketDataFetchError(f"Failed to fetch perpetual data: {e}") from e
@@ -421,7 +547,6 @@ class MarketDataService(IMarketDataService):
         t2_months: int,
         t3_months: int,
         top_k: int,
-        data_path: Path | str,
         output_path: Path | str,
         description: str | None = None,
         strict_date_range: bool = False,
@@ -435,8 +560,7 @@ class MarketDataService(IMarketDataService):
             t2_months: T2滚动频率（月），universe重新选择的频率
             t3_months: T3合约最小创建时间（月），用于筛除新合约
             top_k: 选取的top合约数量
-            data_path: 历史数据路径（数据库路径）
-            output_path: universe输出文件路径
+            output_path: universe输出文件路径 (必须指定)
             description: 描述信息
             strict_date_range: 是否严格限制在输入的日期范围内
                 - False (默认): 允许回看到start_date之前的数据
@@ -446,6 +570,9 @@ class MarketDataService(IMarketDataService):
             UniverseDefinition: 定义的universe
         """
         try:
+            # 验证并准备输出路径
+            output_path_obj = self._validate_and_prepare_path(output_path, is_file=True)
+
             # 标准化日期格式
             start_date = self._standardize_date_format(start_date)
             end_date = self._standardize_date_format(end_date)
@@ -509,10 +636,16 @@ class MarketDataService(IMarketDataService):
                 )
 
                 # 创建该周期的snapshot
-                snapshot = UniverseSnapshot(
+                # 计算时间戳
+                start_ts = self._date_to_timestamp_start(t1_start_date)
+                end_ts = self._date_to_timestamp_end(rebalance_date)
+
+                snapshot = UniverseSnapshot.create_with_dates_and_timestamps(
                     effective_date=rebalance_date,
                     period_start_date=t1_start_date,
                     period_end_date=rebalance_date,
+                    period_start_ts=start_ts,
+                    period_end_ts=end_ts,
                     symbols=universe_symbols,
                     mean_daily_amounts=mean_amounts,
                     metadata={
@@ -537,36 +670,12 @@ class MarketDataService(IMarketDataService):
                 description=description,
             )
 
-            # 确定最终输出路径
-            data_path = Path(data_path)  # 确保 data_path 是 Path 对象
-            output_path = Path(output_path)
-
-            # 生成默认文件名
-            filename = (
-                f"universe_{start_date}_{end_date}_T1_{t1_months}m_T2_{t2_months}m_"
-                f"T3_{t3_months}m_K{top_k}.json"
-            )
-
-            # 判断 output_path 是文件名还是完整路径
-            if output_path.parts == (output_path.name,):  # 只是文件名，没有路径分隔符
-                # 使用 data_path 作为基础目录，output_path 作为文件名
-                if output_path.suffix:  # 如果有文件扩展名，直接使用
-                    final_output_path = data_path / output_path.name
-                else:  # 如果没有扩展名，使用默认文件名
-                    final_output_path = data_path / filename
-            else:
-                # 如果是完整路径，直接使用
-                final_output_path = output_path
-
-            # 创建输出目录
-            final_output_path.parent.mkdir(parents=True, exist_ok=True)
-
             # 保存汇总的universe定义
-            universe_def.save_to_file(final_output_path)
+            universe_def.save_to_file(output_path_obj)
 
             logger.info("🎉 Universe定义完成！")
             logger.info(f"📁 包含 {len(all_snapshots)} 个重新平衡周期")
-            logger.info(f"📋 汇总文件: {final_output_path}")
+            logger.info(f"📋 汇总文件: {output_path_obj}")
 
             return universe_def
 
@@ -705,11 +814,23 @@ class MarketDataService(IMarketDataService):
 
             for i, symbol in enumerate(eligible_symbols):
                 try:
+                    # 将日期字符串转换为时间戳
+                    start_ts = self._date_to_timestamp_start(t1_start_date)
+                    end_ts = self._date_to_timestamp_end(rebalance_date)
+
+                    # 更积极的频率控制
+                    if i > 0:  # 第一个请求不需要延迟
+                        if i % 5 == 0:  # 每5个请求延迟更长时间
+                            logger.info(f"已处理 {i}/{len(eligible_symbols)} 个交易对，等待3秒...")
+                            time.sleep(3)
+                        else:
+                            time.sleep(1)  # 每个请求之间至少延迟1秒
+
                     # 获取历史K线数据
                     klines = self._fetch_symbol_data(
                         symbol=symbol,
-                        start_ts=t1_start_date,
-                        end_ts=rebalance_date,
+                        start_ts=start_ts,
+                        end_ts=end_ts,
                         interval=Freq.d1,
                     )
 
@@ -743,13 +864,28 @@ class MarketDataService(IMarketDataService):
                         else:
                             logger.warning(f"交易对 {symbol} 在期间内没有有效的成交量数据")
 
-                    # 添加短暂延迟避免API频率限制
-                    if (i + 1) % 10 == 0:
-                        logger.info(f"已处理 {i + 1}/{len(eligible_symbols)} 个交易对")
-                        time.sleep(0.5)
-
+                except RateLimitError:
+                    # 遇到频率限制时，等待更长时间后重试
+                    logger.warning(f"遇到频率限制，等待60秒后继续处理 {symbol}")
+                    time.sleep(60)
+                    try:
+                        # 重试一次
+                        klines = self._fetch_symbol_data(
+                            symbol=symbol,
+                            start_ts=start_ts,
+                            end_ts=end_ts,
+                            interval=Freq.d1,
+                        )
+                        # ... 处理数据的代码保持相同
+                    except Exception:
+                        logger.warning(f"重试后仍然失败，跳过 {symbol}")
+                        continue
                 except Exception as e:
                     logger.warning(f"获取 {symbol} 数据时出错，跳过: {e}")
+                    # 如果是API错误，增加延迟
+                    if "Too many requests" in str(e) or "APIError" in str(e):
+                        logger.info("检测到API错误，增加延迟时间")
+                        time.sleep(5)
                     continue
 
             # 按mean daily amount排序并选择top_k
@@ -792,7 +928,8 @@ class MarketDataService(IMarketDataService):
     def download_universe_data(
         self,
         universe_file: Path | str,
-        data_path: Path | str,
+        db_path: Path | str,
+        data_path: Path | str | None = None,
         interval: Freq = Freq.h1,
         max_workers: int = 4,
         max_retries: int = 3,
@@ -802,8 +939,9 @@ class MarketDataService(IMarketDataService):
         """根据universe定义文件下载相应的历史数据到数据库。
 
         Args:
-            universe_file: universe定义文件路径
-            data_path: 数据库存储路径
+            universe_file: universe定义文件路径 (必须指定)
+            db_path: 数据库文件路径 (必须指定，如: /path/to/market.db)
+            data_path: 数据文件存储路径 (可选，用于存储其他数据文件)
             interval: 数据频率 (1m, 1h, 4h, 1d等)
             max_workers: 并发线程数
             max_retries: 最大重试次数
@@ -812,15 +950,29 @@ class MarketDataService(IMarketDataService):
 
         Example:
             service.download_universe_data(
-                universe_file="./data/universe.json",
-                data_path="./data",
+                universe_file="/path/to/universe.json",
+                db_path="/path/to/database/market.db",
+                data_path="/path/to/data",  # 可选
                 interval=Freq.h1,
                 max_workers=4
             )
         """
         try:
+            # 验证路径
+            universe_file_obj = self._validate_and_prepare_path(universe_file, is_file=True)
+            db_file_path = self._validate_and_prepare_path(db_path, is_file=True)
+
+            # data_path是可选的，如果提供则验证
+            data_path_obj = None
+            if data_path:
+                data_path_obj = self._validate_and_prepare_path(data_path, is_file=False)
+
+            # 检查universe文件是否存在
+            if not universe_file_obj.exists():
+                raise FileNotFoundError(f"Universe文件不存在: {universe_file_obj}")
+
             # 加载universe定义
-            universe_def = UniverseDefinition.load_from_file(universe_file)
+            universe_def = UniverseDefinition.load_from_file(universe_file_obj)
 
             # 分析数据下载需求
             download_plan = self._analyze_universe_data_requirements(
@@ -835,23 +987,28 @@ class MarketDataService(IMarketDataService):
             )
             logger.info(f"   - 数据频率: {interval.value}")
             logger.info(f"   - 并发线程: {max_workers}")
+            logger.info(f"   - 数据库路径: {db_file_path}")
+            if data_path_obj:
+                logger.info(f"   - 数据文件路径: {data_path_obj}")
 
             # 执行数据下载
             self.get_perpetual_data(
                 symbols=download_plan["unique_symbols"],
                 start_time=download_plan["overall_start_date"],
                 end_time=download_plan["overall_end_date"],
-                data_path=data_path,
+                db_path=db_file_path,
                 interval=interval,
                 max_workers=max_workers,
                 max_retries=max_retries,
             )
 
             logger.info("✅ Universe数据下载完成!")
-            logger.info(f"📁 数据已保存到: {Path(data_path) / 'market.db'}")
+            logger.info(f"📁 数据已保存到: {db_file_path}")
 
             # 验证数据完整性
-            self._verify_universe_data_integrity(universe_def, data_path, interval, download_plan)
+            self._verify_universe_data_integrity(
+                universe_def, db_file_path, interval, download_plan
+            )
 
         except Exception as e:
             logger.error(f"[red]下载universe数据失败: {e}[/red]")
@@ -906,7 +1063,7 @@ class MarketDataService(IMarketDataService):
     def _verify_universe_data_integrity(
         self,
         universe_def: UniverseDefinition,
-        data_path: Path | str,
+        db_path: Path,
         interval: Freq,
         download_plan: dict[str, Any],
     ) -> None:
@@ -914,15 +1071,15 @@ class MarketDataService(IMarketDataService):
 
         Args:
             universe_def: Universe定义
-            data_path: 数据路径
+            db_path: 数据库文件路径
             interval: 数据频率
             download_plan: 下载计划
         """
         try:
             from cryptoservice.data import MarketDB
 
-            # 初始化数据库连接
-            db = MarketDB(str(data_path))
+            # 初始化数据库连接 - 直接使用数据库文件路径
+            db = MarketDB(str(db_path))
 
             logger.info("🔍 验证数据完整性...")
             incomplete_symbols: list[str] = []
@@ -973,7 +1130,8 @@ class MarketDataService(IMarketDataService):
     def download_universe_data_by_periods(
         self,
         universe_file: Path | str,
-        data_path: Path | str,
+        db_path: Path | str,
+        data_path: Path | str | None = None,
         interval: Freq = Freq.h1,
         max_workers: int = 4,
         max_retries: int = 3,
@@ -984,21 +1142,38 @@ class MarketDataService(IMarketDataService):
         这种方式为每个重平衡周期单独下载数据，可以避免下载不必要的数据。
 
         Args:
-            universe_file: universe定义文件路径
-            data_path: 数据库存储路径
+            universe_file: universe定义文件路径 (必须指定)
+            db_path: 数据库文件路径 (必须指定，如: /path/to/market.db)
+            data_path: 数据文件存储路径 (可选，用于存储其他数据文件)
             interval: 数据频率
             max_workers: 并发线程数
             max_retries: 最大重试次数
             include_buffer_days: 缓冲天数
         """
         try:
+            # 验证路径
+            universe_file_obj = self._validate_and_prepare_path(universe_file, is_file=True)
+            db_file_path = self._validate_and_prepare_path(db_path, is_file=True)
+
+            # data_path是可选的，如果提供则验证
+            data_path_obj = None
+            if data_path:
+                data_path_obj = self._validate_and_prepare_path(data_path, is_file=False)
+
+            # 检查universe文件是否存在
+            if not universe_file_obj.exists():
+                raise FileNotFoundError(f"Universe文件不存在: {universe_file_obj}")
+
             # 加载universe定义
-            universe_def = UniverseDefinition.load_from_file(universe_file)
+            universe_def = UniverseDefinition.load_from_file(universe_file_obj)
 
             logger.info("📊 按周期下载数据:")
             logger.info(f"   - 总快照数: {len(universe_def.snapshots)}")
             logger.info(f"   - 数据频率: {interval.value}")
             logger.info(f"   - 并发线程: {max_workers}")
+            logger.info(f"   - 数据库路径: {db_file_path}")
+            if data_path_obj:
+                logger.info(f"   - 数据文件路径: {data_path_obj}")
 
             # 为每个周期单独下载数据
             for i, snapshot in enumerate(universe_def.snapshots):
@@ -1025,7 +1200,7 @@ class MarketDataService(IMarketDataService):
                     symbols=snapshot.symbols,
                     start_time=start_date.strftime("%Y-%m-%d"),
                     end_time=end_date.strftime("%Y-%m-%d"),
-                    data_path=data_path,
+                    db_path=db_file_path,
                     interval=interval,
                     max_workers=max_workers,
                     max_retries=max_retries,
@@ -1034,7 +1209,7 @@ class MarketDataService(IMarketDataService):
                 logger.info(f"   ✅ 快照 {snapshot.effective_date} 下载完成")
 
             logger.info("🎉 所有universe数据下载完成!")
-            logger.info(f"📁 数据已保存到: {Path(data_path) / 'market.db'}")
+            logger.info(f"📁 数据已保存到: {db_file_path}")
 
         except Exception as e:
             logger.error(f"[red]按周期下载universe数据失败: {e}[/red]")

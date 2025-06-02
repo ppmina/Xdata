@@ -46,6 +46,8 @@ class UniverseSnapshot:
         effective_date: 生效日期（重平衡日期，通常是月末）
         period_start_date: 数据计算周期开始日期（T1回看的开始日期）
         period_end_date: 数据计算周期结束日期（通常等于重平衡日期）
+        period_start_ts: 数据计算周期开始时间戳 (毫秒)
+        period_end_ts: 数据计算周期结束时间戳 (毫秒)
         symbols: 该时间点的universe交易对列表（基于period内数据计算得出）
         mean_daily_amounts: 各交易对在period内的平均日成交量
         metadata: 额外的元数据信息
@@ -60,6 +62,8 @@ class UniverseSnapshot:
     effective_date: str
     period_start_date: str
     period_end_date: str
+    period_start_ts: str
+    period_end_ts: str
     symbols: list[str]
     mean_daily_amounts: dict[str, float]
     metadata: dict[str, Any] | None = None
@@ -73,10 +77,10 @@ class UniverseSnapshot:
         mean_daily_amounts: dict[str, float],
         metadata: dict[str, Any] | None = None,
     ) -> "UniverseSnapshot":
-        """创建快照并自动推断周期日期
+        """创建快照并自动推断周期日期和时间戳
 
         根据重平衡日期（effective_date）和回看窗口（t1_months），
-        自动计算数据计算的时间区间。
+        自动计算数据计算的时间区间和对应的时间戳。
 
         Args:
             effective_date: 重平衡生效日期（建议使用月末日期）
@@ -86,7 +90,7 @@ class UniverseSnapshot:
             metadata: 元数据
 
         Returns:
-            UniverseSnapshot: 带有推断周期日期的快照
+            UniverseSnapshot: 带有推断周期日期和时间戳的快照
 
         Example:
             对于月末重平衡策略：
@@ -95,13 +99,72 @@ class UniverseSnapshot:
             -> period_end_date="2024-01-31"
             含义：基于1月份数据，在1月末选择2月份universe
         """
+        from datetime import datetime
+
         effective_dt = pd.to_datetime(effective_date)
         period_start_dt = effective_dt - pd.DateOffset(months=t1_months)
+
+        # 计算时间戳（毫秒）
+        period_start_ts = str(
+            int(
+                datetime.strptime(
+                    f"{period_start_dt.strftime('%Y-%m-%d')} 00:00:00",
+                    "%Y-%m-%d %H:%M:%S",
+                ).timestamp()
+                * 1000
+            )
+        )
+        period_end_ts = str(
+            int(
+                datetime.strptime(f"{effective_date} 23:59:59", "%Y-%m-%d %H:%M:%S").timestamp()
+                * 1000
+            )
+        )
 
         return cls(
             effective_date=effective_date,
             period_start_date=period_start_dt.strftime("%Y-%m-%d"),
             period_end_date=effective_date,  # 数据计算周期结束 = 重平衡日期
+            period_start_ts=period_start_ts,
+            period_end_ts=period_end_ts,
+            symbols=symbols,
+            mean_daily_amounts=mean_daily_amounts,
+            metadata=metadata,
+        )
+
+    @classmethod
+    def create_with_dates_and_timestamps(
+        cls,
+        effective_date: str,
+        period_start_date: str,
+        period_end_date: str,
+        period_start_ts: str,
+        period_end_ts: str,
+        symbols: list[str],
+        mean_daily_amounts: dict[str, float],
+        metadata: dict[str, Any] | None = None,
+    ) -> "UniverseSnapshot":
+        """创建快照，明确指定所有日期和时间戳
+
+        Args:
+            effective_date: 重平衡生效日期
+            period_start_date: 数据计算周期开始日期
+            period_end_date: 数据计算周期结束日期
+            period_start_ts: 数据计算周期开始时间戳 (毫秒)
+            period_end_ts: 数据计算周期结束时间戳 (毫秒)
+            symbols: 交易对列表
+            mean_daily_amounts: 平均日成交量
+            metadata: 元数据
+
+        Returns:
+            UniverseSnapshot: 快照实例
+        """
+        return cls(
+            effective_date=effective_date,
+            period_start_date=period_start_date,
+            period_end_date=period_end_date,
+            period_start_ts=period_start_ts,
+            period_end_ts=period_end_ts,
             symbols=symbols,
             mean_daily_amounts=mean_daily_amounts,
             metadata=metadata,
@@ -156,6 +219,8 @@ class UniverseSnapshot:
             "effective_date": self.effective_date,
             "period_start_date": self.period_start_date,
             "period_end_date": self.period_end_date,
+            "period_start_ts": self.period_start_ts,
+            "period_end_ts": self.period_end_ts,
             "symbols": self.symbols,
             "mean_daily_amounts": self.mean_daily_amounts,
             "metadata": self.metadata or {},
@@ -170,6 +235,8 @@ class UniverseSnapshot:
         return {
             "period_start": self.period_start_date,
             "period_end": self.period_end_date,
+            "period_start_ts": self.period_start_ts,
+            "period_end_ts": self.period_end_ts,
             "effective_date": self.effective_date,
             "period_duration_days": str(
                 (pd.to_datetime(self.period_end_date) - pd.to_datetime(self.period_start_date)).days
@@ -229,17 +296,49 @@ class UniverseDefinition:
     def from_dict(cls, data: dict[str, Any]) -> "UniverseDefinition":
         """从字典创建Universe定义"""
         config = UniverseConfig(**data["config"])
-        snapshots = [
-            UniverseSnapshot(
+        snapshots = []
+
+        for snap in data["snapshots"]:
+            period_start_date = snap.get("period_start_date", snap["effective_date"])
+            period_end_date = snap.get("period_end_date", snap["effective_date"])
+
+            # 处理时间戳字段 - 如果不存在则自动计算
+            period_start_ts = snap.get("period_start_ts")
+            period_end_ts = snap.get("period_end_ts")
+
+            if period_start_ts is None or period_end_ts is None:
+                from datetime import datetime
+
+                # 自动计算时间戳
+                period_start_ts = str(
+                    int(
+                        datetime.strptime(
+                            f"{period_start_date} 00:00:00", "%Y-%m-%d %H:%M:%S"
+                        ).timestamp()
+                        * 1000
+                    )
+                )
+                period_end_ts = str(
+                    int(
+                        datetime.strptime(
+                            f"{period_end_date} 23:59:59", "%Y-%m-%d %H:%M:%S"
+                        ).timestamp()
+                        * 1000
+                    )
+                )
+
+            snapshot = UniverseSnapshot(
                 effective_date=snap["effective_date"],
-                period_start_date=snap.get("period_start_date", snap["effective_date"]),
-                period_end_date=snap.get("period_end_date", snap["effective_date"]),
+                period_start_date=period_start_date,
+                period_end_date=period_end_date,
+                period_start_ts=period_start_ts,
+                period_end_ts=period_end_ts,
                 symbols=snap["symbols"],
                 mean_daily_amounts=snap["mean_daily_amounts"],
                 metadata=snap.get("metadata"),
             )
-            for snap in data["snapshots"]
-        ]
+            snapshots.append(snapshot)
+
         creation_time = datetime.fromisoformat(data["creation_time"])
 
         return cls(
@@ -351,106 +450,6 @@ class UniverseDefinition:
             for snapshot in self.snapshots
         ]
 
-        # def get_symbols_overlap_analysis(self) -> dict[str, Any]:
-        """分析不同周期间的交易对重叠情况"""
-        if len(self.snapshots) < 2:
-            return {"error": "Need at least 2 snapshots for overlap analysis"}
-
-        all_symbols = set()
-        for snapshot in self.snapshots:
-            all_symbols.update(snapshot.symbols)
-
-        # 计算每个符号出现的频率
-        symbol_frequency: dict[str, int] = {}
-        for symbol in all_symbols:
-            frequency = sum(1 for snapshot in self.snapshots if symbol in snapshot.symbols)
-            symbol_frequency[symbol] = frequency
-
-        # 计算相邻周期的重叠率
-        overlap_rates = []
-        for i in range(len(self.snapshots) - 1):
-            current_symbols = set(self.snapshots[i].symbols)
-            next_symbols = set(self.snapshots[i + 1].symbols)
-
-            intersection = current_symbols.intersection(next_symbols)
-            union = current_symbols.union(next_symbols)
-
-            overlap_rate = len(intersection) / len(union) if union else 0
-            overlap_rates.append(
-                {
-                    "from_date": self.snapshots[i].effective_date,
-                    "to_date": self.snapshots[i + 1].effective_date,
-                    "overlap_rate": overlap_rate,
-                    "common_symbols_count": len(intersection),
-                    "total_unique_symbols": len(union),
-                }
-            )
-
-        # 找出稳定的核心交易对（出现在大部分周期中）
-        stability_threshold = len(self.snapshots) * 0.7  # 70%的周期中出现
-        core_symbols = [
-            symbol for symbol, freq in symbol_frequency.items() if freq >= stability_threshold
-        ]
-
-        return {
-            "total_unique_symbols": len(all_symbols),
-            "core_symbols": sorted(core_symbols),
-            "core_symbols_count": len(core_symbols),
-            "symbol_frequency_distribution": {
-                "always_present": len(
-                    [s for s, f in symbol_frequency.items() if f == len(self.snapshots)]
-                ),
-                "frequently_present": len(
-                    [s for s, f in symbol_frequency.items() if f >= stability_threshold]
-                ),
-                "occasionally_present": len(
-                    [s for s, f in symbol_frequency.items() if f < stability_threshold]
-                ),
-            },
-            "average_overlap_rate": (
-                sum(float(overlap_rate["overlap_rate"]) for overlap_rate in overlap_rates)
-                / len(overlap_rates)
-                if overlap_rates
-                else 0
-            ),
-            "period_overlaps": overlap_rates,
-            "most_stable_symbols": sorted(
-                symbol_frequency.items(), key=lambda x: x[1], reverse=True
-            )[:10],
-        }
-
-    def get_symbols_timeline(self, symbol: str) -> dict[str, Any]:
-        """获取特定交易对在整个timeline中的表现"""
-        timeline: list[dict[str, Any]] = []
-        for snapshot in sorted(self.snapshots, key=lambda x: x.effective_date):
-            if symbol in snapshot.symbols:
-                rank = snapshot.symbols.index(symbol) + 1  # 排名从1开始
-                mean_amount = snapshot.mean_daily_amounts.get(symbol, 0)
-                timeline.append(
-                    {
-                        "effective_date": snapshot.effective_date,
-                        "rank": rank,
-                        "mean_daily_amount": mean_amount,
-                        "total_symbols_in_universe": len(snapshot.symbols),
-                    }
-                )
-
-        if not timeline:
-            return {"error": f"Symbol {symbol} not found in any snapshots"}
-
-        return {
-            "symbol": symbol,
-            "appearances_count": len(timeline),
-            "total_snapshots": len(self.snapshots),
-            "presence_rate": len(timeline) / len(self.snapshots),
-            "timeline": timeline,
-            "best_rank": min(int(entry["rank"]) for entry in timeline),
-            "worst_rank": max(int(entry["rank"]) for entry in timeline),
-            "avg_rank": sum(int(entry["rank"]) for entry in timeline) / len(timeline),
-            "avg_mean_daily_amount": sum(float(entry["mean_daily_amount"]) for entry in timeline)
-            / len(timeline),
-        }
-
     def export_to_dataframe(self) -> pd.DataFrame:
         """将universe数据导出为pandas DataFrame，便于分析"""
         rows = []
@@ -475,74 +474,309 @@ class UniverseDefinition:
 
         return df
 
-    def get_top_performers_summary(self, top_n: int = 10) -> dict[str, Any]:
-        """获取表现最佳的交易对汇总（基于出现频率和平均排名）"""
-        symbol_stats: dict[str, dict[str, Any]] = {}
+    @classmethod
+    def get_schema(cls) -> dict[str, Any]:
+        """获取Universe定义的JSON Schema
 
-        for snapshot in self.snapshots:
-            for i, symbol in enumerate(snapshot.symbols):
-                rank = i + 1
-                mean_amount = snapshot.mean_daily_amounts.get(symbol, 0)
-
-                if symbol not in symbol_stats:
-                    symbol_stats[symbol] = {
-                        "appearances": 0,
-                        "total_rank": 0,
-                        "total_amount": 0.0,
-                        "best_rank": float("inf"),
-                        "dates": [],
-                    }
-
-                symbol_stats[symbol]["appearances"] += 1
-                symbol_stats[symbol]["total_rank"] += rank
-                symbol_stats[symbol]["total_amount"] += mean_amount
-                symbol_stats[symbol]["best_rank"] = min(
-                    float(symbol_stats[symbol]["best_rank"]), float(rank)
-                )
-                symbol_stats[symbol]["dates"].append(snapshot.effective_date)
-
-        # 计算综合得分（出现频率 * (1/平均排名)）
-        for _symbol, stats in symbol_stats.items():
-            appearances = int(stats["appearances"])
-            total_rank = int(stats["total_rank"])
-            total_amount = float(stats["total_amount"])
-
-            avg_rank = total_rank / appearances
-            presence_rate = appearances / len(self.snapshots)
-            stats["avg_rank"] = avg_rank
-            stats["presence_rate"] = presence_rate
-            stats["avg_mean_amount"] = total_amount / appearances
-            # 综合得分：出现频率越高，平均排名越靠前，得分越高
-            stats["composite_score"] = presence_rate * (self.config.top_k / avg_rank)
-
-        # 按综合得分排序
-        top_performers = sorted(
-            symbol_stats.items(),
-            key=lambda x: float(x[1]["composite_score"]),
-            reverse=True,
-        )[:top_n]
-
+        Returns:
+            Dict: JSON Schema定义
+        """
         return {
-            "top_performers": [
-                {
-                    "symbol": symbol,
-                    "composite_score": float(stats["composite_score"]),
-                    "appearances": int(stats["appearances"]),
-                    "presence_rate": float(stats["presence_rate"]),
-                    "avg_rank": float(stats["avg_rank"]),
-                    "best_rank": float(stats["best_rank"]),
-                    "avg_mean_daily_amount": float(stats["avg_mean_amount"]),
-                    "active_dates": list(stats["dates"]),
-                }
-                for symbol, stats in top_performers
-            ],
-            "analysis_summary": {
-                "total_snapshots": len(self.snapshots),
-                "total_unique_symbols": len(symbol_stats),
-                "avg_symbols_per_snapshot": self.config.top_k,
-                "date_range": {
-                    "start": min(s.effective_date for s in self.snapshots),
-                    "end": max(s.effective_date for s in self.snapshots),
+            "$schema": "http://json-schema.org/draft-07/schema#",
+            "title": "Universe Definition Schema",
+            "description": "Cryptocurrency universe definition with configuration and snapshots",
+            "type": "object",
+            "properties": {
+                "config": {
+                    "type": "object",
+                    "description": "Universe configuration parameters",
+                    "properties": {
+                        "start_date": {
+                            "type": "string",
+                            "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+                            "description": "Start date in YYYY-MM-DD format",
+                        },
+                        "end_date": {
+                            "type": "string",
+                            "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+                            "description": "End date in YYYY-MM-DD format",
+                        },
+                        "t1_months": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "description": (
+                                "T1 lookback window in months for calculating mean daily amount"
+                            ),
+                        },
+                        "t2_months": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "description": "T2 rebalancing frequency in months",
+                        },
+                        "t3_months": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "description": ("T3 minimum contract existence time in months"),
+                        },
+                        "top_k": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "description": "Number of top contracts to select",
+                        },
+                    },
+                    "required": [
+                        "start_date",
+                        "end_date",
+                        "t1_months",
+                        "t2_months",
+                        "t3_months",
+                        "top_k",
+                    ],
+                    "additionalProperties": False,
+                },
+                "snapshots": {
+                    "type": "array",
+                    "description": "Time series of universe snapshots",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "effective_date": {
+                                "type": "string",
+                                "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+                                "description": "Rebalancing effective date",
+                            },
+                            "period_start_date": {
+                                "type": "string",
+                                "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+                                "description": "Data calculation period start date",
+                            },
+                            "period_end_date": {
+                                "type": "string",
+                                "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+                                "description": "Data calculation period end date",
+                            },
+                            "period_start_ts": {
+                                "type": "string",
+                                "pattern": "^\\d+$",
+                                "description": (
+                                    "Data calculation period start timestamp in milliseconds"
+                                ),
+                            },
+                            "period_end_ts": {
+                                "type": "string",
+                                "pattern": "^\\d+$",
+                                "description": (
+                                    "Data calculation period end timestamp in milliseconds"
+                                ),
+                            },
+                            "symbols": {
+                                "type": "array",
+                                "items": {
+                                    "type": "string",
+                                    "pattern": "^[A-Z0-9]+USDT$",
+                                    "description": "Trading pair symbol (e.g., BTCUSDT)",
+                                },
+                                "description": "List of selected trading pairs for this period",
+                            },
+                            "mean_daily_amounts": {
+                                "type": "object",
+                                "patternProperties": {
+                                    "^[A-Z0-9]+USDT$": {
+                                        "type": "number",
+                                        "minimum": 0,
+                                        "description": "Mean daily trading volume in USDT",
+                                    }
+                                },
+                                "description": "Mean daily trading amounts for each symbol",
+                            },
+                            "metadata": {
+                                "type": "object",
+                                "description": "Additional metadata for this snapshot",
+                                "properties": {
+                                    "t1_start_date": {
+                                        "type": "string",
+                                        "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+                                    },
+                                    "calculated_t1_start": {
+                                        "type": "string",
+                                        "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+                                    },
+                                    "period_adjusted": {"type": "boolean"},
+                                    "strict_date_range": {"type": "boolean"},
+                                    "selected_symbols_count": {
+                                        "type": "integer",
+                                        "minimum": 0,
+                                    },
+                                    "total_candidates": {
+                                        "type": "integer",
+                                        "minimum": 0,
+                                    },
+                                },
+                                "additionalProperties": True,
+                            },
+                        },
+                        "required": [
+                            "effective_date",
+                            "period_start_date",
+                            "period_end_date",
+                            "period_start_ts",
+                            "period_end_ts",
+                            "symbols",
+                            "mean_daily_amounts",
+                        ],
+                        "additionalProperties": False,
+                    },
+                },
+                "creation_time": {
+                    "type": "string",
+                    "format": "date-time",
+                    "description": "ISO 8601 timestamp when this universe definition was created",
+                },
+                "description": {
+                    "type": ["string", "null"],
+                    "description": "Optional description of this universe definition",
                 },
             },
+            "required": ["config", "snapshots", "creation_time"],
+            "additionalProperties": False,
         }
+
+    @classmethod
+    def get_schema_example(cls) -> dict[str, Any]:
+        """获取Universe定义的示例数据
+
+        Returns:
+            Dict: 符合schema的示例数据
+        """
+        return {
+            "config": {
+                "start_date": "2024-01-01",
+                "end_date": "2024-12-31",
+                "t1_months": 1,
+                "t2_months": 1,
+                "t3_months": 3,
+                "top_k": 10,
+            },
+            "snapshots": [
+                {
+                    "effective_date": "2024-01-31",
+                    "period_start_date": "2023-12-31",
+                    "period_end_date": "2024-01-31",
+                    "period_start_ts": "1703980800000",
+                    "period_end_ts": "1706745599000",
+                    "symbols": ["BTCUSDT", "ETHUSDT", "BNBUSDT"],
+                    "mean_daily_amounts": {
+                        "BTCUSDT": 1234567890.0,
+                        "ETHUSDT": 987654321.0,
+                        "BNBUSDT": 456789123.0,
+                    },
+                    "metadata": {
+                        "t1_start_date": "2023-12-31",
+                        "calculated_t1_start": "2023-12-31",
+                        "period_adjusted": False,
+                        "strict_date_range": False,
+                        "selected_symbols_count": 3,
+                        "total_candidates": 100,
+                    },
+                }
+            ],
+            "creation_time": "2024-01-01T00:00:00",
+            "description": "Example universe definition for top cryptocurrency pairs",
+        }
+
+    def export_schema_to_file(self, file_path: Path | str, include_example: bool = True) -> None:
+        """导出schema定义到文件
+
+        Args:
+            file_path: 输出文件路径
+            include_example: 是否包含示例数据
+        """
+        import json
+
+        file_path = Path(file_path)
+        file_path.parent.mkdir(parents=True, exist_ok=True)
+
+        schema_data = {
+            "schema": self.get_schema(),
+            "version": "1.0.0",
+            "generated_at": datetime.now().isoformat(),
+        }
+
+        if include_example:
+            schema_data["example"] = self.get_schema_example()
+
+        with open(file_path, "w", encoding="utf-8") as f:
+            json.dump(schema_data, f, indent=2, ensure_ascii=False)
+
+    def validate_against_schema(self) -> dict[str, Any]:
+        """验证当前universe定义是否符合schema
+
+        Returns:
+            Dict: 验证结果
+        """
+        try:
+            # 这里可以使用jsonschema库进行验证，但为了减少依赖，我们进行基本验证
+            data = self.to_dict()
+
+            errors: list[str] = []
+            warnings: list[str] = []
+
+            # 基本结构验证
+            required_fields = ["config", "snapshots", "creation_time"]
+            for field in required_fields:
+                if field not in data:
+                    errors.append(f"Missing required field: {field}")
+
+            # 配置验证
+            if "config" in data:
+                config = data["config"]
+                config_required = [
+                    "start_date",
+                    "end_date",
+                    "t1_months",
+                    "t2_months",
+                    "t3_months",
+                    "top_k",
+                ]
+                for field in config_required:
+                    if field not in config:
+                        errors.append(f"Missing required config field: {field}")
+
+                # 日期格式验证
+                import re
+
+                date_pattern = r"^\d{4}-\d{2}-\d{2}$"
+                for date_field in ["start_date", "end_date"]:
+                    if date_field in config and not re.match(date_pattern, config[date_field]):
+                        errors.append(f"Invalid date format for {date_field}: {config[date_field]}")
+
+            # 快照验证
+            if "snapshots" in data:
+                for i, snapshot in enumerate(data["snapshots"]):
+                    snapshot_required = [
+                        "effective_date",
+                        "period_start_date",
+                        "period_end_date",
+                        "period_start_ts",
+                        "period_end_ts",
+                        "symbols",
+                        "mean_daily_amounts",
+                    ]
+                    for field in snapshot_required:
+                        if field not in snapshot:
+                            errors.append(f"Missing required field in snapshot {i}: {field}")
+
+            return {
+                "valid": len(errors) == 0,
+                "errors": errors,
+                "warnings": warnings,
+                "validation_time": datetime.now().isoformat(),
+            }
+
+        except Exception as e:
+            return {
+                "valid": False,
+                "errors": [f"Validation failed with exception: {str(e)}"],
+                "warnings": [],
+                "validation_time": datetime.now().isoformat(),
+            }

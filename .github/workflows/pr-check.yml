@@ -22,23 +22,36 @@ jobs:
 
     - name: Install dependencies
       run: |
-        uv sync --all-extras
+        uv sync --all-extras --dev
 
     - name: Check YAML files
       run: |
-        python -c "import yaml; [yaml.safe_load(open(f)) for f in ['.pre-commit-config.yaml', '.github/workflows/pr-check.yml']]"
+        # 验证YAML文件语法
+        uv run python -c "
+        import yaml
+        import sys
+        files = ['.pre-commit-config.yaml', '.github/workflows/pr-check.yml']
+        for f in files:
+          try:
+            with open(f, 'r') as file:
+              yaml.safe_load(file)
+            print(f'✅ {f}: Valid YAML')
+          except Exception as e:
+            print(f'❌ {f}: Invalid YAML - {e}')
+            sys.exit(1)
+        "
 
     - name: Code quality with ruff
       run: |
-        uv run ruff check src/cryptoservice/
+        uv run ruff check src/
 
     - name: Code formatting with ruff
       run: |
-        uv run ruff format src/cryptoservice/ --check
+        uv run ruff format src/ --check
 
     - name: Type check with mypy
       run: |
-        uv run mypy src/cryptoservice/ --show-error-codes
+        uv run mypy src/ --show-error-codes
 
     - name: Run tests
       run: |

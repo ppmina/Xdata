@@ -1,13 +1,9 @@
 import asyncio
 import json
-import time
-from datetime import datetime
-from typing import Any, Dict, Optional
+from typing import Optional
 
 import aiohttp
-import websockets
 from rich.console import Console
-from yarl import URL
 
 console = Console()
 
