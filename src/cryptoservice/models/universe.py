@@ -439,6 +439,8 @@ class UniverseDefinition:
                 "effective_date": snapshot.effective_date,
                 "period_start_date": snapshot.period_start_date,
                 "period_end_date": snapshot.period_end_date,
+                "period_start_ts": snapshot.period_start_ts,
+                "period_end_ts": snapshot.period_end_ts,
                 "period_duration_days": (
                     pd.to_datetime(snapshot.period_end_date)
                     - pd.to_datetime(snapshot.period_start_date)
@@ -449,30 +451,6 @@ class UniverseDefinition:
             }
             for snapshot in self.snapshots
         ]
-
-    def export_to_dataframe(self) -> pd.DataFrame:
-        """将universe数据导出为pandas DataFrame，便于分析"""
-        rows = []
-        for snapshot in self.snapshots:
-            for i, symbol in enumerate(snapshot.symbols):
-                rows.append(
-                    {
-                        "effective_date": snapshot.effective_date,
-                        "period_start_date": snapshot.period_start_date,
-                        "period_end_date": snapshot.period_end_date,
-                        "symbol": symbol,
-                        "rank": i + 1,
-                        "mean_daily_amount": snapshot.mean_daily_amounts.get(symbol, 0),
-                        "total_symbols_in_universe": len(snapshot.symbols),
-                    }
-                )
-
-        df = pd.DataFrame(rows)
-        df["effective_date"] = pd.to_datetime(df["effective_date"])
-        df["period_start_date"] = pd.to_datetime(df["period_start_date"])
-        df["period_end_date"] = pd.to_datetime(df["period_end_date"])
-
-        return df
 
     @classmethod
     def get_schema(cls) -> dict[str, Any]:

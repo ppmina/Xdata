@@ -176,9 +176,29 @@ for i, snapshot in enumerate(universe_def.snapshots, 1):
         symbols=snapshot.symbols
     )
 
-    # 检查导出文件
-    npy_files = list(snapshot_dir.glob("*.npy"))
-    print(f"     导出文件: {len(npy_files)} 个 .npy 文件")
+    # 检查导出文件 (KDTV格式)
+    freq_dir = snapshot_dir / "h1"
+    if freq_dir.exists():
+        # 统计所有日期目录下的.npy文件
+        total_npy_files = 0
+        date_dirs = [d for d in freq_dir.iterdir() if d.is_dir()]
+
+        for date_dir in date_dirs:
+            # 统计该日期下所有特征目录中的.npy文件
+            for feature_dir in date_dir.iterdir():
+                if feature_dir.is_dir() and feature_dir.name != "universe_token.pkl":
+                    npy_files = list(feature_dir.glob("*.npy"))
+                    total_npy_files += len(npy_files)
+
+        print(f"     导出文件: {len(date_dirs)} 个日期目录，共 {total_npy_files} 个 .npy 文件")
+
+        # 显示特征类型
+        if date_dirs:
+            first_date_dir = date_dirs[0]
+            features = [d.name for d in first_date_dir.iterdir() if d.is_dir()]
+            print(f"     包含特征: {features}")
+    else:
+        print(f"     导出文件: 0 个文件 (可能没有数据)")
     print()
 
 print("✅ 数据导出完成")
@@ -266,12 +286,42 @@ crypto_data/
 ├── market.db                  # SQLite数据库文件
 └── exports/                   # 导出数据目录
     ├── snapshot_2024-01-31/   # 第一个快照数据
-    │   ├── BTCUSDT.npy
-    │   ├── ETHUSDT.npy
-    │   └── ...
+    │   └── h1/                # 频率目录
+    │       ├── 20240101/      # 日期目录 (YYYYMMDD格式)
+    │       │   ├── universe_token.pkl  # 交易对列表
+    │       │   ├── close_price/        # 特征目录
+    │       │   │   └── 20240101.npy    # K×T矩阵数据
+    │       │   ├── volume/
+    │       │   │   └── 20240101.npy
+    │       │   ├── high_price/
+    │       │   │   └── 20240101.npy
+    │       │   ├── low_price/
+    │       │   │   └── 20240101.npy
+    │       │   ├── open_price/
+    │       │   │   └── 20240101.npy
+    │       │   ├── quote_volume/
+    │       │   │   └── 20240101.npy
+    │       │   ├── trades_count/
+    │       │   │   └── 20240101.npy
+    │       │   ├── taker_buy_volume/
+    │       │   │   └── 20240101.npy
+    │       │   ├── taker_buy_quote_volume/
+    │       │   │   └── 20240101.npy
+    │       │   ├── taker_sell_volume/
+    │       │   │   └── 20240101.npy
+    │       │   └── taker_sell_quote_volume/
+    │       │       └── 20240101.npy
+    │       ├── 20240102/      # 下一天的数据
+    │       └── ...
     ├── snapshot_2024-02-29/   # 第二个快照数据
     └── snapshot_2024-03-31/   # 第三个快照数据
 ```
+
+> **KDTV格式说明**：
+> - **K (Key)**: 交易对维度，存储在universe_token.pkl中
+> - **D (Date)**: 日期维度，按YYYYMMDD格式组织目录
+> - **T (Time)**: 时间维度，每个npy文件为K×T矩阵
+> - **V (Value)**: 数据值，按特征分别存储
 
 ## 💡 进阶应用
 

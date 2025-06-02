@@ -220,6 +220,7 @@ for i in range(0, len(data), chunk_size):
 
 ## 下一步
 
+- 了解[Universe管理](universe.md)的动态交易对选择功能
 - 了解[数据库操作](../data-processing/database.md)的高级功能
 - 探索[KDTV格式](../data-processing/kdtv.md)的详细说明
 - 查看[数据可视化](../data-processing/visualization.md)的更多选项
