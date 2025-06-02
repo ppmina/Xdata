@@ -105,7 +105,7 @@ class StorageUtils:
                     values=feature,
                     index="K",
                     columns="T",
-                    aggfunc="first",
+                    aggfunc="mean",
                 )
                 array = pivot_data.values
 
@@ -129,7 +129,7 @@ class StorageUtils:
                     values=feature,
                     index="K",
                     columns="T",
-                    aggfunc="first",
+                    aggfunc="mean",
                 )
                 array = pivot_data.values
                 save_path = data_path / freq / feature / f"{date}.npy"
@@ -193,8 +193,8 @@ class StorageUtils:
             data_path = StorageUtils._resolve_path(data_path)
 
             # 生成日期范围
-            dates = pd.date_range(start=start_date, end=end_date, freq="D")
-            dates = [d.strftime("%Y%m%d") for d in dates]
+            date_range = pd.date_range(start=start_date, end=end_date, freq="D")
+            dates = [d.strftime("%Y%m%d") for d in date_range]
 
             # 读取交易对列表
             universe_path = data_path / freq / "universe_token.pkl"
@@ -230,9 +230,9 @@ class StorageUtils:
                         index=symbols[: len(array)],
                         columns=times,
                     )
-                    df = df.stack()  # 将时间转为索引
-                    df.name = feature
-                    date_data.append(df)
+                    stacked_series = df.stack()  # 将时间转为索引
+                    stacked_series.name = feature
+                    date_data.append(stacked_series)
 
                 if date_data:
                     # 合并同一天的所有特征
@@ -302,11 +302,14 @@ class StorageUtils:
                     table.add_column(col, justify="right")
 
                 # 添加数据行
-                for (symbol, time), row in df.iterrows():
-                    values = [
-                        f"{x:.4f}" if isinstance(x, (float, np.floating)) else str(x) for x in row
-                    ]
-                    table.add_row(str(time), symbol, *values)
+                for idx, row in df.iterrows():
+                    if isinstance(idx, tuple) and len(idx) == 2:
+                        symbol, time = idx
+                        values = [
+                            (f"{x:.4f}" if isinstance(x, (float, np.floating)) else str(x))
+                            for x in row
+                        ]
+                        table.add_row(str(time), str(symbol), *values)
 
                 StorageUtils.console.print(table)
             else:

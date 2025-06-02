@@ -307,12 +307,12 @@ class UniverseDefinition:
             period_end_ts = snap.get("period_end_ts")
 
             if period_start_ts is None or period_end_ts is None:
-                from datetime import datetime
+                from datetime import datetime as dt_class
 
                 # 自动计算时间戳
                 period_start_ts = str(
                     int(
-                        datetime.strptime(
+                        dt_class.strptime(
                             f"{period_start_date} 00:00:00", "%Y-%m-%d %H:%M:%S"
                         ).timestamp()
                         * 1000
@@ -320,7 +320,7 @@ class UniverseDefinition:
                 )
                 period_end_ts = str(
                     int(
-                        datetime.strptime(
+                        dt_class.strptime(
                             f"{period_end_date} 23:59:59", "%Y-%m-%d %H:%M:%S"
                         ).timestamp()
                         * 1000
