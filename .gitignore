@@ -52,3 +52,5 @@ dist/
 
 # Ignore mkdoc site
 site/
+
+demo_data/
