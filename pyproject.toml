@@ -96,6 +96,19 @@ convention = "google"
 
 [tool.mypy]
 python_version = "3.12"
+# 忽略缺少类型存根的第三方库
+ignore_missing_imports = true
+# 当遇到缺少类型存根的导入时，不报告错误
+warn_unused_ignores = true
+# 显示错误代码
+show_error_codes = true
+# 严格可选类型检查
+strict_optional = true
+
+# 为特定模块配置
+[[tool.mypy.overrides]]
+module = ["binance.*", "websockets.*"]
+ignore_missing_imports = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
@@ -106,11 +119,5 @@ addopts = "-v --cov=src/cryptoservice --cov-report=term-missing"
 packages = ["src/cryptoservice"]
 
 [dependency-groups]
-dev = [
-    "mypy>=1.16.0",
-    "pandas-stubs>=2.2.3.250527",
-]
-test = [
-    "pytest>=8.3.5",
-    "pytest-cov>=6.1.1",
-]
+dev = ["mypy>=1.16.0", "pandas-stubs>=2.2.3.250527"]
+test = ["pytest>=8.3.5", "pytest-cov>=6.1.1"]
