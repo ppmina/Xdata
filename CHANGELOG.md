@@ -1,6 +1,14 @@
 # CHANGELOG
 
 
+## v0.5.0 (2025-03-22)
+
+### Features
+
+- Add feature sybmols' date check.
+  ([`3d03d3d`](https://github.com/ppmina/Xdata/commit/3d03d3d1d3e78f222393fe6e5af8ba0708b7b1ea))
+
+
 ## v0.4.1 (2025-03-11)
 
 ### Bug Fixes
