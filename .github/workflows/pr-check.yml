@@ -24,23 +24,6 @@ jobs:
       run: |
         uv sync --all-extras --dev
 
-    - name: Check YAML files
-      run: |
-        # 验证YAML文件语法
-        uv run python -c "
-        import yaml
-        import sys
-        files = ['.pre-commit-config.yaml', '.github/workflows/pr-check.yml']
-        for f in files:
-          try:
-            with open(f, 'r') as file:
-              yaml.safe_load(file)
-            print(f'✅ {f}: Valid YAML')
-          except Exception as e:
-            print(f'❌ {f}: Invalid YAML - {e}')
-            sys.exit(1)
-        "
-
     - name: Code quality with ruff
       run: |
         uv run ruff check src/

@@ -125,25 +125,30 @@ class MarketDataService(IMarketDataService):
             logger.error(f"[red]Error fetching ticker for {symbol}: {e}[/red]")
             raise MarketDataFetchError(f"Failed to fetch ticker: {e}") from e
 
-    def get_perpetual_symbols(self, only_trading: bool = True) -> list[str]:
+    def get_perpetual_symbols(
+        self, only_trading: bool = True, quote_asset: str = "USDT"
+    ) -> list[str]:
         """获取当前市场上所有永续合约交易对。
 
         Args:
             only_trading: 是否只返回当前可交易的交易对
+            quote_asset: 基准资产，默认为USDT，只返回以该资产结尾的交易对
 
         Returns:
             list[str]: 永续合约交易对列表
         """
         try:
-            logger.info("获取当前永续合约交易对列表")
+            logger.info(f"获取当前永续合约交易对列表（筛选条件：{quote_asset}结尾）")
             futures_info = self.client.futures_exchange_info()
             perpetual_symbols = [
                 symbol["symbol"]
                 for symbol in futures_info["symbols"]
                 if symbol["contractType"] == "PERPETUAL"
                 and (not only_trading or symbol["status"] == "TRADING")
+                and symbol["symbol"].endswith(quote_asset)
             ]
 
+            logger.info(f"找到 {len(perpetual_symbols)} 个{quote_asset}永续合约交易对")
             return perpetual_symbols
 
         except Exception as e:
@@ -554,10 +559,11 @@ class MarketDataService(IMarketDataService):
         top_k: int,
         output_path: Path | str,
         description: str | None = None,
-        strict_date_range: bool = False,
+        delay_days: int = 7,
         api_delay_seconds: float = 1.0,
         batch_delay_seconds: float = 3.0,
         batch_size: int = 5,
+        quote_asset: str = "USDT",
     ) -> UniverseDefinition:
         """定义universe并保存到文件.
 
@@ -570,12 +576,11 @@ class MarketDataService(IMarketDataService):
             top_k: 选取的top合约数量
             output_path: universe输出文件路径 (必须指定)
             description: 描述信息
-            strict_date_range: 是否严格限制在输入的日期范围内
-                - False (默认): 允许回看到start_date之前的数据
-                - True: 严格限制，第一个周期可能数据不足但不会超出范围
+            delay_days: 在重新平衡日期前额外往前推的天数，默认7天
             api_delay_seconds: 每个API请求之间的延迟秒数，默认1.0秒
             batch_delay_seconds: 每批次请求之间的延迟秒数，默认3.0秒
             batch_size: 每批次的请求数量，默认5个
+            quote_asset: 基准资产，默认为USDT，只筛选以该资产结尾的交易对
 
         Returns:
             UniverseDefinition: 定义的universe
@@ -611,11 +616,18 @@ class MarketDataService(IMarketDataService):
             )
 
             # 生成重新选择日期序列 (每T2个月)
-            # 使用月末重平衡：在月末基于当月数据选择下月的universe
-            rebalance_dates = self._generate_rebalance_dates(
-                start_date, end_date, t2_months, use_month_end=True
-            )
-            logger.info(f"将在以下日期重新选择universe: {rebalance_dates}")
+            # 从起始日期开始，每隔T2个月生成重平衡日期，表示universe重新选择的时间点
+            rebalance_dates = self._generate_rebalance_dates(start_date, end_date, t2_months)
+
+            logger.info("重平衡计划:")
+            logger.info(f"  - 时间范围: {start_date} 到 {end_date}")
+            logger.info(f"  - 重平衡间隔: 每{t2_months}个月")
+            logger.info(f"  - 数据延迟: {delay_days}天")
+            logger.info(f"  - T1数据窗口: {t1_months}个月")
+            logger.info(f"  - 重平衡日期: {rebalance_dates}")
+
+            if not rebalance_dates:
+                raise ValueError("无法生成重平衡日期，请检查时间范围和T2参数")
 
             # 收集所有周期的snapshots
             all_snapshots = []
@@ -624,58 +636,49 @@ class MarketDataService(IMarketDataService):
             for i, rebalance_date in enumerate(rebalance_dates):
                 logger.info(f"处理日期 {i + 1}/{len(rebalance_dates)}: {rebalance_date}")
 
-                # 计算T1回看期间的开始日期
-                calculated_t1_start = self._subtract_months(rebalance_date, t1_months)
+                # 计算基准日期（重新平衡日期前delay_days天）
+                base_date = pd.to_datetime(rebalance_date) - timedelta(days=delay_days)
+                base_date_str = base_date.strftime("%Y-%m-%d")
 
-                # 根据 strict_date_range 选项决定实际的开始日期
-                if strict_date_range:
-                    # 严格模式：不超出用户指定的start_date
-                    t1_start_date = max(start_date, calculated_t1_start)
-                    if t1_start_date > calculated_t1_start:
-                        logger.warning(
-                            f"周期 {i + 1}: 由于strict_date_range限制，T1开始日期从 "
-                            f"{calculated_t1_start} 调整为 {t1_start_date}，数据期间缩短"
-                        )
-                else:
-                    # 宽松模式：允许回看到start_date之前
-                    t1_start_date = calculated_t1_start
-                    if calculated_t1_start < start_date:
-                        logger.info(
-                            f"周期 {i + 1}: T1回看期 {calculated_t1_start} 早于输入start_date "
-                            f"{start_date}，将使用额外的历史数据"
-                        )
+                # 计算T1回看期间的开始日期（从base_date往前推T1个月）
+                calculated_t1_start = self._subtract_months(base_date_str, t1_months)
+
+                logger.info(
+                    f"周期 {i + 1}: 基准日期={base_date_str} (重新平衡日期前{delay_days}天), "
+                    f"T1数据期间={calculated_t1_start} 到 {base_date_str}"
+                )
 
                 # 获取符合条件的交易对和它们的mean daily amount
                 universe_symbols, mean_amounts = self._calculate_universe_for_date(
-                    rebalance_date=rebalance_date,
-                    t1_start_date=t1_start_date,
+                    rebalance_date=base_date_str,  # 使用基准日期作为计算终点
+                    t1_start_date=calculated_t1_start,
                     t3_months=t3_months,
                     top_k=top_k,
                     api_delay_seconds=api_delay_seconds,
                     batch_delay_seconds=batch_delay_seconds,
                     batch_size=batch_size,
+                    quote_asset=quote_asset,
                 )
 
                 # 创建该周期的snapshot
                 # 计算时间戳
-                start_ts = self._date_to_timestamp_start(t1_start_date)
-                end_ts = self._date_to_timestamp_end(rebalance_date)
+                start_ts = self._date_to_timestamp_start(calculated_t1_start)
+                end_ts = self._date_to_timestamp_end(base_date_str)
 
                 snapshot = UniverseSnapshot.create_with_dates_and_timestamps(
-                    effective_date=rebalance_date,
-                    period_start_date=t1_start_date,
-                    period_end_date=rebalance_date,
+                    effective_date=rebalance_date,  # 使用原始重新平衡日期
+                    period_start_date=calculated_t1_start,
+                    period_end_date=base_date_str,  # 使用基准日期作为数据结束日期
                     period_start_ts=start_ts,
                     period_end_ts=end_ts,
                     symbols=universe_symbols,
                     mean_daily_amounts=mean_amounts,
                     metadata={
-                        "t1_start_date": t1_start_date,
-                        "calculated_t1_start": calculated_t1_start,
-                        "period_adjusted": t1_start_date != calculated_t1_start,
-                        "strict_date_range": strict_date_range,
+                        "t1_start_date": calculated_t1_start,
+                        "base_date": base_date_str,
+                        "delay_days": delay_days,
+                        "quote_asset": quote_asset,
                         "selected_symbols_count": len(universe_symbols),
-                        "total_candidates": len(mean_amounts),
                     },
                 )
 
@@ -711,45 +714,30 @@ class MarketDataService(IMarketDataService):
         return date_str
 
     def _generate_rebalance_dates(
-        self, start_date: str, end_date: str, t2_months: int, use_month_end: bool = True
+        self, start_date: str, end_date: str, t2_months: int
     ) -> list[str]:
         """生成重新选择universe的日期序列。
+
+        从起始日期开始，每隔T2个月生成重平衡日期，这些日期表示universe重新选择的时间点。
 
         Args:
             start_date: 开始日期
             end_date: 结束日期
             t2_months: 重新平衡间隔（月）
-            use_month_end: 是否使用月末日期
 
         Returns:
             list[str]: 重平衡日期列表
         """
         dates = []
-        current_date = pd.to_datetime(start_date)
+        start_date_obj = pd.to_datetime(start_date)
         end_date_obj = pd.to_datetime(end_date)
 
-        # 如果使用月末重平衡，调整逻辑
-        if use_month_end:
-            # 从start_date所在月的月末开始
-            current_date = current_date + pd.offsets.MonthEnd(0)  # 当月月末
+        # 从起始日期开始，每隔T2个月生成重平衡日期
+        current_date = start_date_obj
 
-            while current_date <= end_date_obj:
-                dates.append(current_date.strftime("%Y-%m-%d"))
-                # 添加T2个月的月末
-                current_date = current_date + pd.offsets.MonthEnd(t2_months)
-        else:
-            # 原有逻辑：使用月初
-            while current_date <= end_date_obj:
-                dates.append(current_date.strftime("%Y-%m-%d"))
-                # 添加T2个月
-                if current_date.month + t2_months <= 12:
-                    current_date = current_date.replace(month=current_date.month + t2_months)
-                else:
-                    years_to_add = (current_date.month + t2_months - 1) // 12
-                    new_month = (current_date.month + t2_months - 1) % 12 + 1
-                    current_date = current_date.replace(
-                        year=current_date.year + years_to_add, month=new_month
-                    )
+        while current_date <= end_date_obj:
+            dates.append(current_date.strftime("%Y-%m-%d"))
+            current_date = current_date + pd.DateOffset(months=t2_months)
 
         return dates
 
@@ -760,21 +748,26 @@ class MarketDataService(IMarketDataService):
         result_date = date_obj - pd.DateOffset(months=months)
         return str(result_date.strftime("%Y-%m-%d"))
 
-    def _get_available_symbols_for_period(self, start_date: str, end_date: str) -> list[str]:
+    def _get_available_symbols_for_period(
+        self, start_date: str, end_date: str, quote_asset: str = "USDT"
+    ) -> list[str]:
         """获取指定时间段内实际可用的永续合约交易对。
 
         Args:
             start_date: 开始日期
             end_date: 结束日期
+            quote_asset: 基准资产，用于筛选交易对
 
         Returns:
             list[str]: 在该时间段内有数据的交易对列表
         """
         try:
-            # 先获取当前所有永续合约作为候选
-            candidate_symbols = self.get_perpetual_symbols(only_trading=True)
+            # 先获取当前所有永续合约作为候选（筛选指定的基准资产）
+            candidate_symbols = self.get_perpetual_symbols(
+                only_trading=True, quote_asset=quote_asset
+            )
             logger.info(
-                f"检查 {len(candidate_symbols)} 个候选交易对在 {start_date} 到 "
+                f"检查 {len(candidate_symbols)} 个{quote_asset}候选交易对在 {start_date} 到 "
                 f"{end_date} 期间的可用性..."
             )
 
@@ -799,14 +792,14 @@ class MarketDataService(IMarketDataService):
 
             logger.info(
                 f"在 {start_date} 到 {end_date} 期间找到 {len(available_symbols)} "
-                "个可用的永续合约交易对"
+                f"个可用的{quote_asset}永续合约交易对"
             )
             return available_symbols
 
         except Exception as e:
             logger.warning(f"获取可用交易对时出错: {e}")
             # 如果API检查失败，返回当前所有永续合约
-            return self.get_perpetual_symbols(only_trading=True)
+            return self.get_perpetual_symbols(only_trading=True, quote_asset=quote_asset)
 
     def _calculate_universe_for_date(
         self,
@@ -817,6 +810,7 @@ class MarketDataService(IMarketDataService):
         api_delay_seconds: float = 1.0,
         batch_delay_seconds: float = 3.0,
         batch_size: int = 5,
+        quote_asset: str = "USDT",
     ) -> tuple[list[str], dict[str, float]]:
         """计算指定日期的universe。
 
@@ -828,10 +822,13 @@ class MarketDataService(IMarketDataService):
             api_delay_seconds: 每个API请求之间的延迟秒数
             batch_delay_seconds: 每批次请求之间的延迟秒数
             batch_size: 每批次的请求数量
+            quote_asset: 基准资产，用于筛选交易对
         """
         try:
             # 获取在该时间段内实际存在的永续合约交易对
-            actual_symbols = self._get_available_symbols_for_period(t1_start_date, rebalance_date)
+            actual_symbols = self._get_available_symbols_for_period(
+                t1_start_date, rebalance_date, quote_asset
+            )
 
             # 筛除新合约 (创建时间不足T3个月的)
             cutoff_date = self._subtract_months(rebalance_date, t3_months)
@@ -1149,8 +1146,7 @@ class MarketDataService(IMarketDataService):
                         if missing_symbols:
                             incomplete_symbols.extend(missing_symbols)
                             logger.debug(
-                                f"快照 {snapshot.effective_date}"
-                                f"缺少交易对: {list(missing_symbols)}"
+                                f"快照 {snapshot.effective_date}缺少交易对: {list(missing_symbols)}"
                             )
                         else:
                             successful_snapshots += 1
@@ -1181,8 +1177,7 @@ class MarketDataService(IMarketDataService):
             )
             logger.info(f"   - 数据频率: {interval.value}")
             logger.info(
-                f"   - 成功验证快照: {successful_snapshots}/{total_snapshots} "
-                f"({success_rate:.1%})"
+                f"   - 成功验证快照: {successful_snapshots}/{total_snapshots} ({success_rate:.1%})"
             )
 
             # 只有在成功率很低时才给出警告
