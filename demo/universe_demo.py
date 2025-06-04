@@ -47,11 +47,12 @@ def define_universe(
             top_k=5,  # 减少到Top 5合约，降低API调用量
             output_path=output_path,  # 必须指定输出路径
             description=f"Universe from {start_date} to {end_date}",
-            strict_date_range=False,
+            delay_days=7,  # 延迟7天
             # API延迟控制参数 - 可根据需要调整
             api_delay_seconds=0.5,  # 每个API请求之间延迟0.5秒
-            batch_delay_seconds=1.0,  # 每批次之间延迟2秒
-            batch_size=5,  # 每3个请求为一批
+            batch_delay_seconds=1.0,  # 每批次之间延迟1秒
+            batch_size=5,  # 每5个请求为一批
+            quote_asset="USDT",  # 只使用USDT永续合约
         )
 
         print("✅ Universe定义完成!")
