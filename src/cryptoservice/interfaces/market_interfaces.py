@@ -1,10 +1,11 @@
 from abc import abstractmethod
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Protocol
+from typing import Any, Protocol, Optional
 
 from rich.progress import Progress
 
+from cryptoservice.config import RetryConfig
 from cryptoservice.models import (
     DailyMarketTicker,
     Freq,
@@ -12,6 +13,7 @@ from cryptoservice.models import (
     SortBy,
     SymbolTicker,
     UniverseDefinition,
+    IntegrityReport,
 )
 
 
@@ -96,7 +98,10 @@ class IMarketDataService(Protocol):
         max_workers: int = 5,
         max_retries: int = 3,
         progress: Progress | None = None,
-    ) -> None:
+        request_delay: float = 0.5,
+        retry_config: Optional[RetryConfig] = None,
+        enable_integrity_check: bool = True,
+    ) -> IntegrityReport:
         """获取永续合约历史数据, 并存储到指定数据库.
 
         Args:
@@ -108,6 +113,7 @@ class IMarketDataService(Protocol):
             max_workers: 并发线程数
             max_retries: 最大重试次数
             progress: 进度条
+            request_delay: 每次请求间隔（秒）
 
         """
         pass
@@ -122,7 +128,8 @@ class IMarketDataService(Protocol):
         max_workers: int = 4,
         max_retries: int = 3,
         include_buffer_days: int = 7,
-        extend_to_present: bool = True,
+        retry_config: Optional[RetryConfig] = None,
+        request_delay: float = 0.5,
     ) -> None:
         """根据universe定义文件下载相应的历史数据到数据库.
 
@@ -134,32 +141,7 @@ class IMarketDataService(Protocol):
             max_workers: 并发线程数
             max_retries: 最大重试次数
             include_buffer_days: 在数据期间前后增加的缓冲天数
-            extend_to_present: 是否将数据扩展到当前日期
-
-        """
-        pass
-
-    @abstractmethod
-    def download_universe_data_by_periods(
-        self,
-        universe_file: Path | str,
-        db_path: Path | str,
-        data_path: Path | str | None = None,
-        interval: Freq = Freq.h1,
-        max_workers: int = 4,
-        max_retries: int = 3,
-        include_buffer_days: int = 7,
-    ) -> None:
-        """按周期分别下载universe数据（更精确的下载方式）.
-
-        Args:
-            universe_file: universe定义文件路径
-            db_path: 数据库文件路径
-            data_path: 数据文件存储路径 (可选)
-            interval: 数据频率
-            max_workers: 并发线程数
-            max_retries: 最大重试次数
-            include_buffer_days: 缓冲天数
+            request_delay: 每次请求间隔（秒）
 
         """
         pass

@@ -103,6 +103,10 @@ nav:
       - KDTV格式: guides/data-processing/kdtv.md
       - 数据库操作: guides/data-processing/database.md
       - 数据可视化: guides/data-processing/visualization.md
+      - 数据下载:
+        - 下载管理: guides/data-processing/storage.md
+        - 下载频率控制: guides/data-processing/rate_limit_manager.md
+        - 下载延迟控制: guides/data-processing/request_delay_feature.md
     - Universe:
       - Universe定义: guides/universe-definition.md
       - Schema指南: universe_schema_guide.md

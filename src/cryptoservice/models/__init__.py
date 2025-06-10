@@ -1,4 +1,4 @@
-from .enums import Freq, HistoricalKlinesType, SortBy, Univ
+from .enums import Freq, HistoricalKlinesType, SortBy, Univ, ErrorSeverity
 from .market_ticker import (
     DailyMarketTicker,
     KlineIndex,
@@ -7,6 +7,7 @@ from .market_ticker import (
     SymbolTicker,
 )
 from .universe import UniverseConfig, UniverseDefinition, UniverseSnapshot
+from .integrity_report import IntegrityReport
 
 __all__ = [
     "SymbolTicker",
@@ -17,6 +18,8 @@ __all__ = [
     "Freq",
     "HistoricalKlinesType",
     "Univ",
+    "IntegrityReport",
+    "ErrorSeverity",
     "KlineIndex",
     "UniverseConfig",
     "UniverseDefinition",

@@ -431,24 +431,128 @@ class MarketDB:
             start_timestamp = int(start_ts)
             end_timestamp = int(end_ts)
 
-            # 转换时间戳为日期字符串 - 使用本地时区，与生成时保持一致
+            # 转换时间戳为日期，用于计算处理范围
             from datetime import datetime
 
-            start_date = datetime.fromtimestamp(start_timestamp / 1000).strftime("%Y-%m-%d")
-            end_date = datetime.fromtimestamp(end_timestamp / 1000).strftime("%Y-%m-%d")
+            start_datetime = datetime.fromtimestamp(start_timestamp / 1000)
+            end_datetime = datetime.fromtimestamp(end_timestamp / 1000)
 
-            logger.info(f"Converting timestamps to dates: {start_date} to {end_date}")
-
-            # 使用现有的export_to_files方法
-            self.export_to_files(
-                output_path=output_path,
-                start_date=start_date,
-                end_date=end_date,
-                freq=freq,
-                symbols=symbols,
-                target_freq=target_freq,
-                chunk_days=chunk_days,
+            logger.info(f"Exporting data from timestamp {start_timestamp} to {end_timestamp}")
+            logger.info(
+                f"Date range: {start_datetime.strftime('%Y-%m-%d %H:%M:%S')} to "
+                f"{end_datetime.strftime('%Y-%m-%d %H:%M:%S')}"
             )
+
+            output_path = Path(output_path)
+
+            # 创建日期范围 - 基于时间戳计算实际的日期范围
+            start_date = start_datetime.date()
+            end_date = end_datetime.date()
+            date_range = pd.date_range(start=start_date, end=end_date, freq="D")
+            total_days = len(date_range)
+
+            # 使用有效的频率进行导出
+            export_freq = target_freq if target_freq is not None else freq
+
+            # 如果总天数少于等于chunk_days，直接处理整个范围，不分块
+            if total_days <= chunk_days:
+                logger.info(
+                    f"Processing all data from timestamp {start_timestamp} to {end_timestamp} "
+                    f"(total: {total_days} days)"
+                )
+
+                # 直接使用时间戳读取所有数据
+                try:
+                    df = self._read_data_by_timestamp(
+                        start_timestamp,
+                        end_timestamp,
+                        freq,
+                        symbols,
+                        raise_on_empty=False,
+                    )
+                except ValueError as e:
+                    if "No data found" in str(e):
+                        logger.warning(
+                            f"No data found for timestamp range {start_timestamp} to "
+                            f"{end_timestamp}"
+                        )
+                        return
+                    else:
+                        raise
+
+                if df.empty:
+                    logger.warning(
+                        f"No data found for timestamp range {start_timestamp} to {end_timestamp}"
+                    )
+                    return
+
+                # 如果需要降采样
+                if target_freq is not None:
+                    df = self._resample_data(df, target_freq)
+
+                # 处理所有数据
+                self._process_dataframe_for_export_by_timestamp(
+                    df, output_path, export_freq, start_timestamp, end_timestamp
+                )
+
+            else:
+                # 按chunk_days分块处理（用于大量数据）
+                one_day_ms = 24 * 60 * 60 * 1000  # 一天的毫秒数
+                chunk_ms = chunk_days * one_day_ms
+
+                current_ts = start_timestamp
+                while current_ts < end_timestamp:
+                    chunk_end_ts = min(current_ts + chunk_ms, end_timestamp)
+
+                    chunk_start_datetime = datetime.fromtimestamp(current_ts / 1000)
+                    chunk_end_datetime = datetime.fromtimestamp(chunk_end_ts / 1000)
+
+                    logger.info(
+                        f"Processing data chunk from "
+                        f"{chunk_start_datetime.strftime('%Y-%m-%d %H:%M:%S')} to "
+                        f"{chunk_end_datetime.strftime('%Y-%m-%d %H:%M:%S')}"
+                    )
+
+                    # 使用时间戳读取数据块
+                    try:
+                        df = self._read_data_by_timestamp(
+                            current_ts,
+                            chunk_end_ts,
+                            freq,
+                            symbols,
+                            raise_on_empty=False,
+                        )
+                    except ValueError as e:
+                        if "No data found" in str(e):
+                            logger.warning(
+                                f"No data found for timestamp range {current_ts} to {chunk_end_ts}"
+                            )
+                            current_ts = chunk_end_ts
+                            continue
+                        else:
+                            raise
+
+                    if df.empty:
+                        logger.warning(
+                            f"No data found for timestamp range {current_ts} to {chunk_end_ts}"
+                        )
+                        current_ts = chunk_end_ts
+                        continue
+
+                    # 如果需要降采样
+                    if target_freq is not None:
+                        df = self._resample_data(df, target_freq)
+
+                    # 处理当前数据块
+                    self._process_dataframe_for_export_by_timestamp(
+                        df, output_path, export_freq, current_ts, chunk_end_ts
+                    )
+
+                    # 清理内存
+                    del df
+                    current_ts = chunk_end_ts
+
+            logger.info(f"Successfully exported data to {output_path}")
 
         except Exception as e:
             logger.exception(f"Failed to export data by timestamp: {e}")
@@ -572,19 +676,40 @@ class MarketDB:
         self, df: pd.DataFrame, output_path: Path, freq: Freq, dates: pd.DatetimeIndex
     ) -> None:
         """处理DataFrame并导出为文件的辅助方法"""
-        # 定义需要导出的特征
+        # 建立数据库字段名到短字段名的映射关系
+        FIELD_MAPPING = {
+            # 短字段名: (数据库字段名, 是否需要计算)
+            "opn": ("open_price", False),
+            "hgh": ("high_price", False),
+            "low": ("low_price", False),
+            "cls": ("close_price", False),
+            "vol": ("volume", False),
+            "amt": ("quote_volume", False),
+            "tnum": ("trades_count", False),
+            "tbvol": ("taker_buy_volume", False),
+            "tbamt": ("taker_buy_quote_volume", False),
+            "tsvol": ("taker_sell_volume", False),
+            "tsamt": ("taker_sell_quote_volume", False),
+            # 需要计算的字段
+            "vwap": (None, True),  # quote_volume / volume
+            "ret": (None, True),  # (close_price - open_price) / open_price
+        }
+
+        # 定义需要导出的特征（按您指定的顺序）
         features = [
-            "close_price",
-            "volume",
-            "quote_volume",
-            "high_price",
-            "low_price",
-            "open_price",
-            "trades_count",
-            "taker_buy_volume",
-            "taker_buy_quote_volume",
-            "taker_sell_volume",
-            "taker_sell_quote_volume",
+            "cls",
+            "hgh",
+            "low",
+            "tnum",
+            "opn",
+            "amt",
+            "tbvol",
+            "tbamt",
+            "vol",
+            "vwap",
+            "ret",
+            "tsvol",
+            "tsamt",
         ]
 
         # 处理每一天
@@ -606,13 +731,139 @@ class MarketDB:
                 continue
 
             # 为每个特征创建并存储数据
-            for feature in features:
+            for short_name in features:
+                db_field, needs_calculation = FIELD_MAPPING[short_name]
+
+                if needs_calculation:
+                    # 计算衍生字段
+                    if short_name == "vwap":
+                        # VWAP = quote_volume / volume
+                        volume_data = day_data["volume"]
+                        quote_volume_data = day_data["quote_volume"]
+                        feature_data = quote_volume_data / volume_data
+                        feature_data = feature_data.fillna(0)  # 处理除零情况
+                    elif short_name == "ret":
+                        # 收益率 = (close_price - open_price) / open_price
+                        open_data = day_data["open_price"]
+                        close_data = day_data["close_price"]
+                        feature_data = (close_data - open_data) / open_data
+                        feature_data = feature_data.fillna(0)  # 处理除零情况
+                    else:
+                        continue  # 未知的计算字段
+                else:
+                    # 直接从数据库字段获取
+                    feature_data = day_data[db_field]
+
                 # 重塑数据为 K x T 矩阵
-                pivot_data = day_data[feature].unstack(level="timestamp")
+                pivot_data = feature_data.unstack(level="timestamp")
                 array = pivot_data.values
 
-                # 创建存储路径
-                save_path = output_path / freq.value / date_str / feature
+                # 创建存储路径 - 使用短字段名
+                save_path = output_path / freq.value / date_str / short_name
+                save_path.mkdir(parents=True, exist_ok=True)
+
+                # 保存为npy格式
+                np.save(save_path / f"{date_str}.npy", array)
+
+    def _process_dataframe_for_export_by_timestamp(
+        self,
+        df: pd.DataFrame,
+        output_path: Path,
+        freq: Freq,
+        start_ts: int,
+        end_ts: int,
+    ) -> None:
+        """基于时间戳处理DataFrame并导出为文件的辅助方法"""
+
+        # 建立数据库字段名到短字段名的映射关系
+        FIELD_MAPPING = {
+            # 短字段名: (数据库字段名, 是否需要计算)
+            "opn": ("open_price", False),
+            "hgh": ("high_price", False),
+            "low": ("low_price", False),
+            "cls": ("close_price", False),
+            "vol": ("volume", False),
+            "amt": ("quote_volume", False),
+            "tnum": ("trades_count", False),
+            "tbvol": ("taker_buy_volume", False),
+            "tbamt": ("taker_buy_quote_volume", False),
+            "tsvol": ("taker_sell_volume", False),
+            "tsamt": ("taker_sell_quote_volume", False),
+            # 需要计算的字段
+            "vwap": (None, True),  # quote_volume / volume
+            "ret": (None, True),  # (close_price - open_price) / open_price
+        }
+
+        # 定义需要导出的特征（按您指定的顺序）
+        features = [
+            "cls",
+            "hgh",
+            "low",
+            "tnum",
+            "opn",
+            "amt",
+            "tbvol",
+            "tbamt",
+            "vol",
+            "vwap",
+            "ret",
+            "tsvol",
+            "tsamt",
+        ]
+
+        # 获取时间戳范围内的所有唯一日期
+        timestamps = df.index.get_level_values("timestamp")
+        unique_dates = sorted(set(pd.Timestamp(ts).date() for ts in timestamps))
+
+        # 处理每一天
+        for date in unique_dates:
+            date_str = date.strftime("%Y%m%d")
+
+            # 保存交易对顺序
+            symbols_path = output_path / freq.value / date_str / "universe_token.pkl"
+            symbols_path.parent.mkdir(parents=True, exist_ok=True)
+            pd.Series(df.index.get_level_values("symbol").unique()).to_pickle(symbols_path)
+
+            # 获取当天数据
+            day_data = df[
+                df.index.get_level_values("timestamp").map(
+                    lambda ts, current_date=date: pd.Timestamp(ts).date() == current_date
+                )
+            ]
+
+            if day_data.empty:
+                continue
+
+            # 为每个特征创建并存储数据
+            for short_name in features:
+                db_field, needs_calculation = FIELD_MAPPING[short_name]
+
+                if needs_calculation:
+                    # 计算衍生字段
+                    if short_name == "vwap":
+                        # VWAP = quote_volume / volume
+                        volume_data = day_data["volume"]
+                        quote_volume_data = day_data["quote_volume"]
+                        feature_data = quote_volume_data / volume_data
+                        feature_data = feature_data.fillna(0)  # 处理除零情况
+                    elif short_name == "ret":
+                        # 收益率 = (close_price - open_price) / open_price
+                        open_data = day_data["open_price"]
+                        close_data = day_data["close_price"]
+                        feature_data = (close_data - open_data) / open_data
+                        feature_data = feature_data.fillna(0)  # 处理除零情况
+                    else:
+                        continue  # 未知的计算字段
+                else:
+                    # 直接从数据库字段获取
+                    feature_data = day_data[db_field]
+
+                # 重塑数据为 K x T 矩阵
+                pivot_data = feature_data.unstack(level="timestamp")
+                array = pivot_data.values
+
+                # 创建存储路径 - 使用短字段名
+                save_path = output_path / freq.value / date_str / short_name
                 save_path.mkdir(parents=True, exist_ok=True)
 
                 # 保存为npy格式
@@ -628,13 +879,13 @@ class MarketDB:
         Returns:
             pd.DataFrame: 降采样后的数据
         """
-        # 定义重采样规则
+        # 定义重采样规则 (修复pandas FutureWarning)
         freq_map = {
-            Freq.m1: "1T",
-            Freq.m3: "3T",
-            Freq.m5: "5T",
-            Freq.m15: "15T",
-            Freq.m30: "30T",
+            Freq.m1: "1min",
+            Freq.m3: "3min",
+            Freq.m5: "5min",
+            Freq.m15: "15min",
+            Freq.m30: "30min",
             Freq.h1: "1h",
             Freq.h2: "2h",
             Freq.h4: "4h",

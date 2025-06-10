@@ -22,9 +22,9 @@ DELAY_DAYS = 7  # 延迟7天
 QUOTE_ASSET = "USDT"  # 只使用USDT永续合约
 
 # API控制参数
-API_DELAY_SECONDS = 0.5  # 每个API请求之间延迟
-BATCH_DELAY_SECONDS = 1.0  # 每批次之间延迟
-BATCH_SIZE = 5  # 每批请求数量
+API_DELAY_SECONDS = 1.0  # 每个API请求之间延迟
+BATCH_DELAY_SECONDS = 3.0  # 每批次之间延迟
+BATCH_SIZE = 10  # 每批请求数量
 
 # ========================================
 

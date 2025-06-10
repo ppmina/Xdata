@@ -1,6 +1,6 @@
 import os
 from pathlib import Path
-from cryptoservice.services.market_service import MarketDataService
+from cryptoservice.services.market_service import MarketDataService, RetryConfig
 from cryptoservice.models.enums import Freq
 from dotenv import load_dotenv
 
@@ -10,14 +10,22 @@ load_dotenv()
 # 文件路径
 UNIVERSE_FILE = "./data/universe.json"  # Universe定义文件
 DB_PATH = "./data/database/market.db"  # 数据库文件路径
-DATA_PATH = "./data/files"  # 数据文件存储路径(可选)
 
 # 下载配置
-INTERVAL = Freq.d1  # 数据频率: Freq.m1, Freq.h1, Freq.d1
-MAX_WORKERS = 1  # 最大并发数 (建议1-2，避免API限制)
+INTERVAL = Freq.m1  # 数据频率: Freq.m1, Freq.h1, Freq.d1
+MAX_WORKERS = 2  # 最大并发数 (建议1-2，避免API限制)
 MAX_RETRIES = 3  # 最大重试次数
+RETRY_CONFIG = (
+    RetryConfig(
+        max_retries=MAX_RETRIES,
+        base_delay=1.0,
+        max_delay=10.0,
+        backoff_multiplier=2.0,
+        jitter=True,
+    ),
+)
+REQUEST_DELAY = 2  # 请求间隔（秒）
 INCLUDE_BUFFER_DAYS = 7  # 包含缓冲期天数
-EXTEND_TO_PRESENT = False  # 是否延伸到当前时间
 
 # ========================================
 
@@ -38,12 +46,8 @@ def main():
         print("请先运行 define_universe.py 创建Universe文件")
         return
 
-    # 确保数据库目录存在
+    # 确保数据库存在
     Path(DB_PATH).parent.mkdir(parents=True, exist_ok=True)
-
-    # 确保数据文件目录存在
-    if DATA_PATH:
-        Path(DATA_PATH).mkdir(parents=True, exist_ok=True)
 
     # 创建服务
     service = MarketDataService(api_key=api_key, api_secret=api_secret)
@@ -53,12 +57,11 @@ def main():
         service.download_universe_data(
             universe_file=UNIVERSE_FILE,
             db_path=DB_PATH,
-            data_path=DATA_PATH,
             interval=INTERVAL,
             max_workers=MAX_WORKERS,
             max_retries=MAX_RETRIES,
             include_buffer_days=INCLUDE_BUFFER_DAYS,
-            extend_to_present=EXTEND_TO_PRESENT,
+            request_delay=REQUEST_DELAY,
         )
 
         print("✅ 数据下载完成!")
@@ -68,21 +71,6 @@ def main():
         if db_file.exists():
             file_size = db_file.stat().st_size / (1024 * 1024)  # MB
             print(f"   💾 数据库文件: {db_file.name} ({file_size:.1f} MB)")
-
-        # 验证数据文件
-        if DATA_PATH:
-            data_path_obj = Path(DATA_PATH)
-            if data_path_obj.exists():
-                data_files = list(data_path_obj.rglob("*.csv"))
-                print(f"   📊 数据文件数量: {len(data_files)}")
-
-                # 显示前几个数据文件
-                if data_files:
-                    print("   📝 示例数据文件:")
-                    for file in data_files[:3]:
-                        rel_path = file.relative_to(data_path_obj)
-                        file_size = file.stat().st_size / 1024  # KB
-                        print(f"      • {rel_path} ({file_size:.1f} KB)")
 
     except Exception as e:
         print(f"❌ 数据下载失败: {e}")

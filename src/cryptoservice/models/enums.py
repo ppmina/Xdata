@@ -173,3 +173,12 @@ class HistoricalKlinesType(IntEnum):
     def to_binance(cls, kline_type: "HistoricalKlinesType") -> binance_enums.HistoricalKlinesType:
         """转换为 Binance SDK 的 HistoricalKlinesType"""
         return binance_enums.HistoricalKlinesType(kline_type.value)
+
+
+class ErrorSeverity(Enum):
+    """错误严重程度枚举"""
+
+    LOW = "low"  # 可忽略的错误
+    MEDIUM = "medium"  # 需要重试的错误
+    HIGH = "high"  # 严重错误，需要立即处理
+    CRITICAL = "critical"  # 致命错误，停止执行
