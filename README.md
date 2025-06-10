@@ -12,7 +12,7 @@
 
 ## 文档
 
-详细的使用说明和 API 文档请访问我们的文档站点：[Crypto Service 文档](https://mrzai.github.io/cryptoservice/)
+详细的使用说明和 API 文档请访问我们的文档站点：[Crypto Service 文档](https://ppmina.github.io/Xdata/)
 
 ## 安装
 
@@ -50,14 +50,14 @@ btc_ticker = market_service.get_symbol_ticker("BTCUSDT")
 print(f"BTCUSDT 实时行情: {btc_ticker}")
 ```
 
-更多使用示例请参考[文档站点](https://mrzai.github.io/cryptoservice/)。
+更多使用示例请参考[文档站点](https://ppmina.github.io/Xdata/examples/basic/)。
 
 ## 开发环境设置
 
 1. 克隆仓库：
 ```bash
-git clone https://github.com/Mrzai/cryptoservice.git
-cd cryptoservice
+git clone https://github.com/ppmina/xdata.git
+cd xdata
 ```
 
 2. 安装 uv（推荐）：
@@ -102,14 +102,6 @@ pre-commit install
 - `test`: 测试相关
 - `chore`: 构建过程或辅助工具的变动
 
-## 许可证
-
-MIT License
-
-## 联系方式
-
-- GitHub Issues: [https://github.com/ppmina/xdata/issues](https://github.com/ppmina/xdata/issues)
-- Email: minzzzai.s@gmail.com
 
 ## 提交规范
 
@@ -143,17 +135,11 @@ Updated installation instructions to include
 new development dependencies.
 ```
 
-提交类型必须是以下之一：
-- feat: 新功能
-- fix: 修复问题
-- docs: 文档更新
-- style: 代码格式调整
-- refactor: 代码重构
-- perf: 性能优化
-- test: 测试相关
-- chore: 构建过程或辅助工具
-- revert: 回退
-- ci: CI/CD相关
-- build: 构建系统
+## 许可证
 
-little bugs: merge before commit
+MIT License
+
+## 联系方式
+
+- GitHub Issues: [https://github.com/ppmina/xdata/issues](https://github.com/ppmina/xdata/issues)
+- Email: minzzzai.s@gmail.com

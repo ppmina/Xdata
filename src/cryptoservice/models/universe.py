@@ -44,10 +44,15 @@ class UniverseSnapshot:
 
     Attributes:
         effective_date: 生效日期（重平衡日期，通常是月末）
-        period_start_date: 数据计算周期开始日期（T1回看的开始日期）
-        period_end_date: 数据计算周期结束日期（通常等于重平衡日期）
-        period_start_ts: 数据计算周期开始时间戳 (毫秒)
-        period_end_ts: 数据计算周期结束时间戳 (毫秒)
+        start_date: 实际下载数据开始时间
+        end_date: 实际下载数据结束日期
+        start_date_ts: 实际使用开始时间戳 (毫秒)
+        end_date_ts: 实际使用结束时间戳 (毫秒)
+        calculated_t1_start: 数据计算周期开始日期（T1回看的开始日期）
+        calculated_t1_end: 数据计算周期结束日期（通常等于重平衡日期）
+        calculated_t1_start_ts: 数据计算周期开始时间戳 (毫秒)
+        calculated_t1_end_ts: 数据计算周期结束时间戳 (毫秒)
+
         symbols: 该时间点的universe交易对列表（基于period内数据计算得出）
         mean_daily_amounts: 各交易对在period内的平均日成交量
         metadata: 额外的元数据信息
@@ -59,14 +64,35 @@ class UniverseSnapshot:
         - 含义: 基于1月份数据，在1月末选择2月份的universe
     """
 
-    effective_date: str
-    period_start_date: str
-    period_end_date: str
-    period_start_ts: str
-    period_end_ts: str
+    effective_date: str  # 重平衡生效日期
+    start_date: str  # 实际使用开始日期
+    end_date: str  # 实际使用结束日期
+    start_date_ts: str  # 实际使用开始时间戳
+    end_date_ts: str  # 实际使用结束时间戳
+    calculated_t1_start: str  # 计算周期开始日期
+    calculated_t1_end: str  # 计算周期结束日期
+    calculated_t1_start_ts: str  # 计算周期开始时间戳
+    calculated_t1_end_ts: str  # 计算周期结束时间戳
     symbols: list[str]
     mean_daily_amounts: dict[str, float]
     metadata: dict[str, Any] | None = None
+
+    @staticmethod
+    def _calculate_timestamp(date_str: str, time_str: str = "00:00:00") -> str:
+        """计算日期的时间戳（毫秒）
+
+        Args:
+            date_str: 日期字符串 (YYYY-MM-DD)
+            time_str: 时间字符串 (HH:MM:SS)，默认为开始时间
+
+        Returns:
+            str: 毫秒时间戳
+        """
+        from datetime import datetime
+
+        return str(
+            int(datetime.strptime(f"{date_str} {time_str}", "%Y-%m-%d %H:%M:%S").timestamp() * 1000)
+        )
 
     @classmethod
     def create_with_inferred_periods(
@@ -76,6 +102,7 @@ class UniverseSnapshot:
         symbols: list[str],
         mean_daily_amounts: dict[str, float],
         metadata: dict[str, Any] | None = None,
+        next_effective_date: str | None = None,
     ) -> "UniverseSnapshot":
         """创建快照并自动推断周期日期和时间戳
 
@@ -88,6 +115,7 @@ class UniverseSnapshot:
             symbols: 交易对列表
             mean_daily_amounts: 平均日成交量（基于计算周期内的数据）
             metadata: 元数据
+            next_effective_date: 下一次重平衡日期（用于确定使用周期结束日期）
 
         Returns:
             UniverseSnapshot: 带有推断周期日期和时间戳的快照
@@ -95,38 +123,41 @@ class UniverseSnapshot:
         Example:
             对于月末重平衡策略：
             effective_date="2024-01-31", t1_months=1
-            -> period_start_date="2023-12-31"
-            -> period_end_date="2024-01-31"
+            -> period: 2023-12-31 to 2024-01-31 (用于计算universe)
+            -> usage: 2024-02-01 to 2024-02-29 (实际使用期间)
             含义：基于1月份数据，在1月末选择2月份universe
         """
-        from datetime import datetime
-
         effective_dt = pd.to_datetime(effective_date)
-        period_start_dt = effective_dt - pd.DateOffset(months=t1_months)
+        calculated_t1_start = effective_dt - pd.DateOffset(months=t1_months)
 
-        # 计算时间戳（毫秒）
-        period_start_ts = str(
-            int(
-                datetime.strptime(
-                    f"{period_start_dt.strftime('%Y-%m-%d')} 00:00:00",
-                    "%Y-%m-%d %H:%M:%S",
-                ).timestamp()
-                * 1000
-            )
-        )
-        period_end_ts = str(
-            int(
-                datetime.strptime(f"{effective_date} 23:59:59", "%Y-%m-%d %H:%M:%S").timestamp()
-                * 1000
-            )
-        )
+        # 计算使用周期
+        usage_start_dt = effective_dt + pd.Timedelta(days=1)
+        if next_effective_date:
+            usage_end_dt = pd.to_datetime(next_effective_date)
+        else:
+            # 如果没有下一个重平衡日期，估算到下个月末
+            usage_end_dt = usage_start_dt + pd.offsets.MonthEnd(0)
+
+        # 计算所有时间戳（毫秒）
+        calculated_t1_start_str = calculated_t1_start.strftime("%Y-%m-%d")
+        usage_start_str = usage_start_dt.strftime("%Y-%m-%d")
+        usage_end_str = usage_end_dt.strftime("%Y-%m-%d")
+
+        calculated_t1_start_ts = cls._calculate_timestamp(calculated_t1_start_str, "00:00:00")
+        calculated_t1_end_ts = cls._calculate_timestamp(effective_date, "23:59:59")
+        start_date_ts = cls._calculate_timestamp(usage_start_str, "00:00:00")
+        end_date_ts = cls._calculate_timestamp(usage_end_str, "23:59:59")
 
         return cls(
-            effective_date=effective_date,
-            period_start_date=period_start_dt.strftime("%Y-%m-%d"),
-            period_end_date=effective_date,  # 数据计算周期结束 = 重平衡日期
-            period_start_ts=period_start_ts,
-            period_end_ts=period_end_ts,
+            effective_date=effective_date,  # 重平衡生效日期
+            start_date=usage_start_str,  # 实际使用开始日期
+            end_date=usage_end_str,  # 实际使用结束日期
+            calculated_t1_start=calculated_t1_start_str,
+            calculated_t1_end=effective_date,  # 数据计算周期结束 = 重平衡日期
+            calculated_t1_start_ts=calculated_t1_start_ts,
+            calculated_t1_end_ts=calculated_t1_end_ts,
+            start_date_ts=start_date_ts,
+            end_date_ts=end_date_ts,
             symbols=symbols,
             mean_daily_amounts=mean_daily_amounts,
             metadata=metadata,
@@ -135,11 +166,10 @@ class UniverseSnapshot:
     @classmethod
     def create_with_dates_and_timestamps(
         cls,
-        effective_date: str,
-        period_start_date: str,
-        period_end_date: str,
-        period_start_ts: str,
-        period_end_ts: str,
+        usage_t1_start: str,
+        usage_t1_end: str,
+        calculated_t1_start: str,
+        calculated_t1_end: str,
         symbols: list[str],
         mean_daily_amounts: dict[str, float],
         metadata: dict[str, Any] | None = None,
@@ -147,11 +177,10 @@ class UniverseSnapshot:
         """创建快照，明确指定所有日期和时间戳
 
         Args:
-            effective_date: 重平衡生效日期
-            period_start_date: 数据计算周期开始日期
-            period_end_date: 数据计算周期结束日期
-            period_start_ts: 数据计算周期开始时间戳 (毫秒)
-            period_end_ts: 数据计算周期结束时间戳 (毫秒)
+            usage_t1_start: 实际使用开始日期
+            usage_t1_end: 实际使用结束日期
+            calculated_t1_start: 数据计算周期开始日期
+            calculated_t1_end: 数据计算周期结束日期
             symbols: 交易对列表
             mean_daily_amounts: 平均日成交量
             metadata: 元数据
@@ -159,12 +188,22 @@ class UniverseSnapshot:
         Returns:
             UniverseSnapshot: 快照实例
         """
+        # 计算所有时间戳（毫秒）
+        calculated_t1_start_ts = cls._calculate_timestamp(calculated_t1_start, "00:00:00")
+        calculated_t1_end_ts = cls._calculate_timestamp(calculated_t1_end, "23:59:59")
+        start_date_ts = cls._calculate_timestamp(usage_t1_start, "00:00:00")
+        end_date_ts = cls._calculate_timestamp(usage_t1_end, "23:59:59")
+
         return cls(
-            effective_date=effective_date,
-            period_start_date=period_start_date,
-            period_end_date=period_end_date,
-            period_start_ts=period_start_ts,
-            period_end_ts=period_end_ts,
+            effective_date=calculated_t1_end,  # 重平衡生效日期（计算周期结束日期）
+            start_date=usage_t1_start,  # 实际使用开始日期
+            end_date=usage_t1_end,  # 实际使用结束日期
+            calculated_t1_start=calculated_t1_start,
+            calculated_t1_end=calculated_t1_end,
+            calculated_t1_start_ts=calculated_t1_start_ts,
+            calculated_t1_end_ts=calculated_t1_end_ts,
+            start_date_ts=start_date_ts,
+            end_date_ts=end_date_ts,
             symbols=symbols,
             mean_daily_amounts=mean_daily_amounts,
             metadata=metadata,
@@ -183,19 +222,19 @@ class UniverseSnapshot:
             Dict: 验证结果，包含一致性检查和详细信息
         """
         effective_dt = pd.to_datetime(self.effective_date)
-        period_start_dt = pd.to_datetime(self.period_start_date)
-        period_end_dt = pd.to_datetime(self.period_end_date)
+        calculated_t1_start_dt = pd.to_datetime(self.calculated_t1_start)
+        calculated_t1_end_dt = pd.to_datetime(self.calculated_t1_end)
 
         # 计算实际的月数差
-        actual_months_diff = (effective_dt.year - period_start_dt.year) * 12 + (
-            effective_dt.month - period_start_dt.month
+        actual_months_diff = (effective_dt.year - calculated_t1_start_dt.year) * 12 + (
+            effective_dt.month - calculated_t1_start_dt.month
         )
 
         # 计算实际天数
-        actual_days = (period_end_dt - period_start_dt).days
+        actual_days = (calculated_t1_end_dt - calculated_t1_start_dt).days
 
         # 验证期末日期是否等于生效日期
-        period_end_matches_effective = self.period_end_date == self.effective_date
+        period_end_matches_effective = self.calculated_t1_end == self.effective_date
 
         return {
             "is_consistent": (
@@ -208,8 +247,8 @@ class UniverseSnapshot:
             "period_end_matches_effective": period_end_matches_effective,
             "details": {
                 "effective_date": self.effective_date,
-                "period_start_date": self.period_start_date,
-                "period_end_date": self.period_end_date,
+                "calculated_t1_start": self.calculated_t1_start,
+                "calculated_t1_end": self.calculated_t1_end,
             },
         }
 
@@ -217,10 +256,14 @@ class UniverseSnapshot:
         """转换为字典格式"""
         return {
             "effective_date": self.effective_date,
-            "period_start_date": self.period_start_date,
-            "period_end_date": self.period_end_date,
-            "period_start_ts": self.period_start_ts,
-            "period_end_ts": self.period_end_ts,
+            "start_date": self.start_date,  # 实际使用开始日期
+            "end_date": self.end_date,  # 实际使用结束日期
+            "calculated_t1_start": self.calculated_t1_start,
+            "calculated_t1_end": self.calculated_t1_end,
+            "calculated_t1_start_ts": self.calculated_t1_start_ts,
+            "calculated_t1_end_ts": self.calculated_t1_end_ts,
+            "start_date_ts": self.start_date_ts,
+            "end_date_ts": self.end_date_ts,
             "symbols": self.symbols,
             "mean_daily_amounts": self.mean_daily_amounts,
             "metadata": self.metadata or {},
@@ -233,37 +276,45 @@ class UniverseSnapshot:
             Dict: 包含周期相关的详细信息
         """
         return {
-            "period_start": self.period_start_date,
-            "period_end": self.period_end_date,
-            "period_start_ts": self.period_start_ts,
-            "period_end_ts": self.period_end_ts,
+            "calculated_t1_start": self.calculated_t1_start,
+            "calculated_t1_end": self.calculated_t1_end,
+            "calculated_t1_start_ts": self.calculated_t1_start_ts,
+            "calculated_t1_end_ts": self.calculated_t1_end_ts,
+            "start_date": self.start_date,
+            "end_date": self.end_date,
+            "start_date_ts": self.start_date_ts,
+            "end_date_ts": self.end_date_ts,
             "effective_date": self.effective_date,
             "period_duration_days": str(
-                (pd.to_datetime(self.period_end_date) - pd.to_datetime(self.period_start_date)).days
+                (
+                    pd.to_datetime(self.calculated_t1_end)
+                    - pd.to_datetime(self.calculated_t1_start)
+                ).days
             ),
         }
 
-    def get_investment_period_info(self) -> dict[str, str]:
-        """获取投资周期信息
+    def get_usage_period_info(self) -> dict[str, str]:
+        """获取Universe使用周期信息
 
-        在月末重平衡策略下，这个快照对应的投资期间。
+        返回该快照对应的实际使用期间和计算期间。
 
         Returns:
-            Dict: 投资周期信息
+            Dict: 包含两个关键时间范围的信息
         """
-        # 投资期间从重平衡日的下一天开始
-        effective_dt = pd.to_datetime(self.effective_date)
-        investment_start = effective_dt + pd.Timedelta(days=1)
-
-        # 假设投资到下个月末（这是一个估算，实际取决于下次重平衡）
-        investment_end_estimate = investment_start + pd.offsets.MonthEnd(0)
-
         return {
-            "data_calculation_period": f"{self.period_start_date} to {self.period_end_date}",
+            # 计算期间 - 用于定义universe
+            "calculation_period_start": self.calculated_t1_start,
+            "calculation_period_end": self.calculated_t1_end,
             "rebalance_decision_date": self.effective_date,
-            "investment_start_date": investment_start.strftime("%Y-%m-%d"),
-            "investment_end_estimate": investment_end_estimate.strftime("%Y-%m-%d"),
+            # 使用期间 - 实际需要下载的数据
+            "usage_period_start": self.start_date,
+            "usage_period_end": self.end_date,
+            "usage_period_duration_days": str(
+                (pd.to_datetime(self.end_date) - pd.to_datetime(self.start_date)).days
+            ),
+            # 其他信息
             "universe_symbols_count": str(len(self.symbols)),
+            "note": "calculation_period用于定义universe，usage_period用于下载训练数据",
         }
 
 
@@ -299,40 +350,40 @@ class UniverseDefinition:
         snapshots = []
 
         for snap in data["snapshots"]:
-            period_start_date = snap.get("period_start_date", snap["effective_date"])
-            period_end_date = snap.get("period_end_date", snap["effective_date"])
+            # 计算数据周期
+            calculated_t1_start = snap["calculated_t1_start"]
+            calculated_t1_end = snap["calculated_t1_end"]
+            calculated_t1_start_ts = snap["calculated_t1_start_ts"]
+            calculated_t1_end_ts = snap["calculated_t1_end_ts"]
 
-            # 处理时间戳字段 - 如果不存在则自动计算
-            period_start_ts = snap.get("period_start_ts")
-            period_end_ts = snap.get("period_end_ts")
+            # 计算使用周期 - 从历史数据推断或默认计算
+            effective_dt = pd.to_datetime(snap["effective_date"])
+            usage_start_dt = effective_dt + pd.Timedelta(days=1)
+            usage_end_dt = usage_start_dt + pd.offsets.MonthEnd(0)
 
-            if period_start_ts is None or period_end_ts is None:
-                from datetime import datetime as dt_class
+            # 从快照数据中获取使用期间，如果不存在则使用计算的值
+            start_date = snap.get("start_date", usage_start_dt.strftime("%Y-%m-%d"))
+            end_date = snap.get("end_date", usage_end_dt.strftime("%Y-%m-%d"))
 
-                # 自动计算时间戳
-                period_start_ts = str(
-                    int(
-                        dt_class.strptime(
-                            f"{period_start_date} 00:00:00", "%Y-%m-%d %H:%M:%S"
-                        ).timestamp()
-                        * 1000
-                    )
-                )
-                period_end_ts = str(
-                    int(
-                        dt_class.strptime(
-                            f"{period_end_date} 23:59:59", "%Y-%m-%d %H:%M:%S"
-                        ).timestamp()
-                        * 1000
-                    )
-                )
+            # 计算或获取使用期间的时间戳
+            start_date_ts = snap.get("start_date_ts")
+            end_date_ts = snap.get("end_date_ts")
+
+            if start_date_ts is None:
+                start_date_ts = UniverseSnapshot._calculate_timestamp(start_date, "00:00:00")
+            if end_date_ts is None:
+                end_date_ts = UniverseSnapshot._calculate_timestamp(end_date, "23:59:59")
 
             snapshot = UniverseSnapshot(
                 effective_date=snap["effective_date"],
-                period_start_date=period_start_date,
-                period_end_date=period_end_date,
-                period_start_ts=period_start_ts,
-                period_end_ts=period_end_ts,
+                start_date=start_date,
+                end_date=end_date,
+                start_date_ts=start_date_ts,
+                end_date_ts=end_date_ts,
+                calculated_t1_start=calculated_t1_start,
+                calculated_t1_end=calculated_t1_end,
+                calculated_t1_start_ts=calculated_t1_start_ts,
+                calculated_t1_end_ts=calculated_t1_end_ts,
                 symbols=snap["symbols"],
                 mean_daily_amounts=snap["mean_daily_amounts"],
                 metadata=snap.get("metadata"),
@@ -398,59 +449,6 @@ class UniverseDefinition:
 
         # 如果没有找到合适的snapshot，返回空列表
         return []
-
-    def get_universe_summary(self) -> dict[str, Any]:
-        """获取universe概要信息"""
-        if not self.snapshots:
-            return {"error": "No snapshots available"}
-
-        all_symbols = set()
-        for snapshot in self.snapshots:
-            all_symbols.update(snapshot.symbols)
-
-        return {
-            "total_snapshots": len(self.snapshots),
-            "date_range": {
-                "start": min(snapshot.effective_date for snapshot in self.snapshots),
-                "end": max(snapshot.effective_date for snapshot in self.snapshots),
-            },
-            "period_ranges": [
-                {
-                    "effective_date": snapshot.effective_date,
-                    "period_start": snapshot.period_start_date,
-                    "period_end": snapshot.period_end_date,
-                    "duration_days": (
-                        pd.to_datetime(snapshot.period_end_date)
-                        - pd.to_datetime(snapshot.period_start_date)
-                    ).days,
-                }
-                for snapshot in self.snapshots
-            ],
-            "unique_symbols_count": len(all_symbols),
-            "avg_symbols_per_snapshot": sum(len(snapshot.symbols) for snapshot in self.snapshots)
-            / len(self.snapshots),
-            "config": self.config.to_dict(),
-        }
-
-    def get_period_details(self) -> list[dict[str, Any]]:
-        """获取所有周期的详细信息"""
-        return [
-            {
-                "effective_date": snapshot.effective_date,
-                "period_start_date": snapshot.period_start_date,
-                "period_end_date": snapshot.period_end_date,
-                "period_start_ts": snapshot.period_start_ts,
-                "period_end_ts": snapshot.period_end_ts,
-                "period_duration_days": (
-                    pd.to_datetime(snapshot.period_end_date)
-                    - pd.to_datetime(snapshot.period_start_date)
-                ).days,
-                "symbols_count": len(snapshot.symbols),
-                "top_5_symbols": snapshot.symbols[:5],
-                "metadata": snapshot.metadata,
-            }
-            for snapshot in self.snapshots
-        ]
 
     @classmethod
     def get_schema(cls) -> dict[str, Any]:
@@ -523,24 +521,26 @@ class UniverseDefinition:
                                 "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
                                 "description": "Rebalancing effective date",
                             },
-                            "period_start_date": {
+                            "calculated_t1_start": {
                                 "type": "string",
                                 "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
-                                "description": "Data calculation period start date",
+                                "description": (
+                                    "Data calculation period start date (T1 lookback start)"
+                                ),
                             },
-                            "period_end_date": {
+                            "calculated_t1_end": {
                                 "type": "string",
                                 "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
-                                "description": "Data calculation period end date",
+                                "description": "Data calculation period end date (T1 lookback end)",
                             },
-                            "period_start_ts": {
+                            "calculated_t1_start_ts": {
                                 "type": "string",
                                 "pattern": "^\\d+$",
                                 "description": (
                                     "Data calculation period start timestamp in milliseconds"
                                 ),
                             },
-                            "period_end_ts": {
+                            "calculated_t1_end_ts": {
                                 "type": "string",
                                 "pattern": "^\\d+$",
                                 "description": (
@@ -595,10 +595,10 @@ class UniverseDefinition:
                         },
                         "required": [
                             "effective_date",
-                            "period_start_date",
-                            "period_end_date",
-                            "period_start_ts",
-                            "period_end_ts",
+                            "calculated_t1_start",
+                            "calculated_t1_end",
+                            "calculated_t1_start_ts",
+                            "calculated_t1_end_ts",
                             "symbols",
                             "mean_daily_amounts",
                         ],
@@ -638,10 +638,12 @@ class UniverseDefinition:
             "snapshots": [
                 {
                     "effective_date": "2024-01-31",
-                    "period_start_date": "2023-12-31",
-                    "period_end_date": "2024-01-31",
-                    "period_start_ts": "1703980800000",
-                    "period_end_ts": "1706745599000",
+                    "start_date": "2024-02-01",
+                    "end_date": "2024-02-29",
+                    "calculated_t1_start": "2023-12-31",
+                    "calculated_t1_end": "2024-01-31",
+                    "calculated_t1_start_ts": "1703980800000",
+                    "calculated_t1_end_ts": "1706745599000",
                     "symbols": ["BTCUSDT", "ETHUSDT", "BNBUSDT"],
                     "mean_daily_amounts": {
                         "BTCUSDT": 1234567890.0,
@@ -649,12 +651,11 @@ class UniverseDefinition:
                         "BNBUSDT": 456789123.0,
                     },
                     "metadata": {
-                        "t1_start_date": "2023-12-31",
                         "calculated_t1_start": "2023-12-31",
-                        "period_adjusted": False,
-                        "strict_date_range": False,
+                        "calculated_t1_end": "2024-01-31",
+                        "delay_days": 7,
+                        "quote_asset": "USDT",
                         "selected_symbols_count": 3,
-                        "total_candidates": 100,
                     },
                 }
             ],
@@ -733,10 +734,10 @@ class UniverseDefinition:
                 for i, snapshot in enumerate(data["snapshots"]):
                     snapshot_required = [
                         "effective_date",
-                        "period_start_date",
-                        "period_end_date",
-                        "period_start_ts",
-                        "period_end_ts",
+                        "calculated_t1_start",
+                        "calculated_t1_end",
+                        "calculated_t1_start_ts",
+                        "calculated_t1_end_ts",
                         "symbols",
                         "mean_daily_amounts",
                     ]

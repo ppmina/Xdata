@@ -52,13 +52,13 @@ def test_universe_snapshot():
     assert snapshot.effective_date == "2024-01-31"
     assert len(snapshot.symbols) == 2
     assert "BTCUSDT" in snapshot.symbols
-    assert snapshot.period_start_ts is not None
-    assert snapshot.period_end_ts is not None
+    assert snapshot.calculated_t1_start_ts is not None
+    assert snapshot.calculated_t1_end_ts is not None
 
     # 测试周期信息
     period_info = snapshot.get_period_info()
-    assert "period_start" in period_info
-    assert "period_end" in period_info
+    assert "calculated_t1_start" in period_info
+    assert "calculated_t1_end" in period_info
 
 
 def test_universe_definition():
