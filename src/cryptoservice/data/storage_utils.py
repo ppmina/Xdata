@@ -116,9 +116,7 @@ class StorageUtils:
 
             # 计算并存储衍生特征
             taker_sell_volume = date_data["volume"] - date_data["taker_buy_volume"]
-            taker_sell_quote_volume = (
-                date_data["quote_volume"] - date_data["taker_buy_quote_volume"]
-            )
+            taker_sell_quote_volume = date_data["quote_volume"] - date_data["taker_buy_quote_volume"]
 
             for feature, feature_data in [
                 ("taker_sell_volume", taker_sell_volume),
@@ -220,9 +218,7 @@ class StorageUtils:
                         array = array.astype(np.float64)
 
                     # 构建时间索引
-                    times = pd.date_range(
-                        start=pd.Timestamp(date), periods=array.shape[1], freq=freq
-                    )
+                    times = pd.date_range(start=pd.Timestamp(date), periods=array.shape[1], freq=freq)
 
                     # 创建 DataFrame
                     df = pd.DataFrame(
@@ -305,10 +301,7 @@ class StorageUtils:
                 for idx, row in df.iterrows():
                     if isinstance(idx, tuple) and len(idx) == 2:
                         symbol, time = idx
-                        values = [
-                            (f"{x:.4f}" if isinstance(x, (float, np.floating)) else str(x))
-                            for x in row
-                        ]
+                        values = [(f"{x:.4f}" if isinstance(x, (float, np.floating)) else str(x)) for x in row]
                         table.add_row(str(time), str(symbol), *values)
 
                 StorageUtils.console.print(table)
@@ -361,9 +354,7 @@ class StorageUtils:
             # 限制显示行数
             if len(data) > max_rows:
                 data = data[:max_rows]
-                StorageUtils.console.print(
-                    f"[yellow]Showing first {max_rows} rows of {len(data)} total rows[/]"
-                )
+                StorageUtils.console.print(f"[yellow]Showing first {max_rows} rows of {len(data)} total rows[/]")
 
             # 创建表格
             table = Table(show_header=True, header_style="bold magenta")
@@ -371,9 +362,7 @@ class StorageUtils:
             # 验证并添加列
             n_cols = data.shape[1]
             if headers and len(headers) != n_cols:
-                raise ValueError(
-                    f"Headers length ({len(headers)}) doesn't match data columns ({n_cols})"
-                )
+                raise ValueError(f"Headers length ({len(headers)}) doesn't match data columns ({n_cols})")
 
             table.add_column("Index", style="cyan")
             for header in headers or [f"Col_{i}" for i in range(n_cols)]:
@@ -381,16 +370,12 @@ class StorageUtils:
 
             # 验证并添加行
             if index and len(index) < len(data):
-                StorageUtils.console.print(
-                    "[yellow]Warning: Index length is less than data length[/]"
-                )
+                StorageUtils.console.print("[yellow]Warning: Index length is less than data length[/]")
 
             for i, row in enumerate(data):
                 try:
                     idx = index[i] if index and i < len(index) else f"Row_{i}"
-                    formatted_values = [
-                        f"{x:.4f}" if isinstance(x, (float, np.floating)) else str(x) for x in row
-                    ]
+                    formatted_values = [f"{x:.4f}" if isinstance(x, (float, np.floating)) else str(x) for x in row]
                     table.add_row(idx, *formatted_values)
                 except Exception as e:
                     StorageUtils.console.print(f"[yellow]Warning: Error formatting row {i}: {e}[/]")

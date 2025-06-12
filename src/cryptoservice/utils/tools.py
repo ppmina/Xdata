@@ -62,9 +62,7 @@ class Tool:
 
 def setup_logging(level: int = logging.INFO) -> None:
     """设置日志配置."""
-    logging.basicConfig(
-        level=level, format="%(message)s", handlers=[RichHandler(rich_tracebacks=True)]
-    )
+    logging.basicConfig(level=level, format="%(message)s", handlers=[RichHandler(rich_tracebacks=True)])
     return None
 
 

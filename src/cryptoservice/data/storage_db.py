@@ -231,7 +231,7 @@ class MarketDB:
 
                 # 添加写入完成的日志
                 symbol = records[0]["symbol"] if records else "unknown"
-                logger.info(f"Successfully stored {len(records)} records for {symbol} " f"with frequency {freq.value}")
+                logger.info(f"Successfully stored {len(records)} records for {symbol} with frequency {freq.value}")
 
         except Exception:
             logger.exception("Failed to store market data")
@@ -465,7 +465,7 @@ class MarketDB:
                     )
                 except ValueError as e:
                     if "No data found" in str(e):
-                        logger.warning(f"No data found for timestamp range {start_timestamp} to " f"{end_timestamp}")
+                        logger.warning(f"No data found for timestamp range {start_timestamp} to {end_timestamp}")
                         return
                     else:
                         raise
@@ -572,7 +572,7 @@ class MarketDB:
 
             # 如果总天数少于等于chunk_days，直接处理整个范围，不分块
             if total_days <= chunk_days:
-                logger.info(f"Processing all data from {start_date} to {end_date} " f"(total: {total_days} days)")
+                logger.info(f"Processing all data from {start_date} to {end_date} (total: {total_days} days)")
 
                 # 读取所有数据
                 try:

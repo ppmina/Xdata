@@ -125,8 +125,7 @@ class RateLimitManager:
                 wait_time = 300  # 等待5分钟
 
             logger.warning(
-                f"🚫 频率限制错误 #{self.consecutive_errors}，等待 {wait_time}秒，"
-                f"调整延迟至 {self.current_delay:.2f}秒"
+                f"🚫 频率限制错误 #{self.consecutive_errors}，等待 {wait_time}秒，调整延迟至 {self.current_delay:.2f}秒"
             )
 
             # 重置请求计数
@@ -788,7 +787,7 @@ class MarketDataService(IMarketDataService):
                             if completeness < 0.8:  # 少于80%认为有问题
                                 quality_issues += 1
                                 detailed_issues.append(
-                                    f"{symbol}: 数据完整性{completeness:.1%} " f"({actual_points}/{expected_points})"
+                                    f"{symbol}: 数据完整性{completeness:.1%} ({actual_points}/{expected_points})"
                                 )
                     else:
                         quality_issues += 1
@@ -1120,7 +1119,7 @@ class MarketDataService(IMarketDataService):
             output_path_obj = self._validate_and_prepare_path(
                 output_path,
                 is_file=True,
-                file_name=(f"universe_{start_date}_{end_date}_{t1_months}_" f"{t2_months}_{t3_months}_{top_k}.json"),
+                file_name=(f"universe_{start_date}_{end_date}_{t1_months}_{t2_months}_{t3_months}_{top_k}.json"),
             )
 
             # 标准化日期格式
@@ -1286,8 +1285,7 @@ class MarketDataService(IMarketDataService):
             # 先获取当前所有永续合约作为候选（筛选指定的基准资产）
             candidate_symbols = self.get_perpetual_symbols(only_trading=True, quote_asset=quote_asset)
             logger.info(
-                f"检查 {len(candidate_symbols)} 个{quote_asset}候选交易对在 {start_date} 到 "
-                f"{end_date} 期间的可用性..."
+                f"检查 {len(candidate_symbols)} 个{quote_asset}候选交易对在 {start_date} 到 {end_date} 期间的可用性..."
             )
 
             available_symbols = []
@@ -1302,16 +1300,14 @@ class MarketDataService(IMarketDataService):
                 # 显示进度
                 processed = min(i + batch_size, len(candidate_symbols))
                 logger.info(
-                    f"已检查 {processed}/{len(candidate_symbols)} 个交易对，"
-                    f"找到 {len(available_symbols)} 个可用交易对"
+                    f"已检查 {processed}/{len(candidate_symbols)} 个交易对，找到 {len(available_symbols)} 个可用交易对"
                 )
 
                 # 避免API频率限制
                 time.sleep(0.1)
 
             logger.info(
-                f"在 {start_date} 到 {end_date} 期间找到 {len(available_symbols)} "
-                f"个可用的{quote_asset}永续合约交易对"
+                f"在 {start_date} 到 {end_date} 期间找到 {len(available_symbols)} 个可用的{quote_asset}永续合约交易对"
             )
             return available_symbols
 
@@ -1399,9 +1395,7 @@ class MarketDataService(IMarketDataService):
                         actual_days = len(klines)
 
                         if actual_days < expected_days * 0.8:  # 允许20%的数据缺失
-                            logger.warning(
-                                f"交易对 {symbol} 数据不完整: 期望{expected_days}天，" f"实际{actual_days}天"
-                            )
+                            logger.warning(f"交易对 {symbol} 数据不完整: 期望{expected_days}天，实际{actual_days}天")
 
                         # 计算平均日成交额
                         amounts = []
@@ -1519,11 +1513,11 @@ class MarketDataService(IMarketDataService):
 
                 logger.info(f"   - 交易对数量: {len(snapshot.symbols)}")
                 logger.info(
-                    f"   - 计算期间: {snapshot.calculated_t1_start} 到 " f"{snapshot.calculated_t1_end} (定义universe)"
+                    f"   - 计算期间: {snapshot.calculated_t1_start} 到 {snapshot.calculated_t1_end} (定义universe)"
                 )
                 logger.info(f"   - 使用期间: {snapshot.start_date} 到 {snapshot.end_date} (实际使用)")
                 logger.info(
-                    f"   - 下载范围: {snapshot.start_date} 到 " f"{snapshot.end_date} (含{include_buffer_days}天缓冲)"
+                    f"   - 下载范围: {snapshot.start_date} 到 {snapshot.end_date} (含{include_buffer_days}天缓冲)"
                 )
 
                 # 下载该周期的使用期间数据
@@ -1687,9 +1681,7 @@ class MarketDataService(IMarketDataService):
 
             logger.info("✅ 数据完整性验证完成")
             logger.info(f"   - 已下载交易对: {download_plan['total_symbols']} 个")
-            logger.info(
-                f"   - 时间范围: {download_plan['overall_start_date']} 到 " f"{download_plan['overall_end_date']}"
-            )
+            logger.info(f"   - 时间范围: {download_plan['overall_start_date']} 到 {download_plan['overall_end_date']}")
             logger.info(f"   - 数据频率: {interval.value}")
             logger.info(f"   - 成功验证快照: {successful_snapshots}/{total_snapshots} ({success_rate:.1%})")
 

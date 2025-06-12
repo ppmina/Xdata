@@ -100,9 +100,7 @@ def print_table(
 
             # 验证headers长度是否匹配数据
             if len(headers) != row_length:
-                raise ValueError(
-                    f"Headers length ({len(headers)}) doesn't match data width ({row_length})"
-                )
+                raise ValueError(f"Headers length ({len(headers)}) doesn't match data width ({row_length})")
 
             for header in headers:
                 table.add_column(header, style="cyan")
