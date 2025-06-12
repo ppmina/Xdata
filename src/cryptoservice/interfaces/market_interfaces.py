@@ -157,10 +157,11 @@ class IMarketDataService(Protocol):
         top_k: int,
         output_path: Path | str,
         description: str | None = None,
-        strict_date_range: bool = False,
+        delay_days: int = 7,
         api_delay_seconds: float = 1.0,
         batch_delay_seconds: float = 3.0,
         batch_size: int = 5,
+        quote_asset: str = "USDT",
     ) -> UniverseDefinition:
         """定义universe并保存到文件.
 
@@ -171,12 +172,13 @@ class IMarketDataService(Protocol):
             t2_months: T2滚动频率（月），universe重新选择的频率
             t3_months: T3合约最小创建时间（月），用于筛除新合约
             top_k: 选取的top合约数量
-            output_path: universe输出文件路径
+            output_path: universe输出文件路径 (必须指定)
             description: 描述信息
-            strict_date_range: 是否严格限制在输入的日期范围内
+            delay_days: 在重新平衡日期前额外往前推的天数，默认7天
             api_delay_seconds: 每个API请求之间的延迟秒数，默认1.0秒
             batch_delay_seconds: 每批次请求之间的延迟秒数，默认3.0秒
             batch_size: 每批次的请求数量，默认5个
+            quote_asset: 基准资产，默认为USDT，只筛选以该资产结尾的交易对
 
         Returns:
             UniverseDefinition: 定义的universe

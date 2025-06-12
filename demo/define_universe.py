@@ -8,7 +8,7 @@ load_dotenv()
 # ============== 配置参数 ==============
 # 时间范围
 START_DATE = "2024-10-01"
-END_DATE = "2024-10-31"
+END_DATE = "2024-10-07"
 
 # 输出文件路径
 OUTPUT_PATH = "./data/universe.json"

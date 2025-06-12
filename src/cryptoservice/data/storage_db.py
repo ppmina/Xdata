@@ -231,10 +231,7 @@ class MarketDB:
 
                 # 添加写入完成的日志
                 symbol = records[0]["symbol"] if records else "unknown"
-                logger.info(
-                    f"Successfully stored {len(records)} records for {symbol} "
-                    f"with frequency {freq.value}"
-                )
+                logger.info(f"Successfully stored {len(records)} records for {symbol} with frequency {freq.value}")
 
         except Exception:
             logger.exception("Failed to store market data")
@@ -267,9 +264,7 @@ class MarketDB:
             start_ts = int(pd.Timestamp(start_time).timestamp() * 1000)
             end_ts = int(pd.Timestamp(end_time).timestamp() * 1000)
 
-            return self._read_data_by_timestamp(
-                start_ts, end_ts, freq, symbols, features, raise_on_empty
-            )
+            return self._read_data_by_timestamp(start_ts, end_ts, freq, symbols, features, raise_on_empty)
 
         except Exception:
             logger.exception("Failed to read market data")
@@ -302,9 +297,7 @@ class MarketDB:
             start_timestamp = int(start_ts)
             end_timestamp = int(end_ts)
 
-            return self._read_data_by_timestamp(
-                start_timestamp, end_timestamp, freq, symbols, features, raise_on_empty
-            )
+            return self._read_data_by_timestamp(start_timestamp, end_timestamp, freq, symbols, features, raise_on_empty)
 
         except Exception:
             logger.exception("Failed to read market data by timestamp")
@@ -472,18 +465,13 @@ class MarketDB:
                     )
                 except ValueError as e:
                     if "No data found" in str(e):
-                        logger.warning(
-                            f"No data found for timestamp range {start_timestamp} to "
-                            f"{end_timestamp}"
-                        )
+                        logger.warning(f"No data found for timestamp range {start_timestamp} to {end_timestamp}")
                         return
                     else:
                         raise
 
                 if df.empty:
-                    logger.warning(
-                        f"No data found for timestamp range {start_timestamp} to {end_timestamp}"
-                    )
+                    logger.warning(f"No data found for timestamp range {start_timestamp} to {end_timestamp}")
                     return
 
                 # 如果需要降采样
@@ -524,18 +512,14 @@ class MarketDB:
                         )
                     except ValueError as e:
                         if "No data found" in str(e):
-                            logger.warning(
-                                f"No data found for timestamp range {current_ts} to {chunk_end_ts}"
-                            )
+                            logger.warning(f"No data found for timestamp range {current_ts} to {chunk_end_ts}")
                             current_ts = chunk_end_ts
                             continue
                         else:
                             raise
 
                     if df.empty:
-                        logger.warning(
-                            f"No data found for timestamp range {current_ts} to {chunk_end_ts}"
-                        )
+                        logger.warning(f"No data found for timestamp range {current_ts} to {chunk_end_ts}")
                         current_ts = chunk_end_ts
                         continue
 
@@ -588,10 +572,7 @@ class MarketDB:
 
             # 如果总天数少于等于chunk_days，直接处理整个范围，不分块
             if total_days <= chunk_days:
-                logger.info(
-                    f"Processing all data from {start_date} to {end_date} "
-                    f"(total: {total_days} days)"
-                )
+                logger.info(f"Processing all data from {start_date} to {end_date} (total: {total_days} days)")
 
                 # 读取所有数据
                 try:
@@ -641,17 +622,13 @@ class MarketDB:
                         )
                     except ValueError as e:
                         if "No data found" in str(e):
-                            logger.warning(
-                                f"No data found for period {chunk_start_date} to {chunk_end_date}"
-                            )
+                            logger.warning(f"No data found for period {chunk_start_date} to {chunk_end_date}")
                             continue
                         else:
                             raise
 
                     if df.empty:
-                        logger.warning(
-                            f"No data found for period {chunk_start_date} to {chunk_end_date}"
-                        )
+                        logger.warning(f"No data found for period {chunk_start_date} to {chunk_end_date}")
                         continue
 
                     # 如果需要降采样
@@ -820,7 +797,7 @@ class MarketDB:
             date_str = date.strftime("%Y%m%d")
 
             # 保存交易对顺序
-            symbols_path = output_path / freq.value / date_str / "universe_token.pkl"
+            symbols_path = output_path / freq.value / "symbols" / f"{date_str}.pkl"
             symbols_path.parent.mkdir(parents=True, exist_ok=True)
             pd.Series(df.index.get_level_values("symbol").unique()).to_pickle(symbols_path)
 
@@ -863,7 +840,7 @@ class MarketDB:
                 array = pivot_data.values
 
                 # 创建存储路径 - 使用短字段名
-                save_path = output_path / freq.value / date_str / short_name
+                save_path = output_path / freq.value / short_name
                 save_path.mkdir(parents=True, exist_ok=True)
 
                 # 保存为npy格式
@@ -918,9 +895,7 @@ class MarketDB:
 
             # 执行重采样
             resampled = symbol_data.resample(freq_map[target_freq]).agg(agg_rules)
-            resampled.index = pd.MultiIndex.from_product(
-                [[symbol], resampled.index], names=["symbol", "timestamp"]
-            )
+            resampled.index = pd.MultiIndex.from_product([[symbol], resampled.index], names=["symbol", "timestamp"])
             resampled_dfs.append(resampled)
 
         return pd.concat(resampled_dfs)
@@ -979,9 +954,7 @@ class MarketDB:
             console.print(table)
 
             if len(df) > max_rows:
-                console.print(
-                    f"[yellow]Showing {max_rows} rows out of {len(df)} total rows[/yellow]"
-                )
+                console.print(f"[yellow]Showing {max_rows} rows out of {len(df)} total rows[/yellow]")
 
         except Exception as e:
             logger.exception(f"Failed to visualize data: {e}")

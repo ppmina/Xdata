@@ -25,6 +25,8 @@ def test_universe_config():
         t2_months=1,
         t3_months=3,
         top_k=10,
+        delay_days=7,
+        quote_asset="USDT",
     )
 
     assert config.start_date == "2024-01-01"
@@ -70,6 +72,8 @@ def test_universe_definition():
         t2_months=1,
         t3_months=3,
         top_k=5,
+        delay_days=7,
+        quote_asset="USDT",
     )
 
     snapshot = UniverseSnapshot.create_with_inferred_periods(
@@ -136,6 +140,8 @@ def test_file_operations(tmp_path):
         t2_months=1,
         t3_months=3,
         top_k=3,
+        delay_days=7,
+        quote_asset="USDT",
     )
 
     snapshot = UniverseSnapshot.create_with_inferred_periods(
