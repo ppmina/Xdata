@@ -1,5 +1,6 @@
 # CHANGELOG
 
+<!-- next-version -->
 
 ## v0.5.0 (2025-03-22)
 

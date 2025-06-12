@@ -57,7 +57,6 @@ jobs:
         uses: python-semantic-release/python-semantic-release@master
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
-          changelog: "true"
           git_committer_name: "github-actions"
           git_committer_email: "actions@users.noreply.github.com"
 
@@ -95,7 +94,18 @@ jobs:
         id: changelog
         if: steps.release.outputs.released == 'true'
         run: |
-          CHANGELOG=$(cat CHANGELOG.md | sed -n "/## v${{ steps.release.outputs.version }}/,/## v/p" | sed '$d')
+          # 使用 semantic release 生成的 changelog
+          if [ -f "CHANGELOG.md" ]; then
+            # 提取当前版本的 changelog 内容
+            CHANGELOG=$(awk "/## v${{ steps.release.outputs.version }}/{flag=1; next} /## v/{flag=0} flag" CHANGELOG.md)
+            if [ -z "$CHANGELOG" ]; then
+              # 如果没有找到版本特定的内容，尝试提取第一个版本块
+              CHANGELOG=$(awk '/## v/{if(first){exit} first=1; next} first' CHANGELOG.md)
+            fi
+          else
+            CHANGELOG="No changelog available"
+          fi
+
           echo "changelog<<EOF" >> $GITHUB_OUTPUT
           echo "$CHANGELOG" >> $GITHUB_OUTPUT
           echo "EOF" >> $GITHUB_OUTPUT
