@@ -17,6 +17,8 @@ class UniverseConfig:
         t2_months: T2滚动频率（月），universe重新选择的频率
         t3_months: T3合约最小创建时间（月），用于筛除新合约
         top_k: 选取的top合约数量
+        delay_days: 延迟天数
+        quote_asset: 计价币种
     """
 
     start_date: str
@@ -25,6 +27,8 @@ class UniverseConfig:
     t2_months: int
     t3_months: int
     top_k: int
+    delay_days: int
+    quote_asset: str
 
     def to_dict(self) -> dict[str, Any]:
         """转换为字典格式"""
@@ -35,6 +39,8 @@ class UniverseConfig:
             "t2_months": self.t2_months,
             "t3_months": self.t3_months,
             "top_k": self.top_k,
+            "delay_days": self.delay_days,
+            "quote_asset": self.quote_asset,
         }
 
 
@@ -52,7 +58,6 @@ class UniverseSnapshot:
         calculated_t1_end: 数据计算周期结束日期（通常等于重平衡日期）
         calculated_t1_start_ts: 数据计算周期开始时间戳 (毫秒)
         calculated_t1_end_ts: 数据计算周期结束时间戳 (毫秒)
-
         symbols: 该时间点的universe交易对列表（基于period内数据计算得出）
         mean_daily_amounts: 各交易对在period内的平均日成交量
         metadata: 额外的元数据信息
@@ -90,9 +95,7 @@ class UniverseSnapshot:
         """
         from datetime import datetime
 
-        return str(
-            int(datetime.strptime(f"{date_str} {time_str}", "%Y-%m-%d %H:%M:%S").timestamp() * 1000)
-        )
+        return str(int(datetime.strptime(f"{date_str} {time_str}", "%Y-%m-%d %H:%M:%S").timestamp() * 1000))
 
     @classmethod
     def create_with_inferred_periods(
@@ -286,10 +289,7 @@ class UniverseSnapshot:
             "end_date_ts": self.end_date_ts,
             "effective_date": self.effective_date,
             "period_duration_days": str(
-                (
-                    pd.to_datetime(self.calculated_t1_end)
-                    - pd.to_datetime(self.calculated_t1_start)
-                ).days
+                (pd.to_datetime(self.calculated_t1_end) - pd.to_datetime(self.calculated_t1_start)).days
             ),
         }
 
@@ -309,9 +309,7 @@ class UniverseSnapshot:
             # 使用期间 - 实际需要下载的数据
             "usage_period_start": self.start_date,
             "usage_period_end": self.end_date,
-            "usage_period_duration_days": str(
-                (pd.to_datetime(self.end_date) - pd.to_datetime(self.start_date)).days
-            ),
+            "usage_period_duration_days": str((pd.to_datetime(self.end_date) - pd.to_datetime(self.start_date)).days),
             # 其他信息
             "universe_symbols_count": str(len(self.symbols)),
             "note": "calculation_period用于定义universe，usage_period用于下载训练数据",
@@ -480,9 +478,7 @@ class UniverseDefinition:
                         "t1_months": {
                             "type": "integer",
                             "minimum": 1,
-                            "description": (
-                                "T1 lookback window in months for calculating mean daily amount"
-                            ),
+                            "description": ("T1 lookback window in months for calculating mean daily amount"),
                         },
                         "t2_months": {
                             "type": "integer",
@@ -498,6 +494,16 @@ class UniverseDefinition:
                             "type": "integer",
                             "minimum": 1,
                             "description": "Number of top contracts to select",
+                        },
+                        "delay_days": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "description": "Delay days for universe rebalancing",
+                        },
+                        "quote_asset": {
+                            "type": "string",
+                            "pattern": "^[A-Z0-9]+$",
+                            "description": "Quote asset for trading pairs",
                         },
                     },
                     "required": [
@@ -524,9 +530,7 @@ class UniverseDefinition:
                             "calculated_t1_start": {
                                 "type": "string",
                                 "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
-                                "description": (
-                                    "Data calculation period start date (T1 lookback start)"
-                                ),
+                                "description": ("Data calculation period start date (T1 lookback start)"),
                             },
                             "calculated_t1_end": {
                                 "type": "string",
@@ -536,16 +540,12 @@ class UniverseDefinition:
                             "calculated_t1_start_ts": {
                                 "type": "string",
                                 "pattern": "^\\d+$",
-                                "description": (
-                                    "Data calculation period start timestamp in milliseconds"
-                                ),
+                                "description": ("Data calculation period start timestamp in milliseconds"),
                             },
                             "calculated_t1_end_ts": {
                                 "type": "string",
                                 "pattern": "^\\d+$",
-                                "description": (
-                                    "Data calculation period end timestamp in milliseconds"
-                                ),
+                                "description": ("Data calculation period end timestamp in milliseconds"),
                             },
                             "symbols": {
                                 "type": "array",

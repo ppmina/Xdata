@@ -82,6 +82,13 @@ def main():
         universe_def = UniverseDefinition.load_from_file(UNIVERSE_FILE)
         print(f"   ✅ 成功加载 {len(universe_def.snapshots)} 个快照")
 
+        t1 = universe_def.config.t1_months
+        t2 = universe_def.config.t2_months
+        t3 = universe_def.config.t3_months
+        top_k = universe_def.config.top_k
+        delay_days = universe_def.config.delay_days
+        quote_asset = universe_def.config.quote_asset
+
         # 创建MarketDB实例
         db = MarketDB(DB_PATH)
 
@@ -101,7 +108,8 @@ def main():
 
             # 创建快照专用的导出目录
             snapshot_export_path = (
-                Path(EXPORT_BASE_PATH) / f"{snapshot.start_date}_{snapshot.end_date}"
+                Path(EXPORT_BASE_PATH)
+                / f"{t1}_{t2}_{t3}_{top_k}_{delay_days}_{quote_asset}"
             )
 
             # 导出数据

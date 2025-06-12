@@ -200,17 +200,11 @@ class EnhancedErrorHandler:
             return ErrorSeverity.MEDIUM
 
         # 网络相关错误
-        if any(
-            keyword in error_str
-            for keyword in ["connection", "timeout", "network", "dns", "socket"]
-        ):
+        if any(keyword in error_str for keyword in ["connection", "timeout", "network", "dns", "socket"]):
             return ErrorSeverity.MEDIUM
 
         # 无效交易对
-        if any(
-            keyword in error_str
-            for keyword in ["invalid symbol", "symbol not found", "unknown symbol"]
-        ):
+        if any(keyword in error_str for keyword in ["invalid symbol", "symbol not found", "unknown symbol"]):
             return ErrorSeverity.LOW
 
         # 服务器错误
@@ -228,10 +222,7 @@ class EnhancedErrorHandler:
             return ErrorSeverity.HIGH
 
         # 认证错误
-        if any(
-            keyword in error_str
-            for keyword in ["unauthorized", "forbidden", "api key", "signature"]
-        ):
+        if any(keyword in error_str for keyword in ["unauthorized", "forbidden", "api key", "signature"]):
             return ErrorSeverity.CRITICAL
 
         # 默认为中等严重性
@@ -271,9 +262,7 @@ class EnhancedErrorHandler:
     def is_rate_limit_error(error: Exception) -> bool:
         """判断是否为频率限制错误"""
         error_str = str(error).lower()
-        return any(
-            keyword in error_str for keyword in ["too many requests", "rate limit", "429", "-1003"]
-        )
+        return any(keyword in error_str for keyword in ["too many requests", "rate limit", "429", "-1003"])
 
 
 class MarketDataService(IMarketDataService):
@@ -291,9 +280,7 @@ class MarketDataService(IMarketDataService):
         self.db: MarketDB | None = None
         self.rate_limit_manager = RateLimitManager()
 
-    def _validate_and_prepare_path(
-        self, path: Path | str, is_file: bool = False, file_name: str | None = None
-    ) -> Path:
+    def _validate_and_prepare_path(self, path: Path | str, is_file: bool = False, file_name: str | None = None) -> Path:
         """验证并准备路径。
 
         Args:
@@ -345,9 +332,7 @@ class MarketDataService(IMarketDataService):
             logger.error(f"[red]Error fetching ticker for {symbol}: {e}[/red]")
             raise MarketDataFetchError(f"Failed to fetch ticker: {e}") from e
 
-    def get_perpetual_symbols(
-        self, only_trading: bool = True, quote_asset: str = "USDT"
-    ) -> list[str]:
+    def get_perpetual_symbols(self, only_trading: bool = True, quote_asset: str = "USDT") -> list[str]:
         """获取当前市场上所有永续合约交易对。
 
         Args:
@@ -386,12 +371,8 @@ class MarketDataService(IMarketDataService):
             - 开始时间戳: 当天的 00:00:00
             - 结束时间戳: 当天的 23:59:59
         """
-        start_time = int(
-            datetime.strptime(f"{date} 00:00:00", "%Y-%m-%d %H:%M:%S").timestamp() * 1000
-        )
-        end_time = int(
-            datetime.strptime(f"{date} 23:59:59", "%Y-%m-%d %H:%M:%S").timestamp() * 1000
-        )
+        start_time = int(datetime.strptime(f"{date} 00:00:00", "%Y-%m-%d %H:%M:%S").timestamp() * 1000)
+        end_time = int(datetime.strptime(f"{date} 23:59:59", "%Y-%m-%d %H:%M:%S").timestamp() * 1000)
         return str(start_time), str(end_time)
 
     def _date_to_timestamp_start(self, date: str) -> str:
@@ -403,9 +384,7 @@ class MarketDataService(IMarketDataService):
         Returns:
             str: 当天 00:00:00 的毫秒级时间戳字符串
         """
-        timestamp = int(
-            datetime.strptime(f"{date} 00:00:00", "%Y-%m-%d %H:%M:%S").timestamp() * 1000
-        )
+        timestamp = int(datetime.strptime(f"{date} 00:00:00", "%Y-%m-%d %H:%M:%S").timestamp() * 1000)
         return str(timestamp)
 
     def _date_to_timestamp_end(self, date: str) -> str:
@@ -417,9 +396,7 @@ class MarketDataService(IMarketDataService):
         Returns:
             str: 当天 23:59:59 的毫秒级时间戳字符串
         """
-        timestamp = int(
-            datetime.strptime(f"{date} 23:59:59", "%Y-%m-%d %H:%M:%S").timestamp() * 1000
-        )
+        timestamp = int(datetime.strptime(f"{date} 23:59:59", "%Y-%m-%d %H:%M:%S").timestamp() * 1000)
         return str(timestamp)
 
     def check_symbol_exists_on_date(self, symbol: str, date: str) -> bool:
@@ -684,18 +661,14 @@ class MarketDataService(IMarketDataService):
                     raise MarketDataFetchError(f"获取交易对 {symbol} 数据失败: {e}") from e
 
                 # 执行重试
-                logger.warning(
-                    f"🔄 重试 {backoff.attempt + 1}/{retry_config.max_retries} - {symbol}: {e}"
-                )
+                logger.warning(f"🔄 重试 {backoff.attempt + 1}/{retry_config.max_retries} - {symbol}: {e}")
                 logger.info(f"💡 建议: {error_handler.get_recommended_action(e)}")
 
                 try:
                     backoff.wait()
                 except Exception:
                     logger.error(f"❌ 超过最大重试次数 - {symbol}")
-                    raise MarketDataFetchError(
-                        f"获取交易对 {symbol} 数据失败: 超过最大重试次数"
-                    ) from e
+                    raise MarketDataFetchError(f"获取交易对 {symbol} 数据失败: 超过最大重试次数") from e
 
     def _validate_kline_data(self, data: List, symbol: str) -> List:
         """验证K线数据质量"""
@@ -803,28 +776,19 @@ class MarketDataService(IMarketDataService):
                     if df is not None and not df.empty:
                         # 检查数据连续性
                         symbol_data = (
-                            df.loc[symbol]
-                            if symbol in df.index.get_level_values("symbol")
-                            else pd.DataFrame()
+                            df.loc[symbol] if symbol in df.index.get_level_values("symbol") else pd.DataFrame()
                         )
                         if not symbol_data.empty:
                             # 计算期望的数据点数量（简化版本）
-                            time_diff = pd.to_datetime(check_end_time) - pd.to_datetime(
-                                check_start_time
-                            )
-                            expected_points = self._calculate_expected_data_points(
-                                time_diff, interval
-                            )
+                            time_diff = pd.to_datetime(check_end_time) - pd.to_datetime(check_start_time)
+                            expected_points = self._calculate_expected_data_points(time_diff, interval)
                             actual_points = len(symbol_data)
 
-                            completeness = (
-                                actual_points / expected_points if expected_points > 0 else 0
-                            )
+                            completeness = actual_points / expected_points if expected_points > 0 else 0
                             if completeness < 0.8:  # 少于80%认为有问题
                                 quality_issues += 1
                                 detailed_issues.append(
-                                    f"{symbol}: 数据完整性{completeness:.1%} "
-                                    f"({actual_points}/{expected_points})"
+                                    f"{symbol}: 数据完整性{completeness:.1%} " f"({actual_points}/{expected_points})"
                                 )
                     else:
                         quality_issues += 1
@@ -968,9 +932,7 @@ class MarketDataService(IMarketDataService):
 
             logger.info(f"🚀 开始下载 {len(symbols)} 个交易对的数据")
             logger.info(f"📅 时间范围: {start_time} 到 {end_time}")
-            logger.info(
-                f"⚙️ 重试配置: 最大{retry_config.max_retries}次, 基础延迟{retry_config.base_delay}秒"
-            )
+            logger.info(f"⚙️ 重试配置: 最大{retry_config.max_retries}次, 基础延迟{retry_config.base_delay}秒")
             logger.info(f"⏱️ 智能频率控制: 基础延迟{request_delay}秒，动态调整")
 
             # 创建进度跟踪
@@ -1047,11 +1009,7 @@ class MarketDataService(IMarketDataService):
             # 执行并行下载
             results = []
             with progress if progress is not None else nullcontext():
-                overall_task = (
-                    progress.add_task("[cyan]下载交易对数据", total=len(symbols))
-                    if progress
-                    else None
-                )
+                overall_task = progress.add_task("[cyan]下载交易对数据", total=len(symbols)) if progress else None
 
                 with ThreadPoolExecutor(max_workers=max_workers) as executor:
                     futures = [executor.submit(process_symbol, symbol) for symbol in symbols]
@@ -1072,9 +1030,7 @@ class MarketDataService(IMarketDataService):
             success_rate = len(successful_symbols) / len(symbols) if symbols else 0
 
             logger.info("📊 下载完成统计:")
-            logger.info(
-                f"   ✅ 成功: {len(successful_symbols)}/{len(symbols)} ({success_rate:.1%})"
-            )
+            logger.info(f"   ✅ 成功: {len(successful_symbols)}/{len(symbols)} ({success_rate:.1%})")
             logger.info(f"   ❌ 失败: {len(failed_symbols)} 个")
             logger.info(f"   📈 总记录数: {total_records:,} 条")
             logger.info(f"   💾 数据库: {db_file_path}")
@@ -1164,10 +1120,7 @@ class MarketDataService(IMarketDataService):
             output_path_obj = self._validate_and_prepare_path(
                 output_path,
                 is_file=True,
-                file_name=(
-                    f"universe_{start_date}_{end_date}_{t1_months}_"
-                    f"{t2_months}_{t3_months}_{top_k}.json"
-                ),
+                file_name=(f"universe_{start_date}_{end_date}_{t1_months}_" f"{t2_months}_{t3_months}_{top_k}.json"),
             )
 
             # 标准化日期格式
@@ -1182,12 +1135,12 @@ class MarketDataService(IMarketDataService):
                 t2_months=t2_months,
                 t3_months=t3_months,
                 top_k=top_k,
+                delay_days=delay_days,
+                quote_asset=quote_asset,
             )
 
             logger.info(f"开始定义universe: {start_date} 到 {end_date}")
-            logger.info(
-                f"参数: T1={t1_months}月, T2={t2_months}月, T3={t3_months}月, Top-K={top_k}"
-            )
+            logger.info(f"参数: T1={t1_months}月, T2={t2_months}月, T3={t3_months}月, Top-K={top_k}")
 
             # 生成重新选择日期序列 (每T2个月)
             # 从起始日期开始，每隔T2个月生成重平衡日期，表示universe重新选择的时间点
@@ -1239,9 +1192,7 @@ class MarketDataService(IMarketDataService):
                     usage_t1_start=rebalance_date,  # 实际使用开始日期
                     usage_t1_end=min(
                         end_date,
-                        (pd.to_datetime(rebalance_date) + pd.DateOffset(months=t1_months)).strftime(
-                            "%Y-%m-%d"
-                        ),
+                        (pd.to_datetime(rebalance_date) + pd.DateOffset(months=t1_months)).strftime("%Y-%m-%d"),
                     ),  # 实际使用结束日期
                     calculated_t1_start=calculated_t1_start,  # 计算周期开始日期
                     calculated_t1_end=calculated_t1_end,  # 计算周期结束日期（基准日期）
@@ -1287,9 +1238,7 @@ class MarketDataService(IMarketDataService):
             return f"{date_str[:4]}-{date_str[4:6]}-{date_str[6:8]}"
         return date_str
 
-    def _generate_rebalance_dates(
-        self, start_date: str, end_date: str, t2_months: int
-    ) -> list[str]:
+    def _generate_rebalance_dates(self, start_date: str, end_date: str, t2_months: int) -> list[str]:
         """生成重新选择universe的日期序列。
 
         从起始日期开始，每隔T2个月生成重平衡日期，这些日期表示universe重新选择的时间点。
@@ -1322,9 +1271,7 @@ class MarketDataService(IMarketDataService):
         result_date = date_obj - pd.DateOffset(months=months)
         return str(result_date.strftime("%Y-%m-%d"))
 
-    def _get_available_symbols_for_period(
-        self, start_date: str, end_date: str, quote_asset: str = "USDT"
-    ) -> list[str]:
+    def _get_available_symbols_for_period(self, start_date: str, end_date: str, quote_asset: str = "USDT") -> list[str]:
         """获取指定时间段内实际可用的永续合约交易对。
 
         Args:
@@ -1337,9 +1284,7 @@ class MarketDataService(IMarketDataService):
         """
         try:
             # 先获取当前所有永续合约作为候选（筛选指定的基准资产）
-            candidate_symbols = self.get_perpetual_symbols(
-                only_trading=True, quote_asset=quote_asset
-            )
+            candidate_symbols = self.get_perpetual_symbols(only_trading=True, quote_asset=quote_asset)
             logger.info(
                 f"检查 {len(candidate_symbols)} 个{quote_asset}候选交易对在 {start_date} 到 "
                 f"{end_date} 期间的可用性..."
@@ -1400,22 +1345,16 @@ class MarketDataService(IMarketDataService):
         """
         try:
             # 获取在该时间段内实际存在的永续合约交易对
-            actual_symbols = self._get_available_symbols_for_period(
-                calculated_t1_start, calculated_t1_end, quote_asset
-            )
+            actual_symbols = self._get_available_symbols_for_period(calculated_t1_start, calculated_t1_end, quote_asset)
 
             # 筛除新合约 (创建时间不足T3个月的)
             cutoff_date = self._subtract_months(calculated_t1_end, t3_months)
             eligible_symbols = [
-                symbol
-                for symbol in actual_symbols
-                if self._symbol_exists_before_date(symbol, cutoff_date)
+                symbol for symbol in actual_symbols if self._symbol_exists_before_date(symbol, cutoff_date)
             ]
 
             if not eligible_symbols:
-                logger.warning(
-                    f"日期 {calculated_t1_start} 到 {calculated_t1_end}: 没有找到符合条件的交易对"
-                )
+                logger.warning(f"日期 {calculated_t1_start} 到 {calculated_t1_end}: 没有找到符合条件的交易对")
                 return [], {}
 
             # 通过API获取数据计算mean daily amount
@@ -1461,8 +1400,7 @@ class MarketDataService(IMarketDataService):
 
                         if actual_days < expected_days * 0.8:  # 允许20%的数据缺失
                             logger.warning(
-                                f"交易对 {symbol} 数据不完整: 期望{expected_days}天，"
-                                f"实际{actual_days}天"
+                                f"交易对 {symbol} 数据不完整: 期望{expected_days}天，" f"实际{actual_days}天"
                             )
 
                         # 计算平均日成交额
@@ -1509,9 +1447,7 @@ class MarketDataService(IMarketDataService):
             return universe_symbols, final_amounts
 
         except Exception as e:
-            logger.error(
-                f"计算日期 {calculated_t1_start} 到 {calculated_t1_end} 的universe时出错: {e}"
-            )
+            logger.error(f"计算日期 {calculated_t1_start} 到 {calculated_t1_end} 的universe时出错: {e}")
             return [], {}
 
     def _symbol_exists_before_date(self, symbol: str, cutoff_date: str) -> bool:
@@ -1579,21 +1515,15 @@ class MarketDataService(IMarketDataService):
 
             # 为每个周期单独下载数据
             for i, snapshot in enumerate(universe_def.snapshots):
-                logger.info(
-                    f"📅 处理快照 {i + 1}/{len(universe_def.snapshots)}: {snapshot.effective_date}"
-                )
+                logger.info(f"📅 处理快照 {i + 1}/{len(universe_def.snapshots)}: {snapshot.effective_date}")
 
                 logger.info(f"   - 交易对数量: {len(snapshot.symbols)}")
                 logger.info(
-                    f"   - 计算期间: {snapshot.calculated_t1_start} 到 "
-                    f"{snapshot.calculated_t1_end} (定义universe)"
+                    f"   - 计算期间: {snapshot.calculated_t1_start} 到 " f"{snapshot.calculated_t1_end} (定义universe)"
                 )
+                logger.info(f"   - 使用期间: {snapshot.start_date} 到 {snapshot.end_date} (实际使用)")
                 logger.info(
-                    f"   - 使用期间: {snapshot.start_date} 到 {snapshot.end_date} (实际使用)"
-                )
-                logger.info(
-                    f"   - 下载范围: {snapshot.start_date} 到 "
-                    f"{snapshot.end_date} (含{include_buffer_days}天缓冲)"
+                    f"   - 下载范围: {snapshot.start_date} 到 " f"{snapshot.end_date} (含{include_buffer_days}天缓冲)"
                 )
 
                 # 下载该周期的使用期间数据
@@ -1733,9 +1663,7 @@ class MarketDataService(IMarketDataService):
                         missing_symbols = set(snapshot.symbols[:3]) - set(available_symbols)
                         if missing_symbols:
                             incomplete_symbols.extend(missing_symbols)
-                            logger.debug(
-                                f"快照 {snapshot.effective_date}缺少交易对: {list(missing_symbols)}"
-                            )
+                            logger.debug(f"快照 {snapshot.effective_date}缺少交易对: {list(missing_symbols)}")
                         else:
                             successful_snapshots += 1
                             logger.debug(f"快照 {snapshot.effective_date} 验证成功")
@@ -1760,13 +1688,10 @@ class MarketDataService(IMarketDataService):
             logger.info("✅ 数据完整性验证完成")
             logger.info(f"   - 已下载交易对: {download_plan['total_symbols']} 个")
             logger.info(
-                f"   - 时间范围: {download_plan['overall_start_date']} 到 "
-                f"{download_plan['overall_end_date']}"
+                f"   - 时间范围: {download_plan['overall_start_date']} 到 " f"{download_plan['overall_end_date']}"
             )
             logger.info(f"   - 数据频率: {interval.value}")
-            logger.info(
-                f"   - 成功验证快照: {successful_snapshots}/{total_snapshots} ({success_rate:.1%})"
-            )
+            logger.info(f"   - 成功验证快照: {successful_snapshots}/{total_snapshots} ({success_rate:.1%})")
 
             # 只有在成功率很低时才给出警告
             if success_rate < 0.5:
