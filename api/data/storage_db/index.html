@@ -3611,10 +3611,7 @@
 <span class="normal"><a href="#__codelineno-0-235">235</a></span>
 <span class="normal"><a href="#__codelineno-0-236">236</a></span>
 <span class="normal"><a href="#__codelineno-0-237">237</a></span>
-<span class="normal"><a href="#__codelineno-0-238">238</a></span>
-<span class="normal"><a href="#__codelineno-0-239">239</a></span>
-<span class="normal"><a href="#__codelineno-0-240">240</a></span>
-<span class="normal"><a href="#__codelineno-0-241">241</a></span></pre></div></td><td class="code"><div><pre><span></span><code><a id="__codelineno-0-131" name="__codelineno-0-131"></a><span class="k">def</span><span class="w"> </span><span class="nf">store_data</span><span class="p">(</span>
+<span class="normal"><a href="#__codelineno-0-238">238</a></span></pre></div></td><td class="code"><div><pre><span></span><code><a id="__codelineno-0-131" name="__codelineno-0-131"></a><span class="k">def</span><span class="w"> </span><span class="nf">store_data</span><span class="p">(</span>
 <a id="__codelineno-0-132" name="__codelineno-0-132"></a>    <span class="bp">self</span><span class="p">,</span>
 <a id="__codelineno-0-133" name="__codelineno-0-133"></a>    <span class="n">data</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="n">PerpetualMarketTicker</span><span class="p">]</span> <span class="o">|</span> <span class="nb">list</span><span class="p">[</span><span class="nb">list</span><span class="p">[</span><span class="n">PerpetualMarketTicker</span><span class="p">]],</span>
 <a id="__codelineno-0-134" name="__codelineno-0-134"></a>    <span class="n">freq</span><span class="p">:</span> <span class="n">Freq</span><span class="p">,</span>
@@ -3717,14 +3714,11 @@
 <a id="__codelineno-0-231" name="__codelineno-0-231"></a>
 <a id="__codelineno-0-232" name="__codelineno-0-232"></a>            <span class="c1"># 添加写入完成的日志</span>
 <a id="__codelineno-0-233" name="__codelineno-0-233"></a>            <span class="n">symbol</span> <span class="o">=</span> <span class="n">records</span><span class="p">[</span><span class="mi">0</span><span class="p">][</span><span class="s2">&quot;symbol&quot;</span><span class="p">]</span> <span class="k">if</span> <span class="n">records</span> <span class="k">else</span> <span class="s2">&quot;unknown&quot;</span>
-<a id="__codelineno-0-234" name="__codelineno-0-234"></a>            <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span>
-<a id="__codelineno-0-235" name="__codelineno-0-235"></a>                <span class="sa">f</span><span class="s2">&quot;Successfully stored </span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">records</span><span class="p">)</span><span class="si">}</span><span class="s2"> records for </span><span class="si">{</span><span class="n">symbol</span><span class="si">}</span><span class="s2"> &quot;</span>
-<a id="__codelineno-0-236" name="__codelineno-0-236"></a>                <span class="sa">f</span><span class="s2">&quot;with frequency </span><span class="si">{</span><span class="n">freq</span><span class="o">.</span><span class="n">value</span><span class="si">}</span><span class="s2">&quot;</span>
-<a id="__codelineno-0-237" name="__codelineno-0-237"></a>            <span class="p">)</span>
-<a id="__codelineno-0-238" name="__codelineno-0-238"></a>
-<a id="__codelineno-0-239" name="__codelineno-0-239"></a>    <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
-<a id="__codelineno-0-240" name="__codelineno-0-240"></a>        <span class="n">logger</span><span class="o">.</span><span class="n">exception</span><span class="p">(</span><span class="s2">&quot;Failed to store market data&quot;</span><span class="p">)</span>
-<a id="__codelineno-0-241" name="__codelineno-0-241"></a>        <span class="k">raise</span>
+<a id="__codelineno-0-234" name="__codelineno-0-234"></a>            <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Successfully stored </span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">records</span><span class="p">)</span><span class="si">}</span><span class="s2"> records for </span><span class="si">{</span><span class="n">symbol</span><span class="si">}</span><span class="s2"> with frequency </span><span class="si">{</span><span class="n">freq</span><span class="o">.</span><span class="n">value</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+<a id="__codelineno-0-235" name="__codelineno-0-235"></a>
+<a id="__codelineno-0-236" name="__codelineno-0-236"></a>    <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
+<a id="__codelineno-0-237" name="__codelineno-0-237"></a>        <span class="n">logger</span><span class="o">.</span><span class="n">exception</span><span class="p">(</span><span class="s2">&quot;Failed to store market data&quot;</span><span class="p">)</span>
+<a id="__codelineno-0-238" name="__codelineno-0-238"></a>        <span class="k">raise</span>
 </code></pre></div></td></tr></table></div>
             </details>
     </div>
@@ -3887,7 +3881,10 @@
 
             <details class="quote">
               <summary>Source code in <code>src/cryptoservice/data/storage_db.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal"><a href="#__codelineno-0-243">243</a></span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal"><a href="#__codelineno-0-240">240</a></span>
+<span class="normal"><a href="#__codelineno-0-241">241</a></span>
+<span class="normal"><a href="#__codelineno-0-242">242</a></span>
+<span class="normal"><a href="#__codelineno-0-243">243</a></span>
 <span class="normal"><a href="#__codelineno-0-244">244</a></span>
 <span class="normal"><a href="#__codelineno-0-245">245</a></span>
 <span class="normal"><a href="#__codelineno-0-246">246</a></span>
@@ -3915,45 +3912,38 @@
 <span class="normal"><a href="#__codelineno-0-268">268</a></span>
 <span class="normal"><a href="#__codelineno-0-269">269</a></span>
 <span class="normal"><a href="#__codelineno-0-270">270</a></span>
-<span class="normal"><a href="#__codelineno-0-271">271</a></span>
-<span class="normal"><a href="#__codelineno-0-272">272</a></span>
-<span class="normal"><a href="#__codelineno-0-273">273</a></span>
-<span class="normal"><a href="#__codelineno-0-274">274</a></span>
-<span class="normal"><a href="#__codelineno-0-275">275</a></span>
-<span class="normal"><a href="#__codelineno-0-276">276</a></span></pre></div></td><td class="code"><div><pre><span></span><code><a id="__codelineno-0-243" name="__codelineno-0-243"></a><span class="k">def</span><span class="w"> </span><span class="nf">read_data</span><span class="p">(</span>
-<a id="__codelineno-0-244" name="__codelineno-0-244"></a>    <span class="bp">self</span><span class="p">,</span>
-<a id="__codelineno-0-245" name="__codelineno-0-245"></a>    <span class="n">start_time</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
-<a id="__codelineno-0-246" name="__codelineno-0-246"></a>    <span class="n">end_time</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
-<a id="__codelineno-0-247" name="__codelineno-0-247"></a>    <span class="n">freq</span><span class="p">:</span> <span class="n">Freq</span><span class="p">,</span>
-<a id="__codelineno-0-248" name="__codelineno-0-248"></a>    <span class="n">symbols</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">str</span><span class="p">],</span>
-<a id="__codelineno-0-249" name="__codelineno-0-249"></a>    <span class="n">features</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
-<a id="__codelineno-0-250" name="__codelineno-0-250"></a>    <span class="n">raise_on_empty</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span><span class="p">,</span>
-<a id="__codelineno-0-251" name="__codelineno-0-251"></a><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">:</span>
-<a id="__codelineno-0-252" name="__codelineno-0-252"></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;读取市场数据.</span>
-<a id="__codelineno-0-253" name="__codelineno-0-253"></a>
-<a id="__codelineno-0-254" name="__codelineno-0-254"></a><span class="sd">    Args:</span>
-<a id="__codelineno-0-255" name="__codelineno-0-255"></a><span class="sd">        start_time: 开始时间 (YYYY-MM-DD)</span>
-<a id="__codelineno-0-256" name="__codelineno-0-256"></a><span class="sd">        end_time: 结束时间 (YYYY-MM-DD)</span>
-<a id="__codelineno-0-257" name="__codelineno-0-257"></a><span class="sd">        freq: 数据频率</span>
-<a id="__codelineno-0-258" name="__codelineno-0-258"></a><span class="sd">        symbols: 交易对列表</span>
-<a id="__codelineno-0-259" name="__codelineno-0-259"></a><span class="sd">        features: 需要读取的特征列表，None表示读取所有特征</span>
-<a id="__codelineno-0-260" name="__codelineno-0-260"></a><span class="sd">        raise_on_empty: 当没有数据时是否抛出异常，False则返回空DataFrame</span>
-<a id="__codelineno-0-261" name="__codelineno-0-261"></a>
-<a id="__codelineno-0-262" name="__codelineno-0-262"></a><span class="sd">    Returns:</span>
-<a id="__codelineno-0-263" name="__codelineno-0-263"></a><span class="sd">        pd.DataFrame: 市场数据，多级索引 (symbol, timestamp)</span>
-<a id="__codelineno-0-264" name="__codelineno-0-264"></a><span class="sd">    &quot;&quot;&quot;</span>
-<a id="__codelineno-0-265" name="__codelineno-0-265"></a>    <span class="k">try</span><span class="p">:</span>
-<a id="__codelineno-0-266" name="__codelineno-0-266"></a>        <span class="c1"># 转换时间格式</span>
-<a id="__codelineno-0-267" name="__codelineno-0-267"></a>        <span class="n">start_ts</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">pd</span><span class="o">.</span><span class="n">Timestamp</span><span class="p">(</span><span class="n">start_time</span><span class="p">)</span><span class="o">.</span><span class="n">timestamp</span><span class="p">()</span> <span class="o">*</span> <span class="mi">1000</span><span class="p">)</span>
-<a id="__codelineno-0-268" name="__codelineno-0-268"></a>        <span class="n">end_ts</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">pd</span><span class="o">.</span><span class="n">Timestamp</span><span class="p">(</span><span class="n">end_time</span><span class="p">)</span><span class="o">.</span><span class="n">timestamp</span><span class="p">()</span> <span class="o">*</span> <span class="mi">1000</span><span class="p">)</span>
-<a id="__codelineno-0-269" name="__codelineno-0-269"></a>
-<a id="__codelineno-0-270" name="__codelineno-0-270"></a>        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_read_data_by_timestamp</span><span class="p">(</span>
-<a id="__codelineno-0-271" name="__codelineno-0-271"></a>            <span class="n">start_ts</span><span class="p">,</span> <span class="n">end_ts</span><span class="p">,</span> <span class="n">freq</span><span class="p">,</span> <span class="n">symbols</span><span class="p">,</span> <span class="n">features</span><span class="p">,</span> <span class="n">raise_on_empty</span>
-<a id="__codelineno-0-272" name="__codelineno-0-272"></a>        <span class="p">)</span>
-<a id="__codelineno-0-273" name="__codelineno-0-273"></a>
-<a id="__codelineno-0-274" name="__codelineno-0-274"></a>    <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
-<a id="__codelineno-0-275" name="__codelineno-0-275"></a>        <span class="n">logger</span><span class="o">.</span><span class="n">exception</span><span class="p">(</span><span class="s2">&quot;Failed to read market data&quot;</span><span class="p">)</span>
-<a id="__codelineno-0-276" name="__codelineno-0-276"></a>        <span class="k">raise</span>
+<span class="normal"><a href="#__codelineno-0-271">271</a></span></pre></div></td><td class="code"><div><pre><span></span><code><a id="__codelineno-0-240" name="__codelineno-0-240"></a><span class="k">def</span><span class="w"> </span><span class="nf">read_data</span><span class="p">(</span>
+<a id="__codelineno-0-241" name="__codelineno-0-241"></a>    <span class="bp">self</span><span class="p">,</span>
+<a id="__codelineno-0-242" name="__codelineno-0-242"></a>    <span class="n">start_time</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+<a id="__codelineno-0-243" name="__codelineno-0-243"></a>    <span class="n">end_time</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+<a id="__codelineno-0-244" name="__codelineno-0-244"></a>    <span class="n">freq</span><span class="p">:</span> <span class="n">Freq</span><span class="p">,</span>
+<a id="__codelineno-0-245" name="__codelineno-0-245"></a>    <span class="n">symbols</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">str</span><span class="p">],</span>
+<a id="__codelineno-0-246" name="__codelineno-0-246"></a>    <span class="n">features</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+<a id="__codelineno-0-247" name="__codelineno-0-247"></a>    <span class="n">raise_on_empty</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span><span class="p">,</span>
+<a id="__codelineno-0-248" name="__codelineno-0-248"></a><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">:</span>
+<a id="__codelineno-0-249" name="__codelineno-0-249"></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;读取市场数据.</span>
+<a id="__codelineno-0-250" name="__codelineno-0-250"></a>
+<a id="__codelineno-0-251" name="__codelineno-0-251"></a><span class="sd">    Args:</span>
+<a id="__codelineno-0-252" name="__codelineno-0-252"></a><span class="sd">        start_time: 开始时间 (YYYY-MM-DD)</span>
+<a id="__codelineno-0-253" name="__codelineno-0-253"></a><span class="sd">        end_time: 结束时间 (YYYY-MM-DD)</span>
+<a id="__codelineno-0-254" name="__codelineno-0-254"></a><span class="sd">        freq: 数据频率</span>
+<a id="__codelineno-0-255" name="__codelineno-0-255"></a><span class="sd">        symbols: 交易对列表</span>
+<a id="__codelineno-0-256" name="__codelineno-0-256"></a><span class="sd">        features: 需要读取的特征列表，None表示读取所有特征</span>
+<a id="__codelineno-0-257" name="__codelineno-0-257"></a><span class="sd">        raise_on_empty: 当没有数据时是否抛出异常，False则返回空DataFrame</span>
+<a id="__codelineno-0-258" name="__codelineno-0-258"></a>
+<a id="__codelineno-0-259" name="__codelineno-0-259"></a><span class="sd">    Returns:</span>
+<a id="__codelineno-0-260" name="__codelineno-0-260"></a><span class="sd">        pd.DataFrame: 市场数据，多级索引 (symbol, timestamp)</span>
+<a id="__codelineno-0-261" name="__codelineno-0-261"></a><span class="sd">    &quot;&quot;&quot;</span>
+<a id="__codelineno-0-262" name="__codelineno-0-262"></a>    <span class="k">try</span><span class="p">:</span>
+<a id="__codelineno-0-263" name="__codelineno-0-263"></a>        <span class="c1"># 转换时间格式</span>
+<a id="__codelineno-0-264" name="__codelineno-0-264"></a>        <span class="n">start_ts</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">pd</span><span class="o">.</span><span class="n">Timestamp</span><span class="p">(</span><span class="n">start_time</span><span class="p">)</span><span class="o">.</span><span class="n">timestamp</span><span class="p">()</span> <span class="o">*</span> <span class="mi">1000</span><span class="p">)</span>
+<a id="__codelineno-0-265" name="__codelineno-0-265"></a>        <span class="n">end_ts</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">pd</span><span class="o">.</span><span class="n">Timestamp</span><span class="p">(</span><span class="n">end_time</span><span class="p">)</span><span class="o">.</span><span class="n">timestamp</span><span class="p">()</span> <span class="o">*</span> <span class="mi">1000</span><span class="p">)</span>
+<a id="__codelineno-0-266" name="__codelineno-0-266"></a>
+<a id="__codelineno-0-267" name="__codelineno-0-267"></a>        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_read_data_by_timestamp</span><span class="p">(</span><span class="n">start_ts</span><span class="p">,</span> <span class="n">end_ts</span><span class="p">,</span> <span class="n">freq</span><span class="p">,</span> <span class="n">symbols</span><span class="p">,</span> <span class="n">features</span><span class="p">,</span> <span class="n">raise_on_empty</span><span class="p">)</span>
+<a id="__codelineno-0-268" name="__codelineno-0-268"></a>
+<a id="__codelineno-0-269" name="__codelineno-0-269"></a>    <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
+<a id="__codelineno-0-270" name="__codelineno-0-270"></a>        <span class="n">logger</span><span class="o">.</span><span class="n">exception</span><span class="p">(</span><span class="s2">&quot;Failed to read market data&quot;</span><span class="p">)</span>
+<a id="__codelineno-0-271" name="__codelineno-0-271"></a>        <span class="k">raise</span>
 </code></pre></div></td></tr></table></div>
             </details>
     </div>
@@ -4044,7 +4034,14 @@
 
             <details class="quote">
               <summary>Source code in <code>src/cryptoservice/data/storage_db.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal"><a href="#__codelineno-0-379">379</a></span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal"><a href="#__codelineno-0-372">372</a></span>
+<span class="normal"><a href="#__codelineno-0-373">373</a></span>
+<span class="normal"><a href="#__codelineno-0-374">374</a></span>
+<span class="normal"><a href="#__codelineno-0-375">375</a></span>
+<span class="normal"><a href="#__codelineno-0-376">376</a></span>
+<span class="normal"><a href="#__codelineno-0-377">377</a></span>
+<span class="normal"><a href="#__codelineno-0-378">378</a></span>
+<span class="normal"><a href="#__codelineno-0-379">379</a></span>
 <span class="normal"><a href="#__codelineno-0-380">380</a></span>
 <span class="normal"><a href="#__codelineno-0-381">381</a></span>
 <span class="normal"><a href="#__codelineno-0-382">382</a></span>
@@ -4064,41 +4061,34 @@
 <span class="normal"><a href="#__codelineno-0-396">396</a></span>
 <span class="normal"><a href="#__codelineno-0-397">397</a></span>
 <span class="normal"><a href="#__codelineno-0-398">398</a></span>
-<span class="normal"><a href="#__codelineno-0-399">399</a></span>
-<span class="normal"><a href="#__codelineno-0-400">400</a></span>
-<span class="normal"><a href="#__codelineno-0-401">401</a></span>
-<span class="normal"><a href="#__codelineno-0-402">402</a></span>
-<span class="normal"><a href="#__codelineno-0-403">403</a></span>
-<span class="normal"><a href="#__codelineno-0-404">404</a></span>
-<span class="normal"><a href="#__codelineno-0-405">405</a></span>
-<span class="normal"><a href="#__codelineno-0-406">406</a></span></pre></div></td><td class="code"><div><pre><span></span><code><a id="__codelineno-0-379" name="__codelineno-0-379"></a><span class="k">def</span><span class="w"> </span><span class="nf">get_available_dates</span><span class="p">(</span>
-<a id="__codelineno-0-380" name="__codelineno-0-380"></a>    <span class="bp">self</span><span class="p">,</span>
-<a id="__codelineno-0-381" name="__codelineno-0-381"></a>    <span class="n">symbol</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
-<a id="__codelineno-0-382" name="__codelineno-0-382"></a>    <span class="n">freq</span><span class="p">:</span> <span class="n">Freq</span><span class="p">,</span>
-<a id="__codelineno-0-383" name="__codelineno-0-383"></a><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">[</span><span class="nb">str</span><span class="p">]:</span>
-<a id="__codelineno-0-384" name="__codelineno-0-384"></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;获取指定交易对的可用日期列表.</span>
-<a id="__codelineno-0-385" name="__codelineno-0-385"></a>
-<a id="__codelineno-0-386" name="__codelineno-0-386"></a><span class="sd">    Args:</span>
-<a id="__codelineno-0-387" name="__codelineno-0-387"></a><span class="sd">        symbol: 交易对</span>
-<a id="__codelineno-0-388" name="__codelineno-0-388"></a><span class="sd">        freq: 数据频率</span>
-<a id="__codelineno-0-389" name="__codelineno-0-389"></a>
-<a id="__codelineno-0-390" name="__codelineno-0-390"></a><span class="sd">    Returns:</span>
-<a id="__codelineno-0-391" name="__codelineno-0-391"></a><span class="sd">        List[str]: 可用日期列表 (YYYY-MM-DD格式)</span>
-<a id="__codelineno-0-392" name="__codelineno-0-392"></a><span class="sd">    &quot;&quot;&quot;</span>
-<a id="__codelineno-0-393" name="__codelineno-0-393"></a>    <span class="k">try</span><span class="p">:</span>
-<a id="__codelineno-0-394" name="__codelineno-0-394"></a>        <span class="k">with</span> <span class="bp">self</span><span class="o">.</span><span class="n">_get_connection</span><span class="p">()</span> <span class="k">as</span> <span class="n">conn</span><span class="p">:</span>
-<a id="__codelineno-0-395" name="__codelineno-0-395"></a>            <span class="n">query</span> <span class="o">=</span> <span class="s2">&quot;&quot;&quot;</span>
-<a id="__codelineno-0-396" name="__codelineno-0-396"></a><span class="s2">                SELECT DISTINCT date(timestamp/1000, &#39;unixepoch&#39;) as date</span>
-<a id="__codelineno-0-397" name="__codelineno-0-397"></a><span class="s2">                FROM market_data</span>
-<a id="__codelineno-0-398" name="__codelineno-0-398"></a><span class="s2">                WHERE symbol = ? AND freq = ?</span>
-<a id="__codelineno-0-399" name="__codelineno-0-399"></a><span class="s2">                ORDER BY date</span>
-<a id="__codelineno-0-400" name="__codelineno-0-400"></a><span class="s2">            &quot;&quot;&quot;</span>
-<a id="__codelineno-0-401" name="__codelineno-0-401"></a>            <span class="n">cursor</span> <span class="o">=</span> <span class="n">conn</span><span class="o">.</span><span class="n">execute</span><span class="p">(</span><span class="n">query</span><span class="p">,</span> <span class="p">(</span><span class="n">symbol</span><span class="p">,</span> <span class="n">freq</span><span class="o">.</span><span class="n">value</span><span class="p">))</span>
-<a id="__codelineno-0-402" name="__codelineno-0-402"></a>            <span class="k">return</span> <span class="p">[</span><span class="n">row</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="k">for</span> <span class="n">row</span> <span class="ow">in</span> <span class="n">cursor</span><span class="o">.</span><span class="n">fetchall</span><span class="p">()]</span>
-<a id="__codelineno-0-403" name="__codelineno-0-403"></a>
-<a id="__codelineno-0-404" name="__codelineno-0-404"></a>    <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
-<a id="__codelineno-0-405" name="__codelineno-0-405"></a>        <span class="n">logger</span><span class="o">.</span><span class="n">exception</span><span class="p">(</span><span class="s2">&quot;Failed to get available dates&quot;</span><span class="p">)</span>
-<a id="__codelineno-0-406" name="__codelineno-0-406"></a>        <span class="k">raise</span>
+<span class="normal"><a href="#__codelineno-0-399">399</a></span></pre></div></td><td class="code"><div><pre><span></span><code><a id="__codelineno-0-372" name="__codelineno-0-372"></a><span class="k">def</span><span class="w"> </span><span class="nf">get_available_dates</span><span class="p">(</span>
+<a id="__codelineno-0-373" name="__codelineno-0-373"></a>    <span class="bp">self</span><span class="p">,</span>
+<a id="__codelineno-0-374" name="__codelineno-0-374"></a>    <span class="n">symbol</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+<a id="__codelineno-0-375" name="__codelineno-0-375"></a>    <span class="n">freq</span><span class="p">:</span> <span class="n">Freq</span><span class="p">,</span>
+<a id="__codelineno-0-376" name="__codelineno-0-376"></a><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">[</span><span class="nb">str</span><span class="p">]:</span>
+<a id="__codelineno-0-377" name="__codelineno-0-377"></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;获取指定交易对的可用日期列表.</span>
+<a id="__codelineno-0-378" name="__codelineno-0-378"></a>
+<a id="__codelineno-0-379" name="__codelineno-0-379"></a><span class="sd">    Args:</span>
+<a id="__codelineno-0-380" name="__codelineno-0-380"></a><span class="sd">        symbol: 交易对</span>
+<a id="__codelineno-0-381" name="__codelineno-0-381"></a><span class="sd">        freq: 数据频率</span>
+<a id="__codelineno-0-382" name="__codelineno-0-382"></a>
+<a id="__codelineno-0-383" name="__codelineno-0-383"></a><span class="sd">    Returns:</span>
+<a id="__codelineno-0-384" name="__codelineno-0-384"></a><span class="sd">        List[str]: 可用日期列表 (YYYY-MM-DD格式)</span>
+<a id="__codelineno-0-385" name="__codelineno-0-385"></a><span class="sd">    &quot;&quot;&quot;</span>
+<a id="__codelineno-0-386" name="__codelineno-0-386"></a>    <span class="k">try</span><span class="p">:</span>
+<a id="__codelineno-0-387" name="__codelineno-0-387"></a>        <span class="k">with</span> <span class="bp">self</span><span class="o">.</span><span class="n">_get_connection</span><span class="p">()</span> <span class="k">as</span> <span class="n">conn</span><span class="p">:</span>
+<a id="__codelineno-0-388" name="__codelineno-0-388"></a>            <span class="n">query</span> <span class="o">=</span> <span class="s2">&quot;&quot;&quot;</span>
+<a id="__codelineno-0-389" name="__codelineno-0-389"></a><span class="s2">                SELECT DISTINCT date(timestamp/1000, &#39;unixepoch&#39;) as date</span>
+<a id="__codelineno-0-390" name="__codelineno-0-390"></a><span class="s2">                FROM market_data</span>
+<a id="__codelineno-0-391" name="__codelineno-0-391"></a><span class="s2">                WHERE symbol = ? AND freq = ?</span>
+<a id="__codelineno-0-392" name="__codelineno-0-392"></a><span class="s2">                ORDER BY date</span>
+<a id="__codelineno-0-393" name="__codelineno-0-393"></a><span class="s2">            &quot;&quot;&quot;</span>
+<a id="__codelineno-0-394" name="__codelineno-0-394"></a>            <span class="n">cursor</span> <span class="o">=</span> <span class="n">conn</span><span class="o">.</span><span class="n">execute</span><span class="p">(</span><span class="n">query</span><span class="p">,</span> <span class="p">(</span><span class="n">symbol</span><span class="p">,</span> <span class="n">freq</span><span class="o">.</span><span class="n">value</span><span class="p">))</span>
+<a id="__codelineno-0-395" name="__codelineno-0-395"></a>            <span class="k">return</span> <span class="p">[</span><span class="n">row</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="k">for</span> <span class="n">row</span> <span class="ow">in</span> <span class="n">cursor</span><span class="o">.</span><span class="n">fetchall</span><span class="p">()]</span>
+<a id="__codelineno-0-396" name="__codelineno-0-396"></a>
+<a id="__codelineno-0-397" name="__codelineno-0-397"></a>    <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
+<a id="__codelineno-0-398" name="__codelineno-0-398"></a>        <span class="n">logger</span><span class="o">.</span><span class="n">exception</span><span class="p">(</span><span class="s2">&quot;Failed to get available dates&quot;</span><span class="p">)</span>
+<a id="__codelineno-0-399" name="__codelineno-0-399"></a>        <span class="k">raise</span>
 </code></pre></div></td></tr></table></div>
             </details>
     </div>
@@ -4253,7 +4243,23 @@
 
             <details class="quote">
               <summary>Source code in <code>src/cryptoservice/data/storage_db.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal"><a href="#__codelineno-0-561">561</a></span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal"><a href="#__codelineno-0-545">545</a></span>
+<span class="normal"><a href="#__codelineno-0-546">546</a></span>
+<span class="normal"><a href="#__codelineno-0-547">547</a></span>
+<span class="normal"><a href="#__codelineno-0-548">548</a></span>
+<span class="normal"><a href="#__codelineno-0-549">549</a></span>
+<span class="normal"><a href="#__codelineno-0-550">550</a></span>
+<span class="normal"><a href="#__codelineno-0-551">551</a></span>
+<span class="normal"><a href="#__codelineno-0-552">552</a></span>
+<span class="normal"><a href="#__codelineno-0-553">553</a></span>
+<span class="normal"><a href="#__codelineno-0-554">554</a></span>
+<span class="normal"><a href="#__codelineno-0-555">555</a></span>
+<span class="normal"><a href="#__codelineno-0-556">556</a></span>
+<span class="normal"><a href="#__codelineno-0-557">557</a></span>
+<span class="normal"><a href="#__codelineno-0-558">558</a></span>
+<span class="normal"><a href="#__codelineno-0-559">559</a></span>
+<span class="normal"><a href="#__codelineno-0-560">560</a></span>
+<span class="normal"><a href="#__codelineno-0-561">561</a></span>
 <span class="normal"><a href="#__codelineno-0-562">562</a></span>
 <span class="normal"><a href="#__codelineno-0-563">563</a></span>
 <span class="normal"><a href="#__codelineno-0-564">564</a></span>
@@ -4342,142 +4348,112 @@
 <span class="normal"><a href="#__codelineno-0-647">647</a></span>
 <span class="normal"><a href="#__codelineno-0-648">648</a></span>
 <span class="normal"><a href="#__codelineno-0-649">649</a></span>
-<span class="normal"><a href="#__codelineno-0-650">650</a></span>
-<span class="normal"><a href="#__codelineno-0-651">651</a></span>
-<span class="normal"><a href="#__codelineno-0-652">652</a></span>
-<span class="normal"><a href="#__codelineno-0-653">653</a></span>
-<span class="normal"><a href="#__codelineno-0-654">654</a></span>
-<span class="normal"><a href="#__codelineno-0-655">655</a></span>
-<span class="normal"><a href="#__codelineno-0-656">656</a></span>
-<span class="normal"><a href="#__codelineno-0-657">657</a></span>
-<span class="normal"><a href="#__codelineno-0-658">658</a></span>
-<span class="normal"><a href="#__codelineno-0-659">659</a></span>
-<span class="normal"><a href="#__codelineno-0-660">660</a></span>
-<span class="normal"><a href="#__codelineno-0-661">661</a></span>
-<span class="normal"><a href="#__codelineno-0-662">662</a></span>
-<span class="normal"><a href="#__codelineno-0-663">663</a></span>
-<span class="normal"><a href="#__codelineno-0-664">664</a></span>
-<span class="normal"><a href="#__codelineno-0-665">665</a></span>
-<span class="normal"><a href="#__codelineno-0-666">666</a></span>
-<span class="normal"><a href="#__codelineno-0-667">667</a></span>
-<span class="normal"><a href="#__codelineno-0-668">668</a></span>
-<span class="normal"><a href="#__codelineno-0-669">669</a></span>
-<span class="normal"><a href="#__codelineno-0-670">670</a></span>
-<span class="normal"><a href="#__codelineno-0-671">671</a></span>
-<span class="normal"><a href="#__codelineno-0-672">672</a></span>
-<span class="normal"><a href="#__codelineno-0-673">673</a></span></pre></div></td><td class="code"><div><pre><span></span><code><a id="__codelineno-0-561" name="__codelineno-0-561"></a><span class="k">def</span><span class="w"> </span><span class="nf">export_to_files</span><span class="p">(</span>
-<a id="__codelineno-0-562" name="__codelineno-0-562"></a>    <span class="bp">self</span><span class="p">,</span>
-<a id="__codelineno-0-563" name="__codelineno-0-563"></a>    <span class="n">output_path</span><span class="p">:</span> <span class="n">Path</span> <span class="o">|</span> <span class="nb">str</span><span class="p">,</span>
-<a id="__codelineno-0-564" name="__codelineno-0-564"></a>    <span class="n">start_date</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
-<a id="__codelineno-0-565" name="__codelineno-0-565"></a>    <span class="n">end_date</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
-<a id="__codelineno-0-566" name="__codelineno-0-566"></a>    <span class="n">freq</span><span class="p">:</span> <span class="n">Freq</span><span class="p">,</span>
-<a id="__codelineno-0-567" name="__codelineno-0-567"></a>    <span class="n">symbols</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">str</span><span class="p">],</span>
-<a id="__codelineno-0-568" name="__codelineno-0-568"></a>    <span class="n">target_freq</span><span class="p">:</span> <span class="n">Freq</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
-<a id="__codelineno-0-569" name="__codelineno-0-569"></a>    <span class="n">chunk_days</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">30</span><span class="p">,</span>  <span class="c1"># 每次处理的天数</span>
-<a id="__codelineno-0-570" name="__codelineno-0-570"></a><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
-<a id="__codelineno-0-571" name="__codelineno-0-571"></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;将数据库数据导出为npy文件格式，支持降采样.</span>
+<span class="normal"><a href="#__codelineno-0-650">650</a></span></pre></div></td><td class="code"><div><pre><span></span><code><a id="__codelineno-0-545" name="__codelineno-0-545"></a><span class="k">def</span><span class="w"> </span><span class="nf">export_to_files</span><span class="p">(</span>
+<a id="__codelineno-0-546" name="__codelineno-0-546"></a>    <span class="bp">self</span><span class="p">,</span>
+<a id="__codelineno-0-547" name="__codelineno-0-547"></a>    <span class="n">output_path</span><span class="p">:</span> <span class="n">Path</span> <span class="o">|</span> <span class="nb">str</span><span class="p">,</span>
+<a id="__codelineno-0-548" name="__codelineno-0-548"></a>    <span class="n">start_date</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+<a id="__codelineno-0-549" name="__codelineno-0-549"></a>    <span class="n">end_date</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+<a id="__codelineno-0-550" name="__codelineno-0-550"></a>    <span class="n">freq</span><span class="p">:</span> <span class="n">Freq</span><span class="p">,</span>
+<a id="__codelineno-0-551" name="__codelineno-0-551"></a>    <span class="n">symbols</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">str</span><span class="p">],</span>
+<a id="__codelineno-0-552" name="__codelineno-0-552"></a>    <span class="n">target_freq</span><span class="p">:</span> <span class="n">Freq</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+<a id="__codelineno-0-553" name="__codelineno-0-553"></a>    <span class="n">chunk_days</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">30</span><span class="p">,</span>  <span class="c1"># 每次处理的天数</span>
+<a id="__codelineno-0-554" name="__codelineno-0-554"></a><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<a id="__codelineno-0-555" name="__codelineno-0-555"></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;将数据库数据导出为npy文件格式，支持降采样.</span>
+<a id="__codelineno-0-556" name="__codelineno-0-556"></a>
+<a id="__codelineno-0-557" name="__codelineno-0-557"></a><span class="sd">    Args:</span>
+<a id="__codelineno-0-558" name="__codelineno-0-558"></a><span class="sd">        output_path: 输出目录</span>
+<a id="__codelineno-0-559" name="__codelineno-0-559"></a><span class="sd">        start_date: 开始日期 (YYYY-MM-DD)</span>
+<a id="__codelineno-0-560" name="__codelineno-0-560"></a><span class="sd">        end_date: 结束日期 (YYYY-MM-DD)</span>
+<a id="__codelineno-0-561" name="__codelineno-0-561"></a><span class="sd">        freq: 原始数据频率</span>
+<a id="__codelineno-0-562" name="__codelineno-0-562"></a><span class="sd">        symbols: 交易对列表</span>
+<a id="__codelineno-0-563" name="__codelineno-0-563"></a><span class="sd">        target_freq: 目标频率，None表示不进行降采样</span>
+<a id="__codelineno-0-564" name="__codelineno-0-564"></a><span class="sd">        chunk_days: 每次处理的天数，用于控制内存使用</span>
+<a id="__codelineno-0-565" name="__codelineno-0-565"></a><span class="sd">    &quot;&quot;&quot;</span>
+<a id="__codelineno-0-566" name="__codelineno-0-566"></a>    <span class="k">try</span><span class="p">:</span>
+<a id="__codelineno-0-567" name="__codelineno-0-567"></a>        <span class="n">output_path</span> <span class="o">=</span> <span class="n">Path</span><span class="p">(</span><span class="n">output_path</span><span class="p">)</span>
+<a id="__codelineno-0-568" name="__codelineno-0-568"></a>
+<a id="__codelineno-0-569" name="__codelineno-0-569"></a>        <span class="c1"># 创建日期范围</span>
+<a id="__codelineno-0-570" name="__codelineno-0-570"></a>        <span class="n">date_range</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">date_range</span><span class="p">(</span><span class="n">start</span><span class="o">=</span><span class="n">start_date</span><span class="p">,</span> <span class="n">end</span><span class="o">=</span><span class="n">end_date</span><span class="p">,</span> <span class="n">freq</span><span class="o">=</span><span class="s2">&quot;D&quot;</span><span class="p">)</span>
+<a id="__codelineno-0-571" name="__codelineno-0-571"></a>        <span class="n">total_days</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">date_range</span><span class="p">)</span>
 <a id="__codelineno-0-572" name="__codelineno-0-572"></a>
-<a id="__codelineno-0-573" name="__codelineno-0-573"></a><span class="sd">    Args:</span>
-<a id="__codelineno-0-574" name="__codelineno-0-574"></a><span class="sd">        output_path: 输出目录</span>
-<a id="__codelineno-0-575" name="__codelineno-0-575"></a><span class="sd">        start_date: 开始日期 (YYYY-MM-DD)</span>
-<a id="__codelineno-0-576" name="__codelineno-0-576"></a><span class="sd">        end_date: 结束日期 (YYYY-MM-DD)</span>
-<a id="__codelineno-0-577" name="__codelineno-0-577"></a><span class="sd">        freq: 原始数据频率</span>
-<a id="__codelineno-0-578" name="__codelineno-0-578"></a><span class="sd">        symbols: 交易对列表</span>
-<a id="__codelineno-0-579" name="__codelineno-0-579"></a><span class="sd">        target_freq: 目标频率，None表示不进行降采样</span>
-<a id="__codelineno-0-580" name="__codelineno-0-580"></a><span class="sd">        chunk_days: 每次处理的天数，用于控制内存使用</span>
-<a id="__codelineno-0-581" name="__codelineno-0-581"></a><span class="sd">    &quot;&quot;&quot;</span>
-<a id="__codelineno-0-582" name="__codelineno-0-582"></a>    <span class="k">try</span><span class="p">:</span>
-<a id="__codelineno-0-583" name="__codelineno-0-583"></a>        <span class="n">output_path</span> <span class="o">=</span> <span class="n">Path</span><span class="p">(</span><span class="n">output_path</span><span class="p">)</span>
-<a id="__codelineno-0-584" name="__codelineno-0-584"></a>
-<a id="__codelineno-0-585" name="__codelineno-0-585"></a>        <span class="c1"># 创建日期范围</span>
-<a id="__codelineno-0-586" name="__codelineno-0-586"></a>        <span class="n">date_range</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">date_range</span><span class="p">(</span><span class="n">start</span><span class="o">=</span><span class="n">start_date</span><span class="p">,</span> <span class="n">end</span><span class="o">=</span><span class="n">end_date</span><span class="p">,</span> <span class="n">freq</span><span class="o">=</span><span class="s2">&quot;D&quot;</span><span class="p">)</span>
-<a id="__codelineno-0-587" name="__codelineno-0-587"></a>        <span class="n">total_days</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">date_range</span><span class="p">)</span>
-<a id="__codelineno-0-588" name="__codelineno-0-588"></a>
-<a id="__codelineno-0-589" name="__codelineno-0-589"></a>        <span class="c1"># 如果总天数少于等于chunk_days，直接处理整个范围，不分块</span>
-<a id="__codelineno-0-590" name="__codelineno-0-590"></a>        <span class="k">if</span> <span class="n">total_days</span> <span class="o">&lt;=</span> <span class="n">chunk_days</span><span class="p">:</span>
-<a id="__codelineno-0-591" name="__codelineno-0-591"></a>            <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span>
-<a id="__codelineno-0-592" name="__codelineno-0-592"></a>                <span class="sa">f</span><span class="s2">&quot;Processing all data from </span><span class="si">{</span><span class="n">start_date</span><span class="si">}</span><span class="s2"> to </span><span class="si">{</span><span class="n">end_date</span><span class="si">}</span><span class="s2"> &quot;</span>
-<a id="__codelineno-0-593" name="__codelineno-0-593"></a>                <span class="sa">f</span><span class="s2">&quot;(total: </span><span class="si">{</span><span class="n">total_days</span><span class="si">}</span><span class="s2"> days)&quot;</span>
-<a id="__codelineno-0-594" name="__codelineno-0-594"></a>            <span class="p">)</span>
-<a id="__codelineno-0-595" name="__codelineno-0-595"></a>
-<a id="__codelineno-0-596" name="__codelineno-0-596"></a>            <span class="c1"># 读取所有数据</span>
-<a id="__codelineno-0-597" name="__codelineno-0-597"></a>            <span class="k">try</span><span class="p">:</span>
-<a id="__codelineno-0-598" name="__codelineno-0-598"></a>                <span class="n">df</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">read_data</span><span class="p">(</span>
-<a id="__codelineno-0-599" name="__codelineno-0-599"></a>                    <span class="n">start_date</span><span class="p">,</span>
-<a id="__codelineno-0-600" name="__codelineno-0-600"></a>                    <span class="n">end_date</span><span class="p">,</span>
-<a id="__codelineno-0-601" name="__codelineno-0-601"></a>                    <span class="n">freq</span><span class="p">,</span>
-<a id="__codelineno-0-602" name="__codelineno-0-602"></a>                    <span class="n">symbols</span><span class="p">,</span>
-<a id="__codelineno-0-603" name="__codelineno-0-603"></a>                    <span class="n">raise_on_empty</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
-<a id="__codelineno-0-604" name="__codelineno-0-604"></a>                <span class="p">)</span>
-<a id="__codelineno-0-605" name="__codelineno-0-605"></a>            <span class="k">except</span> <span class="ne">ValueError</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
-<a id="__codelineno-0-606" name="__codelineno-0-606"></a>                <span class="k">if</span> <span class="s2">&quot;No data found&quot;</span> <span class="ow">in</span> <span class="nb">str</span><span class="p">(</span><span class="n">e</span><span class="p">):</span>
-<a id="__codelineno-0-607" name="__codelineno-0-607"></a>                    <span class="n">logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;No data found for period </span><span class="si">{</span><span class="n">start_date</span><span class="si">}</span><span class="s2"> to </span><span class="si">{</span><span class="n">end_date</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
-<a id="__codelineno-0-608" name="__codelineno-0-608"></a>                    <span class="k">return</span>
-<a id="__codelineno-0-609" name="__codelineno-0-609"></a>                <span class="k">else</span><span class="p">:</span>
-<a id="__codelineno-0-610" name="__codelineno-0-610"></a>                    <span class="k">raise</span>
+<a id="__codelineno-0-573" name="__codelineno-0-573"></a>        <span class="c1"># 如果总天数少于等于chunk_days，直接处理整个范围，不分块</span>
+<a id="__codelineno-0-574" name="__codelineno-0-574"></a>        <span class="k">if</span> <span class="n">total_days</span> <span class="o">&lt;=</span> <span class="n">chunk_days</span><span class="p">:</span>
+<a id="__codelineno-0-575" name="__codelineno-0-575"></a>            <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Processing all data from </span><span class="si">{</span><span class="n">start_date</span><span class="si">}</span><span class="s2"> to </span><span class="si">{</span><span class="n">end_date</span><span class="si">}</span><span class="s2"> (total: </span><span class="si">{</span><span class="n">total_days</span><span class="si">}</span><span class="s2"> days)&quot;</span><span class="p">)</span>
+<a id="__codelineno-0-576" name="__codelineno-0-576"></a>
+<a id="__codelineno-0-577" name="__codelineno-0-577"></a>            <span class="c1"># 读取所有数据</span>
+<a id="__codelineno-0-578" name="__codelineno-0-578"></a>            <span class="k">try</span><span class="p">:</span>
+<a id="__codelineno-0-579" name="__codelineno-0-579"></a>                <span class="n">df</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">read_data</span><span class="p">(</span>
+<a id="__codelineno-0-580" name="__codelineno-0-580"></a>                    <span class="n">start_date</span><span class="p">,</span>
+<a id="__codelineno-0-581" name="__codelineno-0-581"></a>                    <span class="n">end_date</span><span class="p">,</span>
+<a id="__codelineno-0-582" name="__codelineno-0-582"></a>                    <span class="n">freq</span><span class="p">,</span>
+<a id="__codelineno-0-583" name="__codelineno-0-583"></a>                    <span class="n">symbols</span><span class="p">,</span>
+<a id="__codelineno-0-584" name="__codelineno-0-584"></a>                    <span class="n">raise_on_empty</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
+<a id="__codelineno-0-585" name="__codelineno-0-585"></a>                <span class="p">)</span>
+<a id="__codelineno-0-586" name="__codelineno-0-586"></a>            <span class="k">except</span> <span class="ne">ValueError</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+<a id="__codelineno-0-587" name="__codelineno-0-587"></a>                <span class="k">if</span> <span class="s2">&quot;No data found&quot;</span> <span class="ow">in</span> <span class="nb">str</span><span class="p">(</span><span class="n">e</span><span class="p">):</span>
+<a id="__codelineno-0-588" name="__codelineno-0-588"></a>                    <span class="n">logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;No data found for period </span><span class="si">{</span><span class="n">start_date</span><span class="si">}</span><span class="s2"> to </span><span class="si">{</span><span class="n">end_date</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+<a id="__codelineno-0-589" name="__codelineno-0-589"></a>                    <span class="k">return</span>
+<a id="__codelineno-0-590" name="__codelineno-0-590"></a>                <span class="k">else</span><span class="p">:</span>
+<a id="__codelineno-0-591" name="__codelineno-0-591"></a>                    <span class="k">raise</span>
+<a id="__codelineno-0-592" name="__codelineno-0-592"></a>
+<a id="__codelineno-0-593" name="__codelineno-0-593"></a>            <span class="k">if</span> <span class="n">df</span><span class="o">.</span><span class="n">empty</span><span class="p">:</span>
+<a id="__codelineno-0-594" name="__codelineno-0-594"></a>                <span class="n">logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;No data found for period </span><span class="si">{</span><span class="n">start_date</span><span class="si">}</span><span class="s2"> to </span><span class="si">{</span><span class="n">end_date</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+<a id="__codelineno-0-595" name="__codelineno-0-595"></a>                <span class="k">return</span>
+<a id="__codelineno-0-596" name="__codelineno-0-596"></a>
+<a id="__codelineno-0-597" name="__codelineno-0-597"></a>            <span class="c1"># 如果需要降采样</span>
+<a id="__codelineno-0-598" name="__codelineno-0-598"></a>            <span class="k">if</span> <span class="n">target_freq</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+<a id="__codelineno-0-599" name="__codelineno-0-599"></a>                <span class="n">df</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_resample_data</span><span class="p">(</span><span class="n">df</span><span class="p">,</span> <span class="n">target_freq</span><span class="p">)</span>
+<a id="__codelineno-0-600" name="__codelineno-0-600"></a>                <span class="n">freq</span> <span class="o">=</span> <span class="n">target_freq</span>
+<a id="__codelineno-0-601" name="__codelineno-0-601"></a>
+<a id="__codelineno-0-602" name="__codelineno-0-602"></a>            <span class="c1"># 处理所有数据</span>
+<a id="__codelineno-0-603" name="__codelineno-0-603"></a>            <span class="bp">self</span><span class="o">.</span><span class="n">_process_dataframe_for_export</span><span class="p">(</span><span class="n">df</span><span class="p">,</span> <span class="n">output_path</span><span class="p">,</span> <span class="n">freq</span><span class="p">,</span> <span class="n">date_range</span><span class="p">)</span>
+<a id="__codelineno-0-604" name="__codelineno-0-604"></a>
+<a id="__codelineno-0-605" name="__codelineno-0-605"></a>        <span class="k">else</span><span class="p">:</span>
+<a id="__codelineno-0-606" name="__codelineno-0-606"></a>            <span class="c1"># 按chunk_days分块处理（用于大量数据）</span>
+<a id="__codelineno-0-607" name="__codelineno-0-607"></a>            <span class="k">for</span> <span class="n">chunk_start</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="nb">len</span><span class="p">(</span><span class="n">date_range</span><span class="p">),</span> <span class="n">chunk_days</span><span class="p">):</span>
+<a id="__codelineno-0-608" name="__codelineno-0-608"></a>                <span class="n">chunk_end</span> <span class="o">=</span> <span class="nb">min</span><span class="p">(</span><span class="n">chunk_start</span> <span class="o">+</span> <span class="n">chunk_days</span><span class="p">,</span> <span class="nb">len</span><span class="p">(</span><span class="n">date_range</span><span class="p">))</span>
+<a id="__codelineno-0-609" name="__codelineno-0-609"></a>                <span class="n">chunk_start_date</span> <span class="o">=</span> <span class="n">date_range</span><span class="p">[</span><span class="n">chunk_start</span><span class="p">]</span><span class="o">.</span><span class="n">strftime</span><span class="p">(</span><span class="s2">&quot;%Y-%m-</span><span class="si">%d</span><span class="s2">&quot;</span><span class="p">)</span>
+<a id="__codelineno-0-610" name="__codelineno-0-610"></a>                <span class="n">chunk_end_date</span> <span class="o">=</span> <span class="n">date_range</span><span class="p">[</span><span class="n">chunk_end</span> <span class="o">-</span> <span class="mi">1</span><span class="p">]</span><span class="o">.</span><span class="n">strftime</span><span class="p">(</span><span class="s2">&quot;%Y-%m-</span><span class="si">%d</span><span class="s2">&quot;</span><span class="p">)</span>
 <a id="__codelineno-0-611" name="__codelineno-0-611"></a>
-<a id="__codelineno-0-612" name="__codelineno-0-612"></a>            <span class="k">if</span> <span class="n">df</span><span class="o">.</span><span class="n">empty</span><span class="p">:</span>
-<a id="__codelineno-0-613" name="__codelineno-0-613"></a>                <span class="n">logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;No data found for period </span><span class="si">{</span><span class="n">start_date</span><span class="si">}</span><span class="s2"> to </span><span class="si">{</span><span class="n">end_date</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
-<a id="__codelineno-0-614" name="__codelineno-0-614"></a>                <span class="k">return</span>
-<a id="__codelineno-0-615" name="__codelineno-0-615"></a>
-<a id="__codelineno-0-616" name="__codelineno-0-616"></a>            <span class="c1"># 如果需要降采样</span>
-<a id="__codelineno-0-617" name="__codelineno-0-617"></a>            <span class="k">if</span> <span class="n">target_freq</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
-<a id="__codelineno-0-618" name="__codelineno-0-618"></a>                <span class="n">df</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_resample_data</span><span class="p">(</span><span class="n">df</span><span class="p">,</span> <span class="n">target_freq</span><span class="p">)</span>
-<a id="__codelineno-0-619" name="__codelineno-0-619"></a>                <span class="n">freq</span> <span class="o">=</span> <span class="n">target_freq</span>
-<a id="__codelineno-0-620" name="__codelineno-0-620"></a>
-<a id="__codelineno-0-621" name="__codelineno-0-621"></a>            <span class="c1"># 处理所有数据</span>
-<a id="__codelineno-0-622" name="__codelineno-0-622"></a>            <span class="bp">self</span><span class="o">.</span><span class="n">_process_dataframe_for_export</span><span class="p">(</span><span class="n">df</span><span class="p">,</span> <span class="n">output_path</span><span class="p">,</span> <span class="n">freq</span><span class="p">,</span> <span class="n">date_range</span><span class="p">)</span>
-<a id="__codelineno-0-623" name="__codelineno-0-623"></a>
-<a id="__codelineno-0-624" name="__codelineno-0-624"></a>        <span class="k">else</span><span class="p">:</span>
-<a id="__codelineno-0-625" name="__codelineno-0-625"></a>            <span class="c1"># 按chunk_days分块处理（用于大量数据）</span>
-<a id="__codelineno-0-626" name="__codelineno-0-626"></a>            <span class="k">for</span> <span class="n">chunk_start</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="nb">len</span><span class="p">(</span><span class="n">date_range</span><span class="p">),</span> <span class="n">chunk_days</span><span class="p">):</span>
-<a id="__codelineno-0-627" name="__codelineno-0-627"></a>                <span class="n">chunk_end</span> <span class="o">=</span> <span class="nb">min</span><span class="p">(</span><span class="n">chunk_start</span> <span class="o">+</span> <span class="n">chunk_days</span><span class="p">,</span> <span class="nb">len</span><span class="p">(</span><span class="n">date_range</span><span class="p">))</span>
-<a id="__codelineno-0-628" name="__codelineno-0-628"></a>                <span class="n">chunk_start_date</span> <span class="o">=</span> <span class="n">date_range</span><span class="p">[</span><span class="n">chunk_start</span><span class="p">]</span><span class="o">.</span><span class="n">strftime</span><span class="p">(</span><span class="s2">&quot;%Y-%m-</span><span class="si">%d</span><span class="s2">&quot;</span><span class="p">)</span>
-<a id="__codelineno-0-629" name="__codelineno-0-629"></a>                <span class="n">chunk_end_date</span> <span class="o">=</span> <span class="n">date_range</span><span class="p">[</span><span class="n">chunk_end</span> <span class="o">-</span> <span class="mi">1</span><span class="p">]</span><span class="o">.</span><span class="n">strftime</span><span class="p">(</span><span class="s2">&quot;%Y-%m-</span><span class="si">%d</span><span class="s2">&quot;</span><span class="p">)</span>
-<a id="__codelineno-0-630" name="__codelineno-0-630"></a>
-<a id="__codelineno-0-631" name="__codelineno-0-631"></a>                <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Processing data from </span><span class="si">{</span><span class="n">chunk_start_date</span><span class="si">}</span><span class="s2"> to </span><span class="si">{</span><span class="n">chunk_end_date</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
-<a id="__codelineno-0-632" name="__codelineno-0-632"></a>
-<a id="__codelineno-0-633" name="__codelineno-0-633"></a>                <span class="c1"># 读取数据块</span>
-<a id="__codelineno-0-634" name="__codelineno-0-634"></a>                <span class="k">try</span><span class="p">:</span>
-<a id="__codelineno-0-635" name="__codelineno-0-635"></a>                    <span class="n">df</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">read_data</span><span class="p">(</span>
-<a id="__codelineno-0-636" name="__codelineno-0-636"></a>                        <span class="n">chunk_start_date</span><span class="p">,</span>
-<a id="__codelineno-0-637" name="__codelineno-0-637"></a>                        <span class="n">chunk_end_date</span><span class="p">,</span>
-<a id="__codelineno-0-638" name="__codelineno-0-638"></a>                        <span class="n">freq</span><span class="p">,</span>
-<a id="__codelineno-0-639" name="__codelineno-0-639"></a>                        <span class="n">symbols</span><span class="p">,</span>
-<a id="__codelineno-0-640" name="__codelineno-0-640"></a>                        <span class="n">raise_on_empty</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
-<a id="__codelineno-0-641" name="__codelineno-0-641"></a>                    <span class="p">)</span>
-<a id="__codelineno-0-642" name="__codelineno-0-642"></a>                <span class="k">except</span> <span class="ne">ValueError</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
-<a id="__codelineno-0-643" name="__codelineno-0-643"></a>                    <span class="k">if</span> <span class="s2">&quot;No data found&quot;</span> <span class="ow">in</span> <span class="nb">str</span><span class="p">(</span><span class="n">e</span><span class="p">):</span>
-<a id="__codelineno-0-644" name="__codelineno-0-644"></a>                        <span class="n">logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span>
-<a id="__codelineno-0-645" name="__codelineno-0-645"></a>                            <span class="sa">f</span><span class="s2">&quot;No data found for period </span><span class="si">{</span><span class="n">chunk_start_date</span><span class="si">}</span><span class="s2"> to </span><span class="si">{</span><span class="n">chunk_end_date</span><span class="si">}</span><span class="s2">&quot;</span>
-<a id="__codelineno-0-646" name="__codelineno-0-646"></a>                        <span class="p">)</span>
-<a id="__codelineno-0-647" name="__codelineno-0-647"></a>                        <span class="k">continue</span>
-<a id="__codelineno-0-648" name="__codelineno-0-648"></a>                    <span class="k">else</span><span class="p">:</span>
-<a id="__codelineno-0-649" name="__codelineno-0-649"></a>                        <span class="k">raise</span>
-<a id="__codelineno-0-650" name="__codelineno-0-650"></a>
-<a id="__codelineno-0-651" name="__codelineno-0-651"></a>                <span class="k">if</span> <span class="n">df</span><span class="o">.</span><span class="n">empty</span><span class="p">:</span>
-<a id="__codelineno-0-652" name="__codelineno-0-652"></a>                    <span class="n">logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span>
-<a id="__codelineno-0-653" name="__codelineno-0-653"></a>                        <span class="sa">f</span><span class="s2">&quot;No data found for period </span><span class="si">{</span><span class="n">chunk_start_date</span><span class="si">}</span><span class="s2"> to </span><span class="si">{</span><span class="n">chunk_end_date</span><span class="si">}</span><span class="s2">&quot;</span>
-<a id="__codelineno-0-654" name="__codelineno-0-654"></a>                    <span class="p">)</span>
-<a id="__codelineno-0-655" name="__codelineno-0-655"></a>                    <span class="k">continue</span>
-<a id="__codelineno-0-656" name="__codelineno-0-656"></a>
-<a id="__codelineno-0-657" name="__codelineno-0-657"></a>                <span class="c1"># 如果需要降采样</span>
-<a id="__codelineno-0-658" name="__codelineno-0-658"></a>                <span class="k">if</span> <span class="n">target_freq</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
-<a id="__codelineno-0-659" name="__codelineno-0-659"></a>                    <span class="n">df</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_resample_data</span><span class="p">(</span><span class="n">df</span><span class="p">,</span> <span class="n">target_freq</span><span class="p">)</span>
-<a id="__codelineno-0-660" name="__codelineno-0-660"></a>                    <span class="n">freq</span> <span class="o">=</span> <span class="n">target_freq</span>
-<a id="__codelineno-0-661" name="__codelineno-0-661"></a>
-<a id="__codelineno-0-662" name="__codelineno-0-662"></a>                <span class="c1"># 处理当前数据块</span>
-<a id="__codelineno-0-663" name="__codelineno-0-663"></a>                <span class="n">chunk_dates</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">date_range</span><span class="p">(</span><span class="n">chunk_start_date</span><span class="p">,</span> <span class="n">chunk_end_date</span><span class="p">,</span> <span class="n">freq</span><span class="o">=</span><span class="s2">&quot;D&quot;</span><span class="p">)</span>
-<a id="__codelineno-0-664" name="__codelineno-0-664"></a>                <span class="bp">self</span><span class="o">.</span><span class="n">_process_dataframe_for_export</span><span class="p">(</span><span class="n">df</span><span class="p">,</span> <span class="n">output_path</span><span class="p">,</span> <span class="n">freq</span><span class="p">,</span> <span class="n">chunk_dates</span><span class="p">)</span>
-<a id="__codelineno-0-665" name="__codelineno-0-665"></a>
-<a id="__codelineno-0-666" name="__codelineno-0-666"></a>                <span class="c1"># 清理内存</span>
-<a id="__codelineno-0-667" name="__codelineno-0-667"></a>                <span class="k">del</span> <span class="n">df</span>
-<a id="__codelineno-0-668" name="__codelineno-0-668"></a>
-<a id="__codelineno-0-669" name="__codelineno-0-669"></a>        <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Successfully exported data to </span><span class="si">{</span><span class="n">output_path</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
-<a id="__codelineno-0-670" name="__codelineno-0-670"></a>
-<a id="__codelineno-0-671" name="__codelineno-0-671"></a>    <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
-<a id="__codelineno-0-672" name="__codelineno-0-672"></a>        <span class="n">logger</span><span class="o">.</span><span class="n">exception</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Failed to export data: </span><span class="si">{</span><span class="n">e</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
-<a id="__codelineno-0-673" name="__codelineno-0-673"></a>        <span class="k">raise</span>
+<a id="__codelineno-0-612" name="__codelineno-0-612"></a>                <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Processing data from </span><span class="si">{</span><span class="n">chunk_start_date</span><span class="si">}</span><span class="s2"> to </span><span class="si">{</span><span class="n">chunk_end_date</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+<a id="__codelineno-0-613" name="__codelineno-0-613"></a>
+<a id="__codelineno-0-614" name="__codelineno-0-614"></a>                <span class="c1"># 读取数据块</span>
+<a id="__codelineno-0-615" name="__codelineno-0-615"></a>                <span class="k">try</span><span class="p">:</span>
+<a id="__codelineno-0-616" name="__codelineno-0-616"></a>                    <span class="n">df</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">read_data</span><span class="p">(</span>
+<a id="__codelineno-0-617" name="__codelineno-0-617"></a>                        <span class="n">chunk_start_date</span><span class="p">,</span>
+<a id="__codelineno-0-618" name="__codelineno-0-618"></a>                        <span class="n">chunk_end_date</span><span class="p">,</span>
+<a id="__codelineno-0-619" name="__codelineno-0-619"></a>                        <span class="n">freq</span><span class="p">,</span>
+<a id="__codelineno-0-620" name="__codelineno-0-620"></a>                        <span class="n">symbols</span><span class="p">,</span>
+<a id="__codelineno-0-621" name="__codelineno-0-621"></a>                        <span class="n">raise_on_empty</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
+<a id="__codelineno-0-622" name="__codelineno-0-622"></a>                    <span class="p">)</span>
+<a id="__codelineno-0-623" name="__codelineno-0-623"></a>                <span class="k">except</span> <span class="ne">ValueError</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+<a id="__codelineno-0-624" name="__codelineno-0-624"></a>                    <span class="k">if</span> <span class="s2">&quot;No data found&quot;</span> <span class="ow">in</span> <span class="nb">str</span><span class="p">(</span><span class="n">e</span><span class="p">):</span>
+<a id="__codelineno-0-625" name="__codelineno-0-625"></a>                        <span class="n">logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;No data found for period </span><span class="si">{</span><span class="n">chunk_start_date</span><span class="si">}</span><span class="s2"> to </span><span class="si">{</span><span class="n">chunk_end_date</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+<a id="__codelineno-0-626" name="__codelineno-0-626"></a>                        <span class="k">continue</span>
+<a id="__codelineno-0-627" name="__codelineno-0-627"></a>                    <span class="k">else</span><span class="p">:</span>
+<a id="__codelineno-0-628" name="__codelineno-0-628"></a>                        <span class="k">raise</span>
+<a id="__codelineno-0-629" name="__codelineno-0-629"></a>
+<a id="__codelineno-0-630" name="__codelineno-0-630"></a>                <span class="k">if</span> <span class="n">df</span><span class="o">.</span><span class="n">empty</span><span class="p">:</span>
+<a id="__codelineno-0-631" name="__codelineno-0-631"></a>                    <span class="n">logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;No data found for period </span><span class="si">{</span><span class="n">chunk_start_date</span><span class="si">}</span><span class="s2"> to </span><span class="si">{</span><span class="n">chunk_end_date</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+<a id="__codelineno-0-632" name="__codelineno-0-632"></a>                    <span class="k">continue</span>
+<a id="__codelineno-0-633" name="__codelineno-0-633"></a>
+<a id="__codelineno-0-634" name="__codelineno-0-634"></a>                <span class="c1"># 如果需要降采样</span>
+<a id="__codelineno-0-635" name="__codelineno-0-635"></a>                <span class="k">if</span> <span class="n">target_freq</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+<a id="__codelineno-0-636" name="__codelineno-0-636"></a>                    <span class="n">df</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_resample_data</span><span class="p">(</span><span class="n">df</span><span class="p">,</span> <span class="n">target_freq</span><span class="p">)</span>
+<a id="__codelineno-0-637" name="__codelineno-0-637"></a>                    <span class="n">freq</span> <span class="o">=</span> <span class="n">target_freq</span>
+<a id="__codelineno-0-638" name="__codelineno-0-638"></a>
+<a id="__codelineno-0-639" name="__codelineno-0-639"></a>                <span class="c1"># 处理当前数据块</span>
+<a id="__codelineno-0-640" name="__codelineno-0-640"></a>                <span class="n">chunk_dates</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">date_range</span><span class="p">(</span><span class="n">chunk_start_date</span><span class="p">,</span> <span class="n">chunk_end_date</span><span class="p">,</span> <span class="n">freq</span><span class="o">=</span><span class="s2">&quot;D&quot;</span><span class="p">)</span>
+<a id="__codelineno-0-641" name="__codelineno-0-641"></a>                <span class="bp">self</span><span class="o">.</span><span class="n">_process_dataframe_for_export</span><span class="p">(</span><span class="n">df</span><span class="p">,</span> <span class="n">output_path</span><span class="p">,</span> <span class="n">freq</span><span class="p">,</span> <span class="n">chunk_dates</span><span class="p">)</span>
+<a id="__codelineno-0-642" name="__codelineno-0-642"></a>
+<a id="__codelineno-0-643" name="__codelineno-0-643"></a>                <span class="c1"># 清理内存</span>
+<a id="__codelineno-0-644" name="__codelineno-0-644"></a>                <span class="k">del</span> <span class="n">df</span>
+<a id="__codelineno-0-645" name="__codelineno-0-645"></a>
+<a id="__codelineno-0-646" name="__codelineno-0-646"></a>        <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Successfully exported data to </span><span class="si">{</span><span class="n">output_path</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+<a id="__codelineno-0-647" name="__codelineno-0-647"></a>
+<a id="__codelineno-0-648" name="__codelineno-0-648"></a>    <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+<a id="__codelineno-0-649" name="__codelineno-0-649"></a>        <span class="n">logger</span><span class="o">.</span><span class="n">exception</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Failed to export data: </span><span class="si">{</span><span class="n">e</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+<a id="__codelineno-0-650" name="__codelineno-0-650"></a>        <span class="k">raise</span>
 </code></pre></div></td></tr></table></div>
             </details>
     </div>
@@ -4596,7 +4572,32 @@
 
             <details class="quote">
               <summary>Source code in <code>src/cryptoservice/data/storage_db.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal"><a href="#__codelineno-0-928">928</a></span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal"><a href="#__codelineno-0-903">903</a></span>
+<span class="normal"><a href="#__codelineno-0-904">904</a></span>
+<span class="normal"><a href="#__codelineno-0-905">905</a></span>
+<span class="normal"><a href="#__codelineno-0-906">906</a></span>
+<span class="normal"><a href="#__codelineno-0-907">907</a></span>
+<span class="normal"><a href="#__codelineno-0-908">908</a></span>
+<span class="normal"><a href="#__codelineno-0-909">909</a></span>
+<span class="normal"><a href="#__codelineno-0-910">910</a></span>
+<span class="normal"><a href="#__codelineno-0-911">911</a></span>
+<span class="normal"><a href="#__codelineno-0-912">912</a></span>
+<span class="normal"><a href="#__codelineno-0-913">913</a></span>
+<span class="normal"><a href="#__codelineno-0-914">914</a></span>
+<span class="normal"><a href="#__codelineno-0-915">915</a></span>
+<span class="normal"><a href="#__codelineno-0-916">916</a></span>
+<span class="normal"><a href="#__codelineno-0-917">917</a></span>
+<span class="normal"><a href="#__codelineno-0-918">918</a></span>
+<span class="normal"><a href="#__codelineno-0-919">919</a></span>
+<span class="normal"><a href="#__codelineno-0-920">920</a></span>
+<span class="normal"><a href="#__codelineno-0-921">921</a></span>
+<span class="normal"><a href="#__codelineno-0-922">922</a></span>
+<span class="normal"><a href="#__codelineno-0-923">923</a></span>
+<span class="normal"><a href="#__codelineno-0-924">924</a></span>
+<span class="normal"><a href="#__codelineno-0-925">925</a></span>
+<span class="normal"><a href="#__codelineno-0-926">926</a></span>
+<span class="normal"><a href="#__codelineno-0-927">927</a></span>
+<span class="normal"><a href="#__codelineno-0-928">928</a></span>
 <span class="normal"><a href="#__codelineno-0-929">929</a></span>
 <span class="normal"><a href="#__codelineno-0-930">930</a></span>
 <span class="normal"><a href="#__codelineno-0-931">931</a></span>
@@ -4629,94 +4630,65 @@
 <span class="normal"><a href="#__codelineno-0-958">958</a></span>
 <span class="normal"><a href="#__codelineno-0-959">959</a></span>
 <span class="normal"><a href="#__codelineno-0-960">960</a></span>
-<span class="normal"><a href="#__codelineno-0-961">961</a></span>
-<span class="normal"><a href="#__codelineno-0-962">962</a></span>
-<span class="normal"><a href="#__codelineno-0-963">963</a></span>
-<span class="normal"><a href="#__codelineno-0-964">964</a></span>
-<span class="normal"><a href="#__codelineno-0-965">965</a></span>
-<span class="normal"><a href="#__codelineno-0-966">966</a></span>
-<span class="normal"><a href="#__codelineno-0-967">967</a></span>
-<span class="normal"><a href="#__codelineno-0-968">968</a></span>
-<span class="normal"><a href="#__codelineno-0-969">969</a></span>
-<span class="normal"><a href="#__codelineno-0-970">970</a></span>
-<span class="normal"><a href="#__codelineno-0-971">971</a></span>
-<span class="normal"><a href="#__codelineno-0-972">972</a></span>
-<span class="normal"><a href="#__codelineno-0-973">973</a></span>
-<span class="normal"><a href="#__codelineno-0-974">974</a></span>
-<span class="normal"><a href="#__codelineno-0-975">975</a></span>
-<span class="normal"><a href="#__codelineno-0-976">976</a></span>
-<span class="normal"><a href="#__codelineno-0-977">977</a></span>
-<span class="normal"><a href="#__codelineno-0-978">978</a></span>
-<span class="normal"><a href="#__codelineno-0-979">979</a></span>
-<span class="normal"><a href="#__codelineno-0-980">980</a></span>
-<span class="normal"><a href="#__codelineno-0-981">981</a></span>
-<span class="normal"><a href="#__codelineno-0-982">982</a></span>
-<span class="normal"><a href="#__codelineno-0-983">983</a></span>
-<span class="normal"><a href="#__codelineno-0-984">984</a></span>
-<span class="normal"><a href="#__codelineno-0-985">985</a></span>
-<span class="normal"><a href="#__codelineno-0-986">986</a></span>
-<span class="normal"><a href="#__codelineno-0-987">987</a></span>
-<span class="normal"><a href="#__codelineno-0-988">988</a></span></pre></div></td><td class="code"><div><pre><span></span><code><a id="__codelineno-0-928" name="__codelineno-0-928"></a><span class="k">def</span><span class="w"> </span><span class="nf">visualize_data</span><span class="p">(</span>
-<a id="__codelineno-0-929" name="__codelineno-0-929"></a>    <span class="bp">self</span><span class="p">,</span>
-<a id="__codelineno-0-930" name="__codelineno-0-930"></a>    <span class="n">symbol</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
-<a id="__codelineno-0-931" name="__codelineno-0-931"></a>    <span class="n">start_time</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
-<a id="__codelineno-0-932" name="__codelineno-0-932"></a>    <span class="n">end_time</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
-<a id="__codelineno-0-933" name="__codelineno-0-933"></a>    <span class="n">freq</span><span class="p">:</span> <span class="n">Freq</span><span class="p">,</span>
-<a id="__codelineno-0-934" name="__codelineno-0-934"></a>    <span class="n">max_rows</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">20</span><span class="p">,</span>
-<a id="__codelineno-0-935" name="__codelineno-0-935"></a><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
-<a id="__codelineno-0-936" name="__codelineno-0-936"></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;可视化显示数据库中的数据.</span>
-<a id="__codelineno-0-937" name="__codelineno-0-937"></a>
-<a id="__codelineno-0-938" name="__codelineno-0-938"></a><span class="sd">    Args:</span>
-<a id="__codelineno-0-939" name="__codelineno-0-939"></a><span class="sd">        symbol: 交易对</span>
-<a id="__codelineno-0-940" name="__codelineno-0-940"></a><span class="sd">        start_time: 开始时间 (YYYY-MM-DD)</span>
-<a id="__codelineno-0-941" name="__codelineno-0-941"></a><span class="sd">        end_time: 结束时间 (YYYY-MM-DD)</span>
-<a id="__codelineno-0-942" name="__codelineno-0-942"></a><span class="sd">        freq: 数据频率</span>
-<a id="__codelineno-0-943" name="__codelineno-0-943"></a><span class="sd">        max_rows: 最大显示行数</span>
-<a id="__codelineno-0-944" name="__codelineno-0-944"></a><span class="sd">    &quot;&quot;&quot;</span>
-<a id="__codelineno-0-945" name="__codelineno-0-945"></a>    <span class="k">try</span><span class="p">:</span>
-<a id="__codelineno-0-946" name="__codelineno-0-946"></a>        <span class="c1"># 读取数据</span>
-<a id="__codelineno-0-947" name="__codelineno-0-947"></a>        <span class="n">df</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">read_data</span><span class="p">(</span><span class="n">start_time</span><span class="p">,</span> <span class="n">end_time</span><span class="p">,</span> <span class="n">freq</span><span class="p">,</span> <span class="p">[</span><span class="n">symbol</span><span class="p">])</span>
-<a id="__codelineno-0-948" name="__codelineno-0-948"></a>        <span class="k">if</span> <span class="n">df</span><span class="o">.</span><span class="n">empty</span><span class="p">:</span>
-<a id="__codelineno-0-949" name="__codelineno-0-949"></a>            <span class="n">logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;No data found for </span><span class="si">{</span><span class="n">symbol</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
-<a id="__codelineno-0-950" name="__codelineno-0-950"></a>            <span class="k">return</span>
-<a id="__codelineno-0-951" name="__codelineno-0-951"></a>
-<a id="__codelineno-0-952" name="__codelineno-0-952"></a>        <span class="c1"># 创建表格</span>
-<a id="__codelineno-0-953" name="__codelineno-0-953"></a>        <span class="n">console</span> <span class="o">=</span> <span class="n">Console</span><span class="p">()</span>
-<a id="__codelineno-0-954" name="__codelineno-0-954"></a>        <span class="n">table</span> <span class="o">=</span> <span class="n">Table</span><span class="p">(</span>
-<a id="__codelineno-0-955" name="__codelineno-0-955"></a>            <span class="n">title</span><span class="o">=</span><span class="sa">f</span><span class="s2">&quot;Market Data for </span><span class="si">{</span><span class="n">symbol</span><span class="si">}</span><span class="s2"> (</span><span class="si">{</span><span class="n">start_time</span><span class="si">}</span><span class="s2"> to </span><span class="si">{</span><span class="n">end_time</span><span class="si">}</span><span class="s2">)&quot;</span><span class="p">,</span>
-<a id="__codelineno-0-956" name="__codelineno-0-956"></a>            <span class="n">show_header</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
-<a id="__codelineno-0-957" name="__codelineno-0-957"></a>            <span class="n">header_style</span><span class="o">=</span><span class="s2">&quot;bold magenta&quot;</span><span class="p">,</span>
-<a id="__codelineno-0-958" name="__codelineno-0-958"></a>        <span class="p">)</span>
-<a id="__codelineno-0-959" name="__codelineno-0-959"></a>
-<a id="__codelineno-0-960" name="__codelineno-0-960"></a>        <span class="c1"># 添加列</span>
-<a id="__codelineno-0-961" name="__codelineno-0-961"></a>        <span class="n">table</span><span class="o">.</span><span class="n">add_column</span><span class="p">(</span><span class="s2">&quot;Timestamp&quot;</span><span class="p">,</span> <span class="n">style</span><span class="o">=</span><span class="s2">&quot;cyan&quot;</span><span class="p">)</span>
-<a id="__codelineno-0-962" name="__codelineno-0-962"></a>        <span class="k">for</span> <span class="n">col</span> <span class="ow">in</span> <span class="n">df</span><span class="o">.</span><span class="n">columns</span><span class="p">:</span>
-<a id="__codelineno-0-963" name="__codelineno-0-963"></a>            <span class="n">table</span><span class="o">.</span><span class="n">add_column</span><span class="p">(</span><span class="n">col</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="s2">&quot;_&quot;</span><span class="p">,</span> <span class="s2">&quot; &quot;</span><span class="p">)</span><span class="o">.</span><span class="n">title</span><span class="p">(),</span> <span class="n">justify</span><span class="o">=</span><span class="s2">&quot;right&quot;</span><span class="p">)</span>
-<a id="__codelineno-0-964" name="__codelineno-0-964"></a>
-<a id="__codelineno-0-965" name="__codelineno-0-965"></a>        <span class="c1"># 添加行</span>
-<a id="__codelineno-0-966" name="__codelineno-0-966"></a>        <span class="k">def</span><span class="w"> </span><span class="nf">is_tuple_index</span><span class="p">(</span><span class="n">idx</span><span class="p">:</span> <span class="n">Any</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">TypeGuard</span><span class="p">[</span><span class="nb">tuple</span><span class="p">[</span><span class="n">Any</span><span class="p">,</span> <span class="n">pd</span><span class="o">.</span><span class="n">Timestamp</span><span class="p">]]:</span>
-<a id="__codelineno-0-967" name="__codelineno-0-967"></a><span class="w">            </span><span class="sd">&quot;&quot;&quot;判断索引是否为包含时间戳的元组&quot;&quot;&quot;</span>
-<a id="__codelineno-0-968" name="__codelineno-0-968"></a>            <span class="k">return</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">idx</span><span class="p">,</span> <span class="nb">tuple</span><span class="p">)</span> <span class="ow">and</span> <span class="nb">len</span><span class="p">(</span><span class="n">idx</span><span class="p">)</span> <span class="o">&gt;</span> <span class="mi">1</span> <span class="ow">and</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">idx</span><span class="p">[</span><span class="mi">1</span><span class="p">],</span> <span class="n">pd</span><span class="o">.</span><span class="n">Timestamp</span><span class="p">)</span>
-<a id="__codelineno-0-969" name="__codelineno-0-969"></a>
-<a id="__codelineno-0-970" name="__codelineno-0-970"></a>        <span class="k">for</span> <span class="n">idx</span><span class="p">,</span> <span class="n">row</span> <span class="ow">in</span> <span class="n">df</span><span class="o">.</span><span class="n">head</span><span class="p">(</span><span class="n">max_rows</span><span class="p">)</span><span class="o">.</span><span class="n">iterrows</span><span class="p">():</span>
-<a id="__codelineno-0-971" name="__codelineno-0-971"></a>            <span class="k">if</span> <span class="n">is_tuple_index</span><span class="p">(</span><span class="n">idx</span><span class="p">):</span>
-<a id="__codelineno-0-972" name="__codelineno-0-972"></a>                <span class="n">timestamp</span> <span class="o">=</span> <span class="n">idx</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span><span class="o">.</span><span class="n">strftime</span><span class="p">(</span><span class="s2">&quot;%Y-%m-</span><span class="si">%d</span><span class="s2"> %H:%M:%S&quot;</span><span class="p">)</span>
-<a id="__codelineno-0-973" name="__codelineno-0-973"></a>            <span class="k">else</span><span class="p">:</span>
-<a id="__codelineno-0-974" name="__codelineno-0-974"></a>                <span class="n">timestamp</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span><span class="n">idx</span><span class="p">)</span>
-<a id="__codelineno-0-975" name="__codelineno-0-975"></a>            <span class="n">values</span> <span class="o">=</span> <span class="p">[</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">x</span><span class="si">:</span><span class="s2">.8f</span><span class="si">}</span><span class="s2">&quot;</span> <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="nb">float</span><span class="p">)</span> <span class="k">else</span> <span class="nb">str</span><span class="p">(</span><span class="n">x</span><span class="p">)</span> <span class="k">for</span> <span class="n">x</span> <span class="ow">in</span> <span class="n">row</span><span class="p">]</span>
-<a id="__codelineno-0-976" name="__codelineno-0-976"></a>            <span class="n">table</span><span class="o">.</span><span class="n">add_row</span><span class="p">(</span><span class="n">timestamp</span><span class="p">,</span> <span class="o">*</span><span class="n">values</span><span class="p">)</span>
-<a id="__codelineno-0-977" name="__codelineno-0-977"></a>
-<a id="__codelineno-0-978" name="__codelineno-0-978"></a>        <span class="c1"># 显示表格</span>
-<a id="__codelineno-0-979" name="__codelineno-0-979"></a>        <span class="n">console</span><span class="o">.</span><span class="n">print</span><span class="p">(</span><span class="n">table</span><span class="p">)</span>
-<a id="__codelineno-0-980" name="__codelineno-0-980"></a>
-<a id="__codelineno-0-981" name="__codelineno-0-981"></a>        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">df</span><span class="p">)</span> <span class="o">&gt;</span> <span class="n">max_rows</span><span class="p">:</span>
-<a id="__codelineno-0-982" name="__codelineno-0-982"></a>            <span class="n">console</span><span class="o">.</span><span class="n">print</span><span class="p">(</span>
-<a id="__codelineno-0-983" name="__codelineno-0-983"></a>                <span class="sa">f</span><span class="s2">&quot;[yellow]Showing </span><span class="si">{</span><span class="n">max_rows</span><span class="si">}</span><span class="s2"> rows out of </span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">df</span><span class="p">)</span><span class="si">}</span><span class="s2"> total rows[/yellow]&quot;</span>
-<a id="__codelineno-0-984" name="__codelineno-0-984"></a>            <span class="p">)</span>
-<a id="__codelineno-0-985" name="__codelineno-0-985"></a>
-<a id="__codelineno-0-986" name="__codelineno-0-986"></a>    <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
-<a id="__codelineno-0-987" name="__codelineno-0-987"></a>        <span class="n">logger</span><span class="o">.</span><span class="n">exception</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Failed to visualize data: </span><span class="si">{</span><span class="n">e</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
-<a id="__codelineno-0-988" name="__codelineno-0-988"></a>        <span class="k">raise</span>
+<span class="normal"><a href="#__codelineno-0-961">961</a></span></pre></div></td><td class="code"><div><pre><span></span><code><a id="__codelineno-0-903" name="__codelineno-0-903"></a><span class="k">def</span><span class="w"> </span><span class="nf">visualize_data</span><span class="p">(</span>
+<a id="__codelineno-0-904" name="__codelineno-0-904"></a>    <span class="bp">self</span><span class="p">,</span>
+<a id="__codelineno-0-905" name="__codelineno-0-905"></a>    <span class="n">symbol</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+<a id="__codelineno-0-906" name="__codelineno-0-906"></a>    <span class="n">start_time</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+<a id="__codelineno-0-907" name="__codelineno-0-907"></a>    <span class="n">end_time</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+<a id="__codelineno-0-908" name="__codelineno-0-908"></a>    <span class="n">freq</span><span class="p">:</span> <span class="n">Freq</span><span class="p">,</span>
+<a id="__codelineno-0-909" name="__codelineno-0-909"></a>    <span class="n">max_rows</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">20</span><span class="p">,</span>
+<a id="__codelineno-0-910" name="__codelineno-0-910"></a><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<a id="__codelineno-0-911" name="__codelineno-0-911"></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;可视化显示数据库中的数据.</span>
+<a id="__codelineno-0-912" name="__codelineno-0-912"></a>
+<a id="__codelineno-0-913" name="__codelineno-0-913"></a><span class="sd">    Args:</span>
+<a id="__codelineno-0-914" name="__codelineno-0-914"></a><span class="sd">        symbol: 交易对</span>
+<a id="__codelineno-0-915" name="__codelineno-0-915"></a><span class="sd">        start_time: 开始时间 (YYYY-MM-DD)</span>
+<a id="__codelineno-0-916" name="__codelineno-0-916"></a><span class="sd">        end_time: 结束时间 (YYYY-MM-DD)</span>
+<a id="__codelineno-0-917" name="__codelineno-0-917"></a><span class="sd">        freq: 数据频率</span>
+<a id="__codelineno-0-918" name="__codelineno-0-918"></a><span class="sd">        max_rows: 最大显示行数</span>
+<a id="__codelineno-0-919" name="__codelineno-0-919"></a><span class="sd">    &quot;&quot;&quot;</span>
+<a id="__codelineno-0-920" name="__codelineno-0-920"></a>    <span class="k">try</span><span class="p">:</span>
+<a id="__codelineno-0-921" name="__codelineno-0-921"></a>        <span class="c1"># 读取数据</span>
+<a id="__codelineno-0-922" name="__codelineno-0-922"></a>        <span class="n">df</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">read_data</span><span class="p">(</span><span class="n">start_time</span><span class="p">,</span> <span class="n">end_time</span><span class="p">,</span> <span class="n">freq</span><span class="p">,</span> <span class="p">[</span><span class="n">symbol</span><span class="p">])</span>
+<a id="__codelineno-0-923" name="__codelineno-0-923"></a>        <span class="k">if</span> <span class="n">df</span><span class="o">.</span><span class="n">empty</span><span class="p">:</span>
+<a id="__codelineno-0-924" name="__codelineno-0-924"></a>            <span class="n">logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;No data found for </span><span class="si">{</span><span class="n">symbol</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+<a id="__codelineno-0-925" name="__codelineno-0-925"></a>            <span class="k">return</span>
+<a id="__codelineno-0-926" name="__codelineno-0-926"></a>
+<a id="__codelineno-0-927" name="__codelineno-0-927"></a>        <span class="c1"># 创建表格</span>
+<a id="__codelineno-0-928" name="__codelineno-0-928"></a>        <span class="n">console</span> <span class="o">=</span> <span class="n">Console</span><span class="p">()</span>
+<a id="__codelineno-0-929" name="__codelineno-0-929"></a>        <span class="n">table</span> <span class="o">=</span> <span class="n">Table</span><span class="p">(</span>
+<a id="__codelineno-0-930" name="__codelineno-0-930"></a>            <span class="n">title</span><span class="o">=</span><span class="sa">f</span><span class="s2">&quot;Market Data for </span><span class="si">{</span><span class="n">symbol</span><span class="si">}</span><span class="s2"> (</span><span class="si">{</span><span class="n">start_time</span><span class="si">}</span><span class="s2"> to </span><span class="si">{</span><span class="n">end_time</span><span class="si">}</span><span class="s2">)&quot;</span><span class="p">,</span>
+<a id="__codelineno-0-931" name="__codelineno-0-931"></a>            <span class="n">show_header</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+<a id="__codelineno-0-932" name="__codelineno-0-932"></a>            <span class="n">header_style</span><span class="o">=</span><span class="s2">&quot;bold magenta&quot;</span><span class="p">,</span>
+<a id="__codelineno-0-933" name="__codelineno-0-933"></a>        <span class="p">)</span>
+<a id="__codelineno-0-934" name="__codelineno-0-934"></a>
+<a id="__codelineno-0-935" name="__codelineno-0-935"></a>        <span class="c1"># 添加列</span>
+<a id="__codelineno-0-936" name="__codelineno-0-936"></a>        <span class="n">table</span><span class="o">.</span><span class="n">add_column</span><span class="p">(</span><span class="s2">&quot;Timestamp&quot;</span><span class="p">,</span> <span class="n">style</span><span class="o">=</span><span class="s2">&quot;cyan&quot;</span><span class="p">)</span>
+<a id="__codelineno-0-937" name="__codelineno-0-937"></a>        <span class="k">for</span> <span class="n">col</span> <span class="ow">in</span> <span class="n">df</span><span class="o">.</span><span class="n">columns</span><span class="p">:</span>
+<a id="__codelineno-0-938" name="__codelineno-0-938"></a>            <span class="n">table</span><span class="o">.</span><span class="n">add_column</span><span class="p">(</span><span class="n">col</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="s2">&quot;_&quot;</span><span class="p">,</span> <span class="s2">&quot; &quot;</span><span class="p">)</span><span class="o">.</span><span class="n">title</span><span class="p">(),</span> <span class="n">justify</span><span class="o">=</span><span class="s2">&quot;right&quot;</span><span class="p">)</span>
+<a id="__codelineno-0-939" name="__codelineno-0-939"></a>
+<a id="__codelineno-0-940" name="__codelineno-0-940"></a>        <span class="c1"># 添加行</span>
+<a id="__codelineno-0-941" name="__codelineno-0-941"></a>        <span class="k">def</span><span class="w"> </span><span class="nf">is_tuple_index</span><span class="p">(</span><span class="n">idx</span><span class="p">:</span> <span class="n">Any</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">TypeGuard</span><span class="p">[</span><span class="nb">tuple</span><span class="p">[</span><span class="n">Any</span><span class="p">,</span> <span class="n">pd</span><span class="o">.</span><span class="n">Timestamp</span><span class="p">]]:</span>
+<a id="__codelineno-0-942" name="__codelineno-0-942"></a><span class="w">            </span><span class="sd">&quot;&quot;&quot;判断索引是否为包含时间戳的元组&quot;&quot;&quot;</span>
+<a id="__codelineno-0-943" name="__codelineno-0-943"></a>            <span class="k">return</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">idx</span><span class="p">,</span> <span class="nb">tuple</span><span class="p">)</span> <span class="ow">and</span> <span class="nb">len</span><span class="p">(</span><span class="n">idx</span><span class="p">)</span> <span class="o">&gt;</span> <span class="mi">1</span> <span class="ow">and</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">idx</span><span class="p">[</span><span class="mi">1</span><span class="p">],</span> <span class="n">pd</span><span class="o">.</span><span class="n">Timestamp</span><span class="p">)</span>
+<a id="__codelineno-0-944" name="__codelineno-0-944"></a>
+<a id="__codelineno-0-945" name="__codelineno-0-945"></a>        <span class="k">for</span> <span class="n">idx</span><span class="p">,</span> <span class="n">row</span> <span class="ow">in</span> <span class="n">df</span><span class="o">.</span><span class="n">head</span><span class="p">(</span><span class="n">max_rows</span><span class="p">)</span><span class="o">.</span><span class="n">iterrows</span><span class="p">():</span>
+<a id="__codelineno-0-946" name="__codelineno-0-946"></a>            <span class="k">if</span> <span class="n">is_tuple_index</span><span class="p">(</span><span class="n">idx</span><span class="p">):</span>
+<a id="__codelineno-0-947" name="__codelineno-0-947"></a>                <span class="n">timestamp</span> <span class="o">=</span> <span class="n">idx</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span><span class="o">.</span><span class="n">strftime</span><span class="p">(</span><span class="s2">&quot;%Y-%m-</span><span class="si">%d</span><span class="s2"> %H:%M:%S&quot;</span><span class="p">)</span>
+<a id="__codelineno-0-948" name="__codelineno-0-948"></a>            <span class="k">else</span><span class="p">:</span>
+<a id="__codelineno-0-949" name="__codelineno-0-949"></a>                <span class="n">timestamp</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span><span class="n">idx</span><span class="p">)</span>
+<a id="__codelineno-0-950" name="__codelineno-0-950"></a>            <span class="n">values</span> <span class="o">=</span> <span class="p">[</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">x</span><span class="si">:</span><span class="s2">.8f</span><span class="si">}</span><span class="s2">&quot;</span> <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="nb">float</span><span class="p">)</span> <span class="k">else</span> <span class="nb">str</span><span class="p">(</span><span class="n">x</span><span class="p">)</span> <span class="k">for</span> <span class="n">x</span> <span class="ow">in</span> <span class="n">row</span><span class="p">]</span>
+<a id="__codelineno-0-951" name="__codelineno-0-951"></a>            <span class="n">table</span><span class="o">.</span><span class="n">add_row</span><span class="p">(</span><span class="n">timestamp</span><span class="p">,</span> <span class="o">*</span><span class="n">values</span><span class="p">)</span>
+<a id="__codelineno-0-952" name="__codelineno-0-952"></a>
+<a id="__codelineno-0-953" name="__codelineno-0-953"></a>        <span class="c1"># 显示表格</span>
+<a id="__codelineno-0-954" name="__codelineno-0-954"></a>        <span class="n">console</span><span class="o">.</span><span class="n">print</span><span class="p">(</span><span class="n">table</span><span class="p">)</span>
+<a id="__codelineno-0-955" name="__codelineno-0-955"></a>
+<a id="__codelineno-0-956" name="__codelineno-0-956"></a>        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">df</span><span class="p">)</span> <span class="o">&gt;</span> <span class="n">max_rows</span><span class="p">:</span>
+<a id="__codelineno-0-957" name="__codelineno-0-957"></a>            <span class="n">console</span><span class="o">.</span><span class="n">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;[yellow]Showing </span><span class="si">{</span><span class="n">max_rows</span><span class="si">}</span><span class="s2"> rows out of </span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">df</span><span class="p">)</span><span class="si">}</span><span class="s2"> total rows[/yellow]&quot;</span><span class="p">)</span>
+<a id="__codelineno-0-958" name="__codelineno-0-958"></a>
+<a id="__codelineno-0-959" name="__codelineno-0-959"></a>    <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+<a id="__codelineno-0-960" name="__codelineno-0-960"></a>        <span class="n">logger</span><span class="o">.</span><span class="n">exception</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Failed to visualize data: </span><span class="si">{</span><span class="n">e</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+<a id="__codelineno-0-961" name="__codelineno-0-961"></a>        <span class="k">raise</span>
 </code></pre></div></td></tr></table></div>
             </details>
     </div>
@@ -4739,15 +4711,15 @@
 
             <details class="quote">
               <summary>Source code in <code>src/cryptoservice/data/storage_db.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal"><a href="#__codelineno-0-1015">1015</a></span>
-<span class="normal"><a href="#__codelineno-0-1016">1016</a></span>
-<span class="normal"><a href="#__codelineno-0-1017">1017</a></span>
-<span class="normal"><a href="#__codelineno-0-1018">1018</a></span>
-<span class="normal"><a href="#__codelineno-0-1019">1019</a></span></pre></div></td><td class="code"><div><pre><span></span><code><a id="__codelineno-0-1015" name="__codelineno-0-1015"></a><span class="k">def</span><span class="w"> </span><span class="nf">close</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
-<a id="__codelineno-0-1016" name="__codelineno-0-1016"></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;关闭数据库连接&quot;&quot;&quot;</span>
-<a id="__codelineno-0-1017" name="__codelineno-0-1017"></a>    <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_use_pool</span> <span class="ow">and</span> <span class="bp">self</span><span class="o">.</span><span class="n">_pool</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
-<a id="__codelineno-0-1018" name="__codelineno-0-1018"></a>        <span class="bp">self</span><span class="o">.</span><span class="n">_pool</span><span class="o">.</span><span class="n">close_all</span><span class="p">()</span>
-<a id="__codelineno-0-1019" name="__codelineno-0-1019"></a>        <span class="bp">self</span><span class="o">.</span><span class="n">_pool</span> <span class="o">=</span> <span class="kc">None</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal"><a href="#__codelineno-0-988">988</a></span>
+<span class="normal"><a href="#__codelineno-0-989">989</a></span>
+<span class="normal"><a href="#__codelineno-0-990">990</a></span>
+<span class="normal"><a href="#__codelineno-0-991">991</a></span>
+<span class="normal"><a href="#__codelineno-0-992">992</a></span></pre></div></td><td class="code"><div><pre><span></span><code><a id="__codelineno-0-988" name="__codelineno-0-988"></a><span class="k">def</span><span class="w"> </span><span class="nf">close</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<a id="__codelineno-0-989" name="__codelineno-0-989"></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;关闭数据库连接&quot;&quot;&quot;</span>
+<a id="__codelineno-0-990" name="__codelineno-0-990"></a>    <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_use_pool</span> <span class="ow">and</span> <span class="bp">self</span><span class="o">.</span><span class="n">_pool</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+<a id="__codelineno-0-991" name="__codelineno-0-991"></a>        <span class="bp">self</span><span class="o">.</span><span class="n">_pool</span><span class="o">.</span><span class="n">close_all</span><span class="p">()</span>
+<a id="__codelineno-0-992" name="__codelineno-0-992"></a>        <span class="bp">self</span><span class="o">.</span><span class="n">_pool</span> <span class="o">=</span> <span class="kc">None</span>
 </code></pre></div></td></tr></table></div>
             </details>
     </div>
