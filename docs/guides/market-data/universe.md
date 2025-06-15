@@ -38,9 +38,21 @@ universe_def = service.define_universe(
     t1_months=1,          # 基于1个月数据计算
     t2_months=1,          # 每月重新选择
     t3_months=3,          # 排除3个月内新上市合约
-    top_k=5,              # 选择前5个合约
+    top_k=5,              # 选择前5个合约 (与 top_ratio 二选一)
     output_path="./universe.json",
     description="Top 5 crypto universe - Q1 2024"
+)
+
+# 使用比率选择 (例如 top 80%)
+universe_by_ratio = service.define_universe(
+    start_date="2024-01-01",
+    end_date="2024-03-31",
+    t1_months=1,
+    t2_months=1,
+    t3_months=3,
+    top_ratio=0.8,       # 选择前80%的合约 (与 top_k 二选一)
+    output_path="./universe_ratio.json",
+    description="Top 80% crypto universe - Q1 2024"
 )
 ```
 
@@ -53,7 +65,8 @@ universe_def = service.define_universe(
 | `t1_months` | int | T1时间窗口，用于计算平均日成交量 |
 | `t2_months` | int | T2重新选择频率，universe更新间隔 |
 | `t3_months` | int | T3最小存在时间，筛除新合约 |
-| `top_k` | int | 选取的top合约数量 |
+| `top_k` | int \| None | 选取的top合约数量 (与 `top_ratio` 二选一) |
+| `top_ratio` | float \| None | 选取的top合约比率, 如0.8代表前80% (与 `top_k` 二选一) |
 | `output_path` | Path\|str | Universe定义文件保存路径 |
 | `description` | str | 可选的描述信息 |
 | `strict_date_range` | bool | 是否严格限制在输入日期范围内 |

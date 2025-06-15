@@ -10,7 +10,8 @@ DB_PATH = "./data/database/market.db"  # 数据库文件路径
 EXPORT_BASE_PATH = "./data/exports"  # 导出文件基础路径
 
 # 导出配置
-EXPORT_FREQ = Freq.m1  # 导出数据频率
+DATA_FREQ = Freq.d1  # 数据库数据频率
+EXPORT_FREQ = Freq.d1  # 导出数据频率
 CHUNK_DAYS = 100  # 分块天数
 
 # 导出的特征（短字段名格式，按指定顺序）
@@ -86,6 +87,7 @@ def main():
         t2 = universe_def.config.t2_months
         t3 = universe_def.config.t3_months
         top_k = universe_def.config.top_k
+        top_ratio = universe_def.config.top_ratio
         delay_days = universe_def.config.delay_days
         quote_asset = universe_def.config.quote_asset
 
@@ -109,7 +111,7 @@ def main():
             # 创建快照专用的导出目录
             snapshot_export_path = (
                 Path(EXPORT_BASE_PATH)
-                / f"{t1}_{t2}_{t3}_{top_k}_{delay_days}_{quote_asset}"
+                / f"{t1}_{t2}_{t3}_{(top_k if top_k else top_ratio)}_{delay_days}_{quote_asset}"
             )
 
             # 导出数据
@@ -117,7 +119,7 @@ def main():
                 output_path=snapshot_export_path,
                 start_ts=start_date_ts,
                 end_ts=end_date_ts,
-                freq=Freq.m1,
+                freq=DATA_FREQ,
                 target_freq=EXPORT_FREQ,
                 symbols=symbols,
                 chunk_days=CHUNK_DAYS,
@@ -142,62 +144,6 @@ def main():
                     print(
                         f"      📈 特征类型: {len(unique_features)}种 ({', '.join(sorted(unique_features))})"
                     )
-
-        # 显示导出结构示例
-        first_snapshot_dir = (
-            next(Path(EXPORT_BASE_PATH).iterdir(), None)
-            if Path(EXPORT_BASE_PATH).exists()
-            else None
-        )
-        if first_snapshot_dir and first_snapshot_dir.is_dir():
-            print(f"\n📂 导出文件结构示例 (基于 {first_snapshot_dir.name}):")
-            freq_dirs = [d for d in first_snapshot_dir.iterdir() if d.is_dir()]
-            if freq_dirs:
-                freq_dir = freq_dirs[0]
-                print(f"   {first_snapshot_dir.name}/")
-                print(f"   └── {freq_dir.name}/")
-
-                date_dirs = [d for d in freq_dir.iterdir() if d.is_dir()]
-                if date_dirs:
-                    date_dir = date_dirs[0]
-                    print(f"       └── {date_dir.name}/")
-
-                    feature_dirs = [d for d in date_dir.iterdir() if d.is_dir()]
-                    universe_file = date_dir / "universe_token.pkl"
-
-                    for i, feature_dir in enumerate(sorted(feature_dirs)[:3]):
-                        desc = FEATURE_DESCRIPTIONS.get(
-                            feature_dir.name, feature_dir.name
-                        )
-                        print(f"           ├── {feature_dir.name}/  # {desc}")
-                        npy_files = list(feature_dir.glob("*.npy"))
-                        if npy_files:
-                            print(f"           │   └── {npy_files[0].name}")
-
-                    if len(feature_dirs) > 3:
-                        print(
-                            f"           ├── ... (还有 {len(feature_dirs)-3} 个特征目录)"
-                        )
-
-                    if universe_file.exists():
-                        print(f"           └── universe_token.pkl  # 交易对顺序")
-
-        # 显示总体统计
-        all_export_files = list(Path(EXPORT_BASE_PATH).rglob("*.npy"))
-        all_universe_files = list(Path(EXPORT_BASE_PATH).rglob("universe_token.pkl"))
-
-        if all_export_files:
-            total_size = sum(f.stat().st_size for f in all_export_files) / (
-                1024 * 1024
-            )  # MB
-            print(f"📊 总计导出文件: {len(all_export_files)}个.npy文件")
-            print(f"🎯 总计Universe文件: {len(all_universe_files)}个.pkl文件")
-            print(f"💾 总计文件大小: {total_size:.1f} MB")
-
-            # 统计所有特征类型
-            all_features = set(f.parent.name for f in all_export_files)
-            print(f"📈 包含特征: {len(all_features)}种")
-            print(f"    完整特征列表: {', '.join(sorted(all_features))}")
 
     except Exception as e:
         print(f"❌ 数据导出失败: {e}")

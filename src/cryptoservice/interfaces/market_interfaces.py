@@ -154,8 +154,9 @@ class IMarketDataService(Protocol):
         t1_months: int,
         t2_months: int,
         t3_months: int,
-        top_k: int,
         output_path: Path | str,
+        top_k: int | None = None,
+        top_ratio: float | None = None,
         description: str | None = None,
         delay_days: int = 7,
         api_delay_seconds: float = 1.0,
@@ -171,8 +172,9 @@ class IMarketDataService(Protocol):
             t1_months: T1时间窗口（月），用于计算mean daily amount
             t2_months: T2滚动频率（月），universe重新选择的频率
             t3_months: T3合约最小创建时间（月），用于筛除新合约
-            top_k: 选取的top合约数量
             output_path: universe输出文件路径 (必须指定)
+            top_k: 选取的top合约数量 (与 top_ratio 二选一)
+            top_ratio: 选取的top合约比率 (与 top_k 二选一)
             description: 描述信息
             delay_days: 在重新平衡日期前额外往前推的天数，默认7天
             api_delay_seconds: 每个API请求之间的延迟秒数，默认1.0秒
