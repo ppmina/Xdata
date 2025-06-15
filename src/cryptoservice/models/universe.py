@@ -16,9 +16,10 @@ class UniverseConfig:
         t1_months: T1时间窗口（月），用于计算mean daily amount
         t2_months: T2滚动频率（月），universe重新选择的频率
         t3_months: T3合约最小创建时间（月），用于筛除新合约
-        top_k: 选取的top合约数量
         delay_days: 延迟天数
         quote_asset: 计价币种
+        top_k: 选取的top合约数量
+        top_ratio: 选取的top合约比率 (例如 0.8 表示 top 80%)
     """
 
     start_date: str
@@ -26,22 +27,36 @@ class UniverseConfig:
     t1_months: int
     t2_months: int
     t3_months: int
-    top_k: int
     delay_days: int
     quote_asset: str
+    top_k: int | None = None
+    top_ratio: float | None = None
+
+    def __post_init__(self) -> None:
+        """验证top_k和top_ratio只有一个被提供."""
+        if self.top_k is None and self.top_ratio is None:
+            raise ValueError("必须提供 top_k 或 top_ratio 中的一个。")
+        if self.top_k is not None and self.top_ratio is not None:
+            raise ValueError("top_k 和 top_ratio 不能同时提供。")
+        if self.top_ratio is not None and not (0 < self.top_ratio <= 1):
+            raise ValueError("top_ratio 必须在 (0, 1] 范围内。")
 
     def to_dict(self) -> dict[str, Any]:
         """转换为字典格式"""
-        return {
+        data = {
             "start_date": self.start_date,
             "end_date": self.end_date,
             "t1_months": self.t1_months,
             "t2_months": self.t2_months,
             "t3_months": self.t3_months,
-            "top_k": self.top_k,
             "delay_days": self.delay_days,
             "quote_asset": self.quote_asset,
         }
+        if self.top_k is not None:
+            data["top_k"] = self.top_k
+        if self.top_ratio is not None:
+            data["top_ratio"] = self.top_ratio
+        return data
 
 
 @dataclass
@@ -417,36 +432,61 @@ class UniverseDefinition:
 
         return cls.from_dict(data)
 
-    def get_symbols_for_date(self, target_date: str) -> list[str]:
+    def get_symbols_for_date(self, target_date: str, date_type: str = "usage") -> list[str]:
         """获取指定日期的universe交易对列表
-
-        在月末重平衡策略下，此方法会找到在目标日期之前最近的一次重平衡，
-        返回对应的universe交易对列表。
 
         Args:
             target_date: 目标日期 (YYYY-MM-DD)
+            date_type: 日期类型, "usage" (默认) 或 "effective".
+                       - "usage": 查找覆盖该使用日期的快照
+                       - "effective": 查找在该生效日期生成的快照
 
         Returns:
             List[str]: 该日期对应的交易对列表
-
-        Example:
-            在月末重平衡策略下：
-            - 2024-01-31: 基于1月数据选择的universe（适用于2月）
-            - 2024-02-29: 基于2月数据选择的universe（适用于3月）
-
-            get_symbols_for_date("2024-02-15")
-            -> 返回2024-01-31重平衡选择的交易对（因为这是2月15日之前最近的重平衡）
         """
-        target_date_obj = pd.to_datetime(target_date).date()
+        target_dt = pd.to_datetime(target_date)
 
-        # 按日期倒序查找最近的有效snapshot
-        for snapshot in sorted(self.snapshots, key=lambda x: x.effective_date, reverse=True):
-            snapshot_date = pd.to_datetime(snapshot.effective_date).date()
-            if snapshot_date <= target_date_obj:
-                return snapshot.symbols
+        if date_type == "usage":
+            for snapshot in sorted(self.snapshots, key=lambda x: x.start_date, reverse=True):
+                start_dt = pd.to_datetime(snapshot.start_date)
+                end_dt = pd.to_datetime(snapshot.end_date)
+                if start_dt <= target_dt <= end_dt:
+                    return snapshot.symbols
+        elif date_type == "effective":
+            for snapshot in self.snapshots:
+                if snapshot.effective_date == target_date:
+                    return snapshot.symbols
+        else:
+            raise ValueError("date_type 必须是 'usage' 或 'effective'")
 
-        # 如果没有找到合适的snapshot，返回空列表
         return []
+
+    def get_snapshot_for_date(self, target_date: str, date_type: str = "usage") -> UniverseSnapshot | None:
+        """获取指定日期的UniverseSnapshot
+
+        Args:
+            target_date: 目标日期 (YYYY-MM-DD)
+            date_type: 日期类型, "usage" (默认) 或 "effective".
+
+        Returns:
+            UniverseSnapshot | None: 对应的快照，如果未找到则返回None
+        """
+        target_dt = pd.to_datetime(target_date)
+
+        if date_type == "usage":
+            for snapshot in sorted(self.snapshots, key=lambda x: x.start_date, reverse=True):
+                start_dt = pd.to_datetime(snapshot.start_date)
+                end_dt = pd.to_datetime(snapshot.end_date)
+                if start_dt <= target_dt <= end_dt:
+                    return snapshot
+        elif date_type == "effective":
+            for snapshot in self.snapshots:
+                if snapshot.effective_date == target_date:
+                    return snapshot
+        else:
+            raise ValueError("date_type 必须是 'usage' 或 'effective'")
+
+        return None
 
     @classmethod
     def get_schema(cls) -> dict[str, Any]:
@@ -455,6 +495,55 @@ class UniverseDefinition:
         Returns:
             Dict: JSON Schema定义
         """
+        config_properties = {
+            "start_date": {
+                "type": "string",
+                "pattern": r"^\d{4}-\d{2}-\d{2}$",
+                "description": "Start date in YYYY-MM-DD format",
+            },
+            "end_date": {
+                "type": "string",
+                "pattern": r"^\d{4}-\d{2}-\d{2}$",
+                "description": "End date in YYYY-MM-DD format",
+            },
+            "t1_months": {
+                "type": "integer",
+                "minimum": 1,
+                "description": "T1 lookback window in months for calculating mean daily amount",
+            },
+            "t2_months": {
+                "type": "integer",
+                "minimum": 1,
+                "description": "T2 rebalancing frequency in months",
+            },
+            "t3_months": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "T3 minimum contract existence time in months",
+            },
+            "top_k": {
+                "type": "integer",
+                "minimum": 1,
+                "description": "Number of top contracts to select",
+            },
+            "top_ratio": {
+                "type": "number",
+                "minimum": 0,
+                "exclusiveMaximum": 1,
+                "description": "Ratio of top contracts to select (e.g., 0.8 for top 80%)",
+            },
+            "delay_days": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "Delay days for universe rebalancing",
+            },
+            "quote_asset": {
+                "type": "string",
+                "pattern": r"^[A-Z0-9]+$",
+                "description": "Quote asset for trading pairs",
+            },
+        }
+
         return {
             "$schema": "http://json-schema.org/draft-07/schema#",
             "title": "Universe Definition Schema",
@@ -464,56 +553,15 @@ class UniverseDefinition:
                 "config": {
                     "type": "object",
                     "description": "Universe configuration parameters",
-                    "properties": {
-                        "start_date": {
-                            "type": "string",
-                            "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
-                            "description": "Start date in YYYY-MM-DD format",
-                        },
-                        "end_date": {
-                            "type": "string",
-                            "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
-                            "description": "End date in YYYY-MM-DD format",
-                        },
-                        "t1_months": {
-                            "type": "integer",
-                            "minimum": 1,
-                            "description": ("T1 lookback window in months for calculating mean daily amount"),
-                        },
-                        "t2_months": {
-                            "type": "integer",
-                            "minimum": 1,
-                            "description": "T2 rebalancing frequency in months",
-                        },
-                        "t3_months": {
-                            "type": "integer",
-                            "minimum": 0,
-                            "description": ("T3 minimum contract existence time in months"),
-                        },
-                        "top_k": {
-                            "type": "integer",
-                            "minimum": 1,
-                            "description": "Number of top contracts to select",
-                        },
-                        "delay_days": {
-                            "type": "integer",
-                            "minimum": 0,
-                            "description": "Delay days for universe rebalancing",
-                        },
-                        "quote_asset": {
-                            "type": "string",
-                            "pattern": "^[A-Z0-9]+$",
-                            "description": "Quote asset for trading pairs",
-                        },
-                    },
+                    "properties": config_properties,
                     "required": [
                         "start_date",
                         "end_date",
                         "t1_months",
                         "t2_months",
                         "t3_months",
-                        "top_k",
                     ],
+                    "oneOf": [{"required": ["top_k"]}, {"required": ["top_ratio"]}],
                     "additionalProperties": False,
                 },
                 "snapshots": {
@@ -634,6 +682,8 @@ class UniverseDefinition:
                 "t2_months": 1,
                 "t3_months": 3,
                 "top_k": 10,
+                "delay_days": 7,
+                "quote_asset": "USDT",
             },
             "snapshots": [
                 {
@@ -715,8 +765,10 @@ class UniverseDefinition:
                     "t1_months",
                     "t2_months",
                     "t3_months",
-                    "top_k",
                 ]
+                if "top_k" not in config and "top_ratio" not in config:
+                    errors.append("Config must contain either 'top_k' or 'top_ratio'")
+
                 for field in config_required:
                     if field not in config:
                         errors.append(f"Missing required config field: {field}")

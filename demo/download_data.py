@@ -12,7 +12,7 @@ UNIVERSE_FILE = "./data/universe.json"  # Universe定义文件
 DB_PATH = "./data/database/market.db"  # 数据库文件路径
 
 # 下载配置
-INTERVAL = Freq.m1  # 数据频率: Freq.m1, Freq.h1, Freq.d1
+INTERVAL = Freq.d1  # 数据频率: Freq.m1, Freq.h1, Freq.d1
 MAX_WORKERS = 2  # 最大并发数 (建议1-2，避免API限制)
 MAX_RETRIES = 3  # 最大重试次数
 RETRY_CONFIG = (

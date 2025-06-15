@@ -1085,8 +1085,9 @@ class MarketDataService(IMarketDataService):
         t1_months: int,
         t2_months: int,
         t3_months: int,
-        top_k: int,
         output_path: Path | str,
+        top_k: int | None = None,
+        top_ratio: float | None = None,
         description: str | None = None,
         delay_days: int = 7,
         api_delay_seconds: float = 1.0,
@@ -1102,8 +1103,9 @@ class MarketDataService(IMarketDataService):
             t1_months: T1时间窗口（月），用于计算mean daily amount
             t2_months: T2滚动频率（月），universe重新选择的频率
             t3_months: T3合约最小创建时间（月），用于筛除新合约
-            top_k: 选取的top合约数量
             output_path: universe输出文件路径 (必须指定)
+            top_k: 选取的top合约数量 (与 top_ratio 二选一)
+            top_ratio: 选取的top合约比率 (与 top_k 二选一)
             description: 描述信息
             delay_days: 在重新平衡日期前额外往前推的天数，默认7天
             api_delay_seconds: 每个API请求之间的延迟秒数，默认1.0秒
@@ -1119,7 +1121,9 @@ class MarketDataService(IMarketDataService):
             output_path_obj = self._validate_and_prepare_path(
                 output_path,
                 is_file=True,
-                file_name=(f"universe_{start_date}_{end_date}_{t1_months}_{t2_months}_{t3_months}_{top_k}.json"),
+                file_name=(
+                    f"universe_{start_date}_{end_date}_{t1_months}_{t2_months}_{t3_months}_{top_k or top_ratio}.json"
+                ),
             )
 
             # 标准化日期格式
@@ -1133,13 +1137,15 @@ class MarketDataService(IMarketDataService):
                 t1_months=t1_months,
                 t2_months=t2_months,
                 t3_months=t3_months,
-                top_k=top_k,
                 delay_days=delay_days,
                 quote_asset=quote_asset,
+                top_k=top_k,
+                top_ratio=top_ratio,
             )
 
             logger.info(f"开始定义universe: {start_date} 到 {end_date}")
-            logger.info(f"参数: T1={t1_months}月, T2={t2_months}月, T3={t3_months}月, Top-K={top_k}")
+            log_selection_criteria = f"Top-K={top_k}" if top_k else f"Top-Ratio={top_ratio}"
+            logger.info(f"参数: T1={t1_months}月, T2={t2_months}月, T3={t3_months}月, {log_selection_criteria}")
 
             # 生成重新选择日期序列 (每T2个月)
             # 从起始日期开始，每隔T2个月生成重平衡日期，表示universe重新选择的时间点
@@ -1180,6 +1186,7 @@ class MarketDataService(IMarketDataService):
                     calculated_t1_end,
                     t3_months=t3_months,
                     top_k=top_k,
+                    top_ratio=top_ratio,
                     api_delay_seconds=api_delay_seconds,
                     batch_delay_seconds=batch_delay_seconds,
                     batch_size=batch_size,
@@ -1321,7 +1328,8 @@ class MarketDataService(IMarketDataService):
         calculated_t1_start: str,
         calculated_t1_end: str,
         t3_months: int,
-        top_k: int,
+        top_k: int | None = None,
+        top_ratio: float | None = None,
         api_delay_seconds: float = 1.0,
         batch_delay_seconds: float = 3.0,
         batch_size: int = 5,
@@ -1334,6 +1342,7 @@ class MarketDataService(IMarketDataService):
             t1_start_date: T1开始日期
             t3_months: T3月数
             top_k: 选择的top数量
+            top_ratio: 选择的top比率
             api_delay_seconds: 每个API请求之间的延迟秒数
             batch_delay_seconds: 每批次请求之间的延迟秒数
             batch_size: 每批次的请求数量
@@ -1418,10 +1427,19 @@ class MarketDataService(IMarketDataService):
                     logger.warning(f"获取 {symbol} 数据时出错，跳过: {e}")
                     continue
 
-            # 按mean daily amount排序并选择top_k
+            # 按mean daily amount排序并选择top_k或top_ratio
             if mean_amounts:
                 sorted_symbols = sorted(mean_amounts.items(), key=lambda x: x[1], reverse=True)
-                top_symbols = sorted_symbols[:top_k]
+
+                if top_ratio is not None:
+                    num_to_select = int(len(sorted_symbols) * top_ratio)
+                elif top_k is not None:
+                    num_to_select = top_k
+                else:
+                    # 默认情况下，如果没有提供top_k或top_ratio，则选择所有
+                    num_to_select = len(sorted_symbols)
+
+                top_symbols = sorted_symbols[:num_to_select]
 
                 universe_symbols = [symbol for symbol, _ in top_symbols]
                 final_amounts = dict(top_symbols)
@@ -1433,10 +1451,10 @@ class MarketDataService(IMarketDataService):
                     logger.info(f"Top 5: {universe_symbols[:5]}")
                     logger.info("完整列表已保存到文件中")
             else:
-                # 如果没有可用数据，至少返回前top_k个eligible symbols
-                universe_symbols = eligible_symbols[:top_k]
-                final_amounts = dict.fromkeys(universe_symbols, 0.0)
-                logger.warning(f"无法通过API获取数据，返回前{len(universe_symbols)}个交易对")
+                # 如果没有可用数据，返回空
+                universe_symbols = []
+                final_amounts = {}
+                logger.warning("无法通过API获取数据，返回空的universe")
 
             return universe_symbols, final_amounts
 
