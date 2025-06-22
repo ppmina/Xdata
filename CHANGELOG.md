@@ -2,6 +2,41 @@
 
 <!-- next-version -->
 
+## v1.7.0 (2025-06-15)
+
+### Bug Fixes
+
+- Change default export path structure ([#10](https://github.com/ppmina/Xdata/pull/10),
+  [`886fc11`](https://github.com/ppmina/Xdata/commit/886fc11b2acca7ce63ba6d10f75bab3f2af68c06))
+
+- Enhance universe definition and market data service
+  ([#10](https://github.com/ppmina/Xdata/pull/10),
+  [`886fc11`](https://github.com/ppmina/Xdata/commit/886fc11b2acca7ce63ba6d10f75bab3f2af68c06))
+
+- Fix date to ts in storagedb ([#10](https://github.com/ppmina/Xdata/pull/10),
+  [`886fc11`](https://github.com/ppmina/Xdata/commit/886fc11b2acca7ce63ba6d10f75bab3f2af68c06))
+
+- Fix pytest ([#10](https://github.com/ppmina/Xdata/pull/10),
+  [`886fc11`](https://github.com/ppmina/Xdata/commit/886fc11b2acca7ce63ba6d10f75bab3f2af68c06))
+
+- Fix some olg bugs ([#10](https://github.com/ppmina/Xdata/pull/10),
+  [`886fc11`](https://github.com/ppmina/Xdata/commit/886fc11b2acca7ce63ba6d10f75bab3f2af68c06))
+
+- Make three demo working fine ([#10](https://github.com/ppmina/Xdata/pull/10),
+  [`886fc11`](https://github.com/ppmina/Xdata/commit/886fc11b2acca7ce63ba6d10f75bab3f2af68c06))
+
+- Readme to latest ([#10](https://github.com/ppmina/Xdata/pull/10),
+  [`886fc11`](https://github.com/ppmina/Xdata/commit/886fc11b2acca7ce63ba6d10f75bab3f2af68c06))
+
+### Features
+
+- Add top_ratio feature replace top_k ([#10](https://github.com/ppmina/Xdata/pull/10),
+  [`886fc11`](https://github.com/ppmina/Xdata/commit/886fc11b2acca7ce63ba6d10f75bab3f2af68c06))
+
+- New feature( universe define and download data) ([#10](https://github.com/ppmina/Xdata/pull/10),
+  [`886fc11`](https://github.com/ppmina/Xdata/commit/886fc11b2acca7ce63ba6d10f75bab3f2af68c06))
+
+
 ## v1.6.0 (2025-06-12)
 
 ### Bug Fixes
