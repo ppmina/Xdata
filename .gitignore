@@ -53,4 +53,8 @@ dist/
 # Ignore mkdoc site
 site/
 
+# Ignore demo_data directory
 demo_data/
+
+# Ignore cursor directory
+.cursor/

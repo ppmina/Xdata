@@ -77,6 +77,10 @@ pip install -e ".[dev-all]"  # 安装所有开发依赖
 ```bash
 uv pip install -e ".[dev-all]"
 ```
+激活uv环境
+```bash
+source .venv/bin/activate  # if fish shell use activate.fish
+```
 
 3. 安装 pre-commit hooks：
 ```bash
