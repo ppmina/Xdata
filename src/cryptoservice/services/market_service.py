@@ -3,27 +3,14 @@
 提供加密货币市场数据获取、处理和存储功能。
 """
 
-import logging
 import time
-import random
-from concurrent.futures import ThreadPoolExecutor, as_completed
-from contextlib import nullcontext
 from datetime import datetime, timedelta
-from decimal import Decimal
 from pathlib import Path
-from threading import Lock
 from typing import Any, Dict, List, Optional
-import threading
-
+from decimal import Decimal
 import pandas as pd
-from rich.logging import RichHandler
-from rich.progress import (
-    BarColumn,
-    Progress,
-    SpinnerColumn,
-    TextColumn,
-    TimeElapsedColumn,
-)
+
+from rich.progress import Progress
 
 from cryptoservice.client import BinanceClientFactory
 from cryptoservice.config import settings, RetryConfig
@@ -47,221 +34,18 @@ from cryptoservice.models import (
     ErrorSeverity,
     IntegrityReport,
 )
-from cryptoservice.utils import DataConverter
-
-# 配置 rich logger
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(message)s",
-    handlers=[RichHandler(rich_tracebacks=True)],
+from cryptoservice.utils import (
+    DataConverter,
+    RateLimitManager,
+    ExponentialBackoff,
+    EnhancedErrorHandler,
+    TimeUtils,
+    logger,
+    OutputMode,
+    time_cache,
+    symbol_cache,
+    calculation_cache,
 )
-logger = logging.getLogger(__name__)
-
-cache_lock = Lock()
-
-
-class RateLimitManager:
-    """API频率限制管理器"""
-
-    def __init__(self, base_delay: float = 0.5):
-        self.base_delay = base_delay
-        self.current_delay = base_delay
-        self.last_request_time = 0.0
-        self.request_count = 0
-        self.window_start_time = time.time()
-        self.consecutive_errors = 0
-        self.max_requests_per_minute = 1800  # 保守估计，低于API限制
-        self.lock = threading.Lock()
-
-    def wait_before_request(self):
-        """在请求前等待适当的时间"""
-        with self.lock:
-            current_time = time.time()
-
-            # 重置计数窗口（每分钟）
-            if current_time - self.window_start_time >= 60:
-                self.request_count = 0
-                self.window_start_time = current_time
-                # 如果长时间没有错误，逐渐降低延迟
-                if self.consecutive_errors == 0:
-                    self.current_delay = max(self.base_delay, self.current_delay * 0.9)
-
-                    # 检查是否接近频率限制
-            requests_this_minute = self.request_count
-
-            if requests_this_minute >= self.max_requests_per_minute * 0.8:  # 达到80%限制时开始减速
-                additional_delay = 2.0
-                logger.warning(f"⚠️ 接近频率限制，增加延迟: {additional_delay}秒")
-            else:
-                additional_delay = 0
-
-            # 计算需要等待的时间
-            time_since_last = current_time - self.last_request_time
-            total_delay = self.current_delay + additional_delay
-
-            if time_since_last < total_delay:
-                wait_time = total_delay - time_since_last
-                if wait_time > 0.1:  # 只记录较长的等待时间
-                    logger.debug(f"等待 {wait_time:.2f}秒 (当前延迟: {self.current_delay:.2f}秒)")
-                time.sleep(wait_time)
-
-            self.last_request_time = time.time()
-            self.request_count += 1
-
-    def handle_rate_limit_error(self):
-        """处理频率限制错误"""
-        with self.lock:
-            self.consecutive_errors += 1
-
-            # 动态增加延迟
-            if self.consecutive_errors <= 3:
-                self.current_delay = min(10.0, self.current_delay * 2)
-                wait_time = 60  # 等待1分钟
-            elif self.consecutive_errors <= 6:
-                self.current_delay = min(15.0, self.current_delay * 1.5)
-                wait_time = 120  # 等待2分钟
-            else:
-                self.current_delay = 20.0
-                wait_time = 300  # 等待5分钟
-
-            logger.warning(
-                f"🚫 频率限制错误 #{self.consecutive_errors}，等待 {wait_time}秒，调整延迟至 {self.current_delay:.2f}秒"
-            )
-
-            # 重置请求计数
-            self.request_count = 0
-            self.window_start_time = time.time()
-
-            return wait_time
-
-    def handle_success(self):
-        """处理成功请求"""
-        with self.lock:
-            if self.consecutive_errors > 0:
-                self.consecutive_errors = max(0, self.consecutive_errors - 1)
-                if self.consecutive_errors == 0:
-                    logger.info(f"✅ 恢复正常，当前延迟: {self.current_delay:.2f}秒")
-
-
-class ExponentialBackoff:
-    """指数退避实现"""
-
-    def __init__(self, config: RetryConfig):
-        self.config = config
-        self.attempt = 0
-
-    def reset(self):
-        """重置重试计数"""
-        self.attempt = 0
-
-    def wait(self) -> float:
-        """计算并执行等待时间"""
-        if self.attempt >= self.config.max_retries:
-            raise Exception(f"超过最大重试次数: {self.config.max_retries}")
-
-        # 计算基础延迟
-        delay = min(
-            self.config.base_delay * (self.config.backoff_multiplier**self.attempt),
-            self.config.max_delay,
-        )
-
-        # 添加抖动以避免惊群效应
-        if self.config.jitter:
-            delay *= 0.5 + random.random() * 0.5
-
-        self.attempt += 1
-
-        logger.debug(f"指数退避: 第{self.attempt}次重试, 等待{delay:.2f}秒")
-        time.sleep(delay)
-
-        return delay
-
-
-class EnhancedErrorHandler:
-    """增强错误处理器"""
-
-    @staticmethod
-    def classify_error(error: Exception) -> ErrorSeverity:
-        """错误分类"""
-        error_str = str(error).lower()
-
-        # API频率限制
-        if any(
-            keyword in error_str
-            for keyword in [
-                "too many requests",
-                "rate limit",
-                "429",
-                "request limit",
-                "-1003",
-            ]
-        ):
-            return ErrorSeverity.MEDIUM
-
-        # 网络相关错误
-        if any(keyword in error_str for keyword in ["connection", "timeout", "network", "dns", "socket"]):
-            return ErrorSeverity.MEDIUM
-
-        # 无效交易对
-        if any(keyword in error_str for keyword in ["invalid symbol", "symbol not found", "unknown symbol"]):
-            return ErrorSeverity.LOW
-
-        # 服务器错误
-        if any(
-            keyword in error_str
-            for keyword in [
-                "500",
-                "502",
-                "503",
-                "504",
-                "server error",
-                "internal error",
-            ]
-        ):
-            return ErrorSeverity.HIGH
-
-        # 认证错误
-        if any(keyword in error_str for keyword in ["unauthorized", "forbidden", "api key", "signature"]):
-            return ErrorSeverity.CRITICAL
-
-        # 默认为中等严重性
-        return ErrorSeverity.MEDIUM
-
-    @staticmethod
-    def should_retry(error: Exception, attempt: int, max_retries: int) -> bool:
-        """判断是否应该重试"""
-        severity = EnhancedErrorHandler.classify_error(error)
-
-        if severity == ErrorSeverity.CRITICAL:
-            return False
-
-        if severity == ErrorSeverity.LOW and attempt > 1:
-            return False
-
-        return attempt < max_retries
-
-    @staticmethod
-    def get_recommended_action(error: Exception) -> str:
-        """获取推荐处理动作"""
-        severity = EnhancedErrorHandler.classify_error(error)
-        error_str = str(error).lower()
-
-        if severity == ErrorSeverity.CRITICAL:
-            return "检查API密钥和权限设置"
-        elif "rate limit" in error_str or "-1003" in error_str:
-            return "频率限制，自动调整请求间隔"
-        elif "connection" in error_str:
-            return "检查网络连接，考虑使用代理"
-        elif "invalid symbol" in error_str:
-            return "验证交易对是否存在和可交易"
-        else:
-            return "检查API文档和错误详情"
-
-    @staticmethod
-    def is_rate_limit_error(error: Exception) -> bool:
-        """判断是否为频率限制错误"""
-        error_str = str(error).lower()
-        return any(keyword in error_str for keyword in ["too many requests", "rate limit", "429", "-1003"])
 
 
 class MarketDataService(IMarketDataService):
@@ -277,7 +61,61 @@ class MarketDataService(IMarketDataService):
         self.client = BinanceClientFactory.create_client(api_key, api_secret)
         self.converter = DataConverter()
         self.db: MarketDB | None = None
-        self.rate_limit_manager = RateLimitManager()
+
+        # 不同API端点的频率限制管理器
+        self.rate_limit_manager = RateLimitManager(base_delay=0.5, max_requests_per_minute=1500)  # 默认管理器
+        self.spot_rate_manager = RateLimitManager(base_delay=0.6, max_requests_per_minute=1200)  # 现货API (1200/min)
+        self.futures_rate_manager = RateLimitManager(base_delay=0.3, max_requests_per_minute=1800)  # 合约API (2400/min)
+        self.heavy_rate_manager = RateLimitManager(base_delay=1.0, max_requests_per_minute=600)  # 高权重API
+        self.batch_rate_manager = RateLimitManager(base_delay=0.8, max_requests_per_minute=1000)  # 批量操作
+
+        # 缓存管理
+        self._cache_managers = {
+            "time_cache": time_cache,
+            "symbol_cache": symbol_cache,
+            "calculation_cache": calculation_cache,
+        }
+
+    def get_cache_stats(self) -> dict[str, Any]:
+        """获取缓存统计信息。
+
+        Returns:
+            dict: 各个缓存的统计信息
+        """
+        stats = {}
+        for cache_name, cache_decorator in self._cache_managers.items():
+            try:
+                stats[cache_name] = cache_decorator.cache_stats()  # type: ignore
+            except Exception as e:
+                stats[cache_name] = {"error": str(e)}
+        return stats
+
+    def clear_all_caches(self) -> None:
+        """清理所有缓存。"""
+        for cache_name, cache_decorator in self._cache_managers.items():
+            try:
+                cache_decorator.cache_clear()  # type: ignore
+                logger.info(f"已清理 {cache_name} 缓存")
+            except Exception as e:
+                logger.warning(f"清理 {cache_name} 缓存时出错: {e}")
+
+    def cleanup_expired_caches(self) -> dict[str, int]:
+        """清理过期缓存。
+
+        Returns:
+            dict: 各个缓存清理的过期项数量
+        """
+        cleanup_stats = {}
+        for cache_name, cache_decorator in self._cache_managers.items():
+            try:
+                expired_count = cache_decorator.cache_cleanup()  # type: ignore
+                cleanup_stats[cache_name] = expired_count
+                if expired_count > 0:
+                    logger.info(f"{cache_name} 清理了 {expired_count} 个过期缓存项")
+            except Exception as e:
+                cleanup_stats[cache_name] = 0
+                logger.warning(f"清理 {cache_name} 过期缓存时出错: {e}")
+        return cleanup_stats
 
     def _validate_and_prepare_path(self, path: Path | str, is_file: bool = False, file_name: str | None = None) -> Path:
         """验证并准备路径。
@@ -319,13 +157,20 @@ class MarketDataService(IMarketDataService):
             SymbolTicker | list[SymbolTicker]: 单个交易对的行情数据或所有交易对的行情数据
         """
         try:
+            # 现货API调用，使用现货频率管理器
+            self.spot_rate_manager.wait_before_request()
+
             ticker = self.client.get_symbol_ticker(symbol=symbol)
             if not ticker:
                 raise InvalidSymbolError(f"Invalid symbol: {symbol}")
 
             if isinstance(ticker, list):
-                return [SymbolTicker.from_binance_ticker(t) for t in ticker]
-            return SymbolTicker.from_binance_ticker(ticker)
+                result: SymbolTicker | list[SymbolTicker] = [SymbolTicker.from_binance_ticker(t) for t in ticker]
+            else:
+                result = SymbolTicker.from_binance_ticker(ticker)
+
+            self.spot_rate_manager.handle_success()
+            return result
 
         except Exception as e:
             logger.error(f"[red]Error fetching ticker for {symbol}: {e}[/red]")
@@ -343,6 +188,10 @@ class MarketDataService(IMarketDataService):
         """
         try:
             logger.info(f"获取当前永续合约交易对列表（筛选条件：{quote_asset}结尾）")
+
+            # 合约API调用，使用合约频率管理器
+            self.futures_rate_manager.wait_before_request()
+
             futures_info = self.client.futures_exchange_info()
             perpetual_symbols = [
                 symbol["symbol"]
@@ -352,28 +201,30 @@ class MarketDataService(IMarketDataService):
                 and symbol["symbol"].endswith(quote_asset)
             ]
 
-            logger.info(f"找到 {len(perpetual_symbols)} 个{quote_asset}永续合约交易对")
+            self.futures_rate_manager.handle_success()
+            logger.success(f"找到 {len(perpetual_symbols)} 个{quote_asset}永续合约交易对")
             return perpetual_symbols
 
         except Exception as e:
             logger.error(f"[red]获取永续合约交易对失败: {e}[/red]")
             raise MarketDataFetchError(f"获取永续合约交易对失败: {e}") from e
 
-    def _date_to_timestamp_range(self, date: str) -> tuple[str, str]:
+    @time_cache
+    def _date_to_timestamp_range(self, date: str, interval: Freq | None = None) -> tuple[str, str]:
         """将日期字符串转换为时间戳范围（开始和结束）。
 
         Args:
             date: 日期字符串，格式为 'YYYY-MM-DD'
+            interval: 时间间隔，用于确定合适的截止时间
 
         Returns:
             tuple[str, str]: (开始时间戳, 结束时间戳)，都是毫秒级时间戳字符串
             - 开始时间戳: 当天的 00:00:00
-            - 结束时间戳: 当天的 23:59:59
+            - 结束时间戳: 对应时间间隔的日截止时间
         """
-        start_time = int(datetime.strptime(f"{date} 00:00:00", "%Y-%m-%d %H:%M:%S").timestamp() * 1000)
-        end_time = int(datetime.strptime(f"{date} 23:59:59", "%Y-%m-%d %H:%M:%S").timestamp() * 1000)
-        return str(start_time), str(end_time)
+        return TimeUtils.date_to_timestamp_range(date, interval)
 
+    @time_cache
     def _date_to_timestamp_start(self, date: str) -> str:
         """将日期字符串转换为当天开始的时间戳。
 
@@ -383,21 +234,22 @@ class MarketDataService(IMarketDataService):
         Returns:
             str: 当天 00:00:00 的毫秒级时间戳字符串
         """
-        timestamp = int(datetime.strptime(f"{date} 00:00:00", "%Y-%m-%d %H:%M:%S").timestamp() * 1000)
-        return str(timestamp)
+        return TimeUtils.date_to_timestamp_start(date)
 
-    def _date_to_timestamp_end(self, date: str) -> str:
-        """将日期字符串转换为当天结束的时间戳。
+    @time_cache
+    def _date_to_timestamp_end(self, date: str, interval: Freq | None = None) -> str:
+        """将日期字符串转换为对应时间间隔的日截止时间戳。
 
         Args:
             date: 日期字符串，格式为 'YYYY-MM-DD'
+            interval: 时间间隔，用于确定合适的截止时间
 
         Returns:
-            str: 当天 23:59:59 的毫秒级时间戳字符串
+            str: 对应时间间隔的日截止时间戳（毫秒）
         """
-        timestamp = int(datetime.strptime(f"{date} 23:59:59", "%Y-%m-%d %H:%M:%S").timestamp() * 1000)
-        return str(timestamp)
+        return TimeUtils.date_to_timestamp_end(date, interval)
 
+    @symbol_cache
     def check_symbol_exists_on_date(self, symbol: str, date: str) -> bool:
         """检查指定日期是否存在该交易对。
 
@@ -409,8 +261,11 @@ class MarketDataService(IMarketDataService):
             bool: 是否存在该交易对
         """
         try:
-            # 将日期转换为时间戳范围
-            start_time, end_time = self._date_to_timestamp_range(date)
+            # 将日期转换为时间戳范围（使用日线间隔）
+            start_time, end_time = self._date_to_timestamp_range(date, Freq.d1)
+
+            # 合约API调用，使用合约频率管理器
+            self.futures_rate_manager.wait_before_request()
 
             # 尝试获取该时间范围内的K线数据
             klines = self.client.futures_klines(
@@ -422,7 +277,10 @@ class MarketDataService(IMarketDataService):
             )
 
             # 如果有数据，说明该日期存在该交易对
-            return bool(klines and len(klines) > 0)
+            result = bool(klines and len(klines) > 0)
+
+            self.futures_rate_manager.handle_success()
+            return result
 
         except Exception as e:
             logger.debug(f"检查交易对 {symbol} 在 {date} 是否存在时出错: {e}")
@@ -445,17 +303,23 @@ class MarketDataService(IMarketDataService):
             list[DailyMarketTicker]: 前N个交易对
         """
         try:
+            # 现货API调用，使用现货频率管理器
+            self.spot_rate_manager.wait_before_request()
+
             tickers = self.client.get_ticker()
             market_tickers = [DailyMarketTicker.from_binance_ticker(t) for t in tickers]
 
             if quote_asset:
                 market_tickers = [t for t in market_tickers if t.symbol.endswith(quote_asset)]
 
-            return sorted(
+            result = sorted(
                 market_tickers,
                 key=lambda x: getattr(x, sort_by.value),
                 reverse=True,
             )[:limit]
+
+            self.spot_rate_manager.handle_success()
+            return result
 
         except Exception as e:
             logger.error(f"[red]Error getting top coins: {e}[/red]")
@@ -472,6 +336,7 @@ class MarketDataService(IMarketDataService):
         """
         try:
             summary: dict[str, Any] = {"snapshot_time": datetime.now(), "data": {}}
+            # get_symbol_ticker 已经内置了频率限制管理
             tickers_result = self.get_symbol_ticker()
             if isinstance(tickers_result, list):
                 tickers = [ticker.to_dict() for ticker in tickers_result]
@@ -516,9 +381,17 @@ class MarketDataService(IMarketDataService):
 
             # 转换为时间戳
             start_ts = self._date_to_timestamp_start(start_time.strftime("%Y-%m-%d"))
-            end_ts = self._date_to_timestamp_end(end_time.strftime("%Y-%m-%d"))
+            end_ts = self._date_to_timestamp_end(end_time.strftime("%Y-%m-%d"), interval)
 
             logger.info(f"获取 {symbol} 的历史数据 ({interval.value})")
+
+            # 根据klines_type选择合适的频率管理器和API
+            if klines_type == HistoricalKlinesType.FUTURES:
+                rate_manager = self.futures_rate_manager
+            else:  # SPOT
+                rate_manager = self.spot_rate_manager
+
+            rate_manager.wait_before_request()
 
             # 根据klines_type选择API
             if klines_type == HistoricalKlinesType.FUTURES:
@@ -541,10 +414,11 @@ class MarketDataService(IMarketDataService):
             data = list(klines)
             if not data:
                 logger.warning(f"未找到交易对 {symbol} 在指定时间段内的数据")
+                rate_manager.handle_success()
                 return []
 
             # 转换为KlineMarketTicker对象
-            return [
+            result = [
                 KlineMarketTicker(
                     symbol=symbol,
                     last_price=Decimal(str(kline[4])),  # 收盘价作为最新价格
@@ -556,6 +430,9 @@ class MarketDataService(IMarketDataService):
                 )
                 for kline in data
             ]
+
+            rate_manager.handle_success()
+            return result
 
         except Exception as e:
             logger.error(f"[red]Error getting historical data for {symbol}: {e}[/red]")
@@ -569,6 +446,7 @@ class MarketDataService(IMarketDataService):
         interval: Freq,
         klines_type: HistoricalKlinesType = HistoricalKlinesType.FUTURES,
         retry_config: Optional[RetryConfig] = None,
+        rate_limit_manager: Optional[RateLimitManager] = None,
     ) -> list[PerpetualMarketTicker]:
         """获取单个交易对的数据 (增强版).
 
@@ -579,9 +457,13 @@ class MarketDataService(IMarketDataService):
             interval: 时间间隔
             klines_type: 行情类型
             retry_config: 重试配置
+            rate_limit_manager: 频率限制管理器，如果为None则使用默认的self.rate_limit_manager
         """
         if retry_config is None:
             retry_config = RetryConfig()
+
+        if rate_limit_manager is None:
+            rate_limit_manager = self.rate_limit_manager
 
         backoff = ExponentialBackoff(retry_config)
         error_handler = EnhancedErrorHandler()
@@ -594,7 +476,7 @@ class MarketDataService(IMarketDataService):
                     logger.debug(f"获取 {symbol} 数据: {start_date} ({start_ts} - {end_ts})")
 
                 # 频率限制控制 - 在API调用前等待
-                self.rate_limit_manager.wait_before_request()
+                rate_limit_manager.wait_before_request()
 
                 # API调用
                 klines = self.client.get_historical_klines_generator(
@@ -609,7 +491,7 @@ class MarketDataService(IMarketDataService):
                 data = list(klines)
                 if not data:
                     logger.debug(f"交易对 {symbol} 在指定时间段内无数据")
-                    self.rate_limit_manager.handle_success()
+                    rate_limit_manager.handle_success()
                     return []
 
                 # 数据质量检查
@@ -626,7 +508,7 @@ class MarketDataService(IMarketDataService):
                 ]
 
                 logger.debug(f"成功获取 {symbol}: {len(result)} 条记录")
-                self.rate_limit_manager.handle_success()
+                rate_limit_manager.handle_success()
                 return result
 
             except Exception as e:
@@ -634,7 +516,7 @@ class MarketDataService(IMarketDataService):
 
                 # 特殊处理频率限制错误
                 if error_handler.is_rate_limit_error(e):
-                    wait_time = self.rate_limit_manager.handle_rate_limit_error()
+                    wait_time = rate_limit_manager.handle_rate_limit_error()
                     logger.warning(f"🚫 频率限制 - {symbol}，等待 {wait_time}秒后重试")
                     time.sleep(wait_time)
                     # 重置退避计数，因为这不是真正的"错误"
@@ -849,234 +731,10 @@ class MarketDataService(IMarketDataService):
                 recommendations=[f"完整性检查失败: {e}", "建议手动验证数据质量"],
             )
 
+    @calculation_cache
     def _calculate_expected_data_points(self, time_diff: timedelta, interval: Freq) -> int:
         """计算期望的数据点数量"""
-        # 简化版本：基于时间差和频率计算期望数据点
-        total_minutes = time_diff.total_seconds() / 60
-
-        interval_minutes = {
-            Freq.m1: 1,
-            Freq.m3: 3,
-            Freq.m5: 5,
-            Freq.m15: 15,
-            Freq.m30: 30,
-            Freq.h1: 60,
-            Freq.h4: 240,
-            Freq.d1: 1440,
-        }.get(interval, 1)
-
-        # 确保至少返回1个数据点，避免除零错误
-        expected_points = int(total_minutes / interval_minutes)
-        return max(1, expected_points)
-
-    def get_perpetual_data(
-        self,
-        symbols: list[str],
-        start_time: str,
-        db_path: Path | str,
-        end_time: str | None = None,
-        interval: Freq = Freq.h1,
-        max_workers: int = 5,
-        max_retries: int = 3,
-        progress: Progress | None = None,
-        request_delay: float = 0.5,
-        # 额外参数，保持向后兼容
-        retry_config: Optional[RetryConfig] = None,
-        enable_integrity_check: bool = True,
-    ) -> IntegrityReport:
-        """获取永续合约数据并存储 (增强版).
-
-        Args:
-            symbols: 交易对列表
-            start_time: 开始时间 (YYYY-MM-DD)
-            db_path: 数据库文件路径 (必须指定，如: /path/to/market.db)
-            end_time: 结束时间 (YYYY-MM-DD)
-            interval: 时间间隔
-            max_workers: 最大线程数
-            max_retries: 最大重试次数
-            retry_config: 重试配置
-            progress: 进度显示器
-            enable_integrity_check: 是否启用完整性检查
-            request_delay: 每次请求间隔（秒），默认0.5秒
-
-        Returns:
-            IntegrityReport: 数据完整性报告
-        """
-        if retry_config is None:
-            retry_config = RetryConfig(max_retries=max_retries)
-
-        # 初始化结果统计
-        successful_symbols = []
-        failed_symbols = []
-        missing_periods = []
-
-        try:
-            if not symbols:
-                raise ValueError("Symbols list cannot be empty")
-
-            # 验证并准备数据库文件路径
-            db_file_path = self._validate_and_prepare_path(db_path, is_file=True)
-            end_time = end_time or datetime.now().strftime("%Y-%m-%d")
-
-            # 将日期字符串转换为时间戳
-            start_ts = self._date_to_timestamp_start(start_time)
-            end_ts = self._date_to_timestamp_end(end_time)
-
-            # 初始化数据库连接
-            if self.db is None:
-                self.db = MarketDB(str(db_file_path))
-
-            # 重新初始化频率限制管理器，使用用户指定的基础延迟
-            self.rate_limit_manager = RateLimitManager(base_delay=request_delay)
-
-            logger.info(f"🚀 开始下载 {len(symbols)} 个交易对的数据")
-            logger.info(f"📅 时间范围: {start_time} 到 {end_time}")
-            logger.info(f"⚙️ 重试配置: 最大{retry_config.max_retries}次, 基础延迟{retry_config.base_delay}秒")
-            logger.info(f"⏱️ 智能频率控制: 基础延迟{request_delay}秒，动态调整")
-
-            # 创建进度跟踪
-            if progress is None:
-                progress = Progress(
-                    SpinnerColumn(),
-                    TextColumn("[progress.description]{task.description}"),
-                    BarColumn(),
-                    TimeElapsedColumn(),
-                )
-
-            def process_symbol(symbol: str) -> Dict[str, Any]:
-                """处理单个交易对的数据获取 (增强版)"""
-                result = {
-                    "symbol": symbol,
-                    "success": False,
-                    "records": 0,
-                    "error": None,
-                }
-
-                try:
-                    data = self._fetch_symbol_data(
-                        symbol=symbol,
-                        start_ts=start_ts,
-                        end_ts=end_ts,
-                        interval=interval,
-                        retry_config=retry_config,
-                    )
-
-                    if data:
-                        if self.db is None:
-                            raise MarketDataFetchError("Database is not initialized")
-
-                        self.db.store_data(data, interval)
-                        result.update(
-                            {
-                                "success": True,
-                                "records": len(data),
-                                "time_range": f"{data[0].open_time} - {data[-1].open_time}",
-                            }
-                        )
-                        logger.debug(f"✅ {symbol}: {len(data)} 条记录")
-                        successful_symbols.append(symbol)
-                    else:
-                        result["error"] = "无数据"
-                        logger.debug(f"⚠️ {symbol}: 无数据")
-                        missing_periods.append(
-                            {
-                                "symbol": symbol,
-                                "period": f"{start_time} - {end_time}",
-                                "reason": "no_data",
-                            }
-                        )
-
-                except InvalidSymbolError as e:
-                    result["error"] = f"无效交易对: {e}"
-                    logger.warning(f"⚠️ 跳过无效交易对 {symbol}")
-                    failed_symbols.append(symbol)
-
-                except Exception as e:
-                    result["error"] = str(e)
-                    logger.error(f"❌ {symbol} 失败: {e}")
-                    failed_symbols.append(symbol)
-                    missing_periods.append(
-                        {
-                            "symbol": symbol,
-                            "period": f"{start_time} - {end_time}",
-                            "reason": str(e),
-                        }
-                    )
-
-                return result
-
-            # 执行并行下载
-            results = []
-            with progress if progress is not None else nullcontext():
-                overall_task = progress.add_task("[cyan]下载交易对数据", total=len(symbols)) if progress else None
-
-                with ThreadPoolExecutor(max_workers=max_workers) as executor:
-                    futures = [executor.submit(process_symbol, symbol) for symbol in symbols]
-
-                    for future in as_completed(futures):
-                        try:
-                            result = future.result()
-                            results.append(result)
-
-                            if progress and overall_task is not None:
-                                progress.update(overall_task, advance=1)
-
-                        except Exception as e:
-                            logger.error(f"❌ 处理异常: {e}")
-
-            # 生成统计报告
-            total_records = sum(r.get("records", 0) for r in results)
-            success_rate = len(successful_symbols) / len(symbols) if symbols else 0
-
-            logger.info("📊 下载完成统计:")
-            logger.info(f"   ✅ 成功: {len(successful_symbols)}/{len(symbols)} ({success_rate:.1%})")
-            logger.info(f"   ❌ 失败: {len(failed_symbols)} 个")
-            logger.info(f"   📈 总记录数: {total_records:,} 条")
-            logger.info(f"   💾 数据库: {db_file_path}")
-
-            # 执行完整性检查
-            if enable_integrity_check and self.db:
-                integrity_report = self._create_integrity_report(
-                    symbols=symbols,
-                    successful_symbols=successful_symbols,
-                    failed_symbols=failed_symbols,
-                    missing_periods=missing_periods,
-                    start_time=start_time,
-                    end_time=end_time,
-                    interval=interval,
-                    db_file_path=db_file_path,
-                )
-            else:
-                # 生成基础报告
-                data_quality_score = len(successful_symbols) / len(symbols) if symbols else 0
-                recommendations = []
-                if data_quality_score < 0.8:
-                    recommendations.append("数据成功率较低，建议检查网络和API配置")
-                if failed_symbols:
-                    recommendations.append(f"有{len(failed_symbols)}个交易对下载失败，建议单独重试")
-
-                integrity_report = IntegrityReport(
-                    total_symbols=len(symbols),
-                    successful_symbols=len(successful_symbols),
-                    failed_symbols=failed_symbols,
-                    missing_periods=missing_periods,
-                    data_quality_score=data_quality_score,
-                    recommendations=recommendations,
-                )
-
-            return integrity_report
-
-        except Exception as e:
-            logger.error(f"❌ 数据下载失败: {e}")
-            # 即使失败也要返回报告
-            return IntegrityReport(
-                total_symbols=len(symbols),
-                successful_symbols=len(successful_symbols),
-                failed_symbols=failed_symbols,
-                missing_periods=missing_periods,
-                data_quality_score=0.0,
-                recommendations=[f"下载失败: {e}", "检查网络连接和API配置"],
-            )
+        return TimeUtils.calculate_expected_data_points(time_diff, interval)
 
     def define_universe(
         self,
@@ -1238,12 +896,12 @@ class MarketDataService(IMarketDataService):
             logger.error(f"[red]定义universe失败: {e}[/red]")
             raise MarketDataFetchError(f"定义universe失败: {e}") from e
 
+    @time_cache
     def _standardize_date_format(self, date_str: str) -> str:
         """标准化日期格式为 YYYY-MM-DD。"""
-        if len(date_str) == 8:  # YYYYMMDD
-            return f"{date_str[:4]}-{date_str[4:6]}-{date_str[6:8]}"
-        return date_str
+        return TimeUtils.standardize_date_format(date_str)
 
+    @calculation_cache
     def _generate_rebalance_dates(self, start_date: str, end_date: str, t2_months: int) -> list[str]:
         """生成重新选择universe的日期序列。
 
@@ -1257,25 +915,12 @@ class MarketDataService(IMarketDataService):
         Returns:
             list[str]: 重平衡日期列表
         """
-        dates = []
-        start_date_obj = pd.to_datetime(start_date)
-        end_date_obj = pd.to_datetime(end_date)
+        return TimeUtils.generate_rebalance_dates(start_date, end_date, t2_months)
 
-        # 从起始日期开始，每隔T2个月生成重平衡日期
-        current_date = start_date_obj
-
-        while current_date <= end_date_obj:
-            dates.append(current_date.strftime("%Y-%m-%d"))
-            current_date = current_date + pd.DateOffset(months=t2_months)
-
-        return dates
-
+    @time_cache
     def _subtract_months(self, date_str: str, months: int) -> str:
         """从日期减去指定月数。"""
-        date_obj = pd.to_datetime(date_str)
-        # 使用pandas的DateOffset来正确处理月份边界问题
-        result_date = date_obj - pd.DateOffset(months=months)
-        return str(result_date.strftime("%Y-%m-%d"))
+        return TimeUtils.subtract_months(date_str, months)
 
     def _get_available_symbols_for_period(self, start_date: str, end_date: str, quote_asset: str = "USDT") -> list[str]:
         """获取指定时间段内实际可用的永续合约交易对。
@@ -1296,26 +941,19 @@ class MarketDataService(IMarketDataService):
             )
 
             available_symbols = []
-            batch_size = 50
-            for i in range(0, len(candidate_symbols), batch_size):
-                batch = candidate_symbols[i : i + batch_size]
-                for symbol in batch:
-                    # 检查在起始日期是否有数据
-                    if self.check_symbol_exists_on_date(symbol, start_date):
-                        available_symbols.append(symbol)
-
-                # 显示进度
-                processed = min(i + batch_size, len(candidate_symbols))
-                logger.info(
-                    f"已检查 {processed}/{len(candidate_symbols)} 个交易对，找到 {len(available_symbols)} 个可用交易对"
-                )
-
-                # 避免API频率限制
-                time.sleep(0.1)
-
+            logger.start_download_progress(len(candidate_symbols), "检查交易对可用性")
+            for i, symbol in enumerate(candidate_symbols):
+                # 检查在起始日期是否有数据
+                if self.check_symbol_exists_on_date(symbol, start_date):
+                    available_symbols.append(symbol)
+                if i % 10 == 0 or i == len(candidate_symbols) - 1:
+                    logger.update_download_progress(
+                        f"已检查 {i + 1}/{len(candidate_symbols)} 个交易对，找到 {len(available_symbols)} 个可用交易对"
+                    )
             logger.info(
                 f"在 {start_date} 到 {end_date} 期间找到 {len(available_symbols)} 个可用的{quote_asset}永续合约交易对"
             )
+            logger.stop_download_progress()
             return available_symbols
 
         except Exception as e:
@@ -1353,6 +991,7 @@ class MarketDataService(IMarketDataService):
             actual_symbols = self._get_available_symbols_for_period(calculated_t1_start, calculated_t1_end, quote_asset)
 
             # 筛除新合约 (创建时间不足T3个月的)
+            logger.info(f"筛除新合约 (创建时间不足{t3_months}个月)")
             cutoff_date = self._subtract_months(calculated_t1_end, t3_months)
             eligible_symbols = [
                 symbol for symbol in actual_symbols if self._symbol_exists_before_date(symbol, cutoff_date)
@@ -1364,37 +1003,30 @@ class MarketDataService(IMarketDataService):
 
             # 通过API获取数据计算mean daily amount
             mean_amounts = {}
+            num_excluded = len(actual_symbols) - len(eligible_symbols)
+            num_eligible = len(eligible_symbols)
+            logger.info(f"已筛除{num_excluded}个合约，开始获取 {num_eligible} 个交易对的历史数据")
+            logger.start_download_progress(len(eligible_symbols), "开始通过 API 获取历史数据")
 
-            logger.info(f"开始通过API获取 {len(eligible_symbols)} 个交易对的历史数据...")
-
-            # 初始化专门用于universe计算的频率管理器
+            # 使用批量操作频率管理器，设置合适的延迟
             universe_rate_manager = RateLimitManager(base_delay=api_delay_seconds)
+            # 为universe计算使用批量频率管理器的基础配置
+            universe_rate_manager.max_requests_per_minute = self.batch_rate_manager.max_requests_per_minute
 
             for i, symbol in enumerate(eligible_symbols):
                 try:
                     # 将日期字符串转换为时间戳
                     start_ts = self._date_to_timestamp_start(calculated_t1_start)
-                    end_ts = self._date_to_timestamp_end(calculated_t1_end)
+                    end_ts = self._date_to_timestamp_end(calculated_t1_end, Freq.d1)
 
-                    # 显示进度（每10个交易对显示一次）
-                    if i % 10 == 0:
-                        logger.info(f"已处理 {i}/{len(eligible_symbols)} 个交易对...")
-
-                    # 临时使用这个频率管理器
-                    original_manager = self.rate_limit_manager
-                    self.rate_limit_manager = universe_rate_manager
-
-                    try:
-                        # 获取历史K线数据
-                        klines = self._fetch_symbol_data(
-                            symbol=symbol,
-                            start_ts=start_ts,
-                            end_ts=end_ts,
-                            interval=Freq.d1,
-                        )
-                    finally:
-                        # 恢复原来的频率管理器
-                        self.rate_limit_manager = original_manager
+                    # 获取历史K线数据，使用专用的频率管理器
+                    klines = self._fetch_symbol_data(
+                        symbol=symbol,
+                        start_ts=start_ts,
+                        end_ts=end_ts,
+                        interval=Freq.d1,
+                        rate_limit_manager=universe_rate_manager,
+                    )
 
                     if klines:
                         # 数据完整性检查
@@ -1422,10 +1054,14 @@ class MarketDataService(IMarketDataService):
                             mean_amounts[symbol] = mean_amount
                         else:
                             logger.warning(f"交易对 {symbol} 在期间内没有有效的成交量数据")
-
+                    if i % 10 == 0 or i == len(eligible_symbols) - 1:
+                        logger.update_download_progress(f"已处理 {i + 1}/{len(eligible_symbols)} 个交易对")
+                    time.sleep(0.1)
                 except Exception as e:
                     logger.warning(f"获取 {symbol} 数据时出错，跳过: {e}")
                     continue
+
+            logger.stop_download_progress()
 
             # 按mean daily amount排序并选择top_k或top_ratio
             if mean_amounts:
@@ -1462,6 +1098,7 @@ class MarketDataService(IMarketDataService):
             logger.error(f"计算日期 {calculated_t1_start} 到 {calculated_t1_end} 的universe时出错: {e}")
             return [], {}
 
+    @symbol_cache
     def _symbol_exists_before_date(self, symbol: str, cutoff_date: str) -> bool:
         """检查交易对是否在指定日期之前就存在。"""
         try:
@@ -1482,7 +1119,6 @@ class MarketDataService(IMarketDataService):
         max_workers: int = 4,
         max_retries: int = 3,
         include_buffer_days: int = 7,
-        retry_config: RetryConfig | None = None,
         request_delay: float = 0.5,  # 请求间隔（秒）
     ) -> None:
         """按周期分别下载universe数据（更精确的下载方式）。
@@ -1547,7 +1183,6 @@ class MarketDataService(IMarketDataService):
                     interval=interval,
                     max_workers=max_workers,
                     max_retries=max_retries,
-                    retry_config=retry_config,
                     enable_integrity_check=True,
                     request_delay=request_delay,
                 )
@@ -1704,7 +1339,7 @@ class MarketDataService(IMarketDataService):
             logger.info(f"   - 成功验证快照: {successful_snapshots}/{total_snapshots} ({success_rate:.1%})")
 
             # 只有在成功率很低时才给出警告
-            if success_rate < 0.5:
+            if success_rate < 0.95:
                 logger.warning(f"⚠️ 验证成功率较低: {success_rate:.1%}")
                 if incomplete_symbols:
                     unique_incomplete = set(incomplete_symbols)
@@ -1720,3 +1355,416 @@ class MarketDataService(IMarketDataService):
         except Exception as e:
             logger.warning(f"数据完整性验证过程中出现问题，但不影响数据使用: {e}")
             logger.info("💡 提示: 验证失败不代表数据下载失败，可以尝试查询具体数据进行确认")
+
+    def get_perpetual_data(
+        self,
+        symbols: list[str],
+        start_time: str,
+        db_path: Path | str,
+        end_time: str | None = None,
+        interval: Freq = Freq.h1,
+        max_workers: int = 5,
+        max_retries: int = 3,
+        request_delay: float = 0.5,
+        progress: Progress | None = None,
+        completeness_threshold: float = 1.0,
+        enable_integrity_check: bool = True,
+    ) -> IntegrityReport:
+        """获取永续合约数据并存储（基于数据库状态管理）.
+
+        基于数据库状态自动实现断点续传，无需额外的状态文件管理。
+
+        Args:
+            symbols: 交易对列表
+            start_time: 开始时间 (YYYY-MM-DD)
+            db_path: 数据库文件路径
+            end_time: 结束时间 (YYYY-MM-DD)
+            interval: 时间间隔
+            max_workers: 最大线程数
+            max_retries: 最大重试次数
+            request_delay: 请求间隔秒数
+            progress: 进度显示器
+            completeness_threshold: 数据完整性阈值 (0.95 = 95%)
+            enable_integrity_check: 是否启用完整性检查
+
+        Returns:
+            IntegrityReport: 数据完整性报告
+        """
+        try:
+            if not symbols:
+                raise ValueError("Symbols list cannot be empty")
+
+            # 验证并准备数据库文件路径
+            db_file_path = self._validate_and_prepare_path(db_path, is_file=True)
+            end_time = end_time or datetime.now().strftime("%Y-%m-%d")
+
+            # 初始化数据库连接
+            if self.db is None:
+                self.db = MarketDB(str(db_file_path))
+
+            # 为此次下载任务设置合适的频率限制管理器
+            # 使用合约频率管理器，但调整延迟以适应用户设置
+            original_delay = self.futures_rate_manager.base_delay
+            self.futures_rate_manager.base_delay = request_delay
+            download_rate_manager = self.futures_rate_manager
+
+            # 设置精简输出模式以减少日志噪音
+            logger.set_output_mode(OutputMode.COMPACT)
+            logger.info("🚀 开始数据下载任务")
+            logger.info(f"📅 时间范围: {start_time} 到 {end_time}")
+            logger.info(f"📊 交易对数量: {len(symbols)}")
+            logger.info(f"⏱️ 请求间隔: {request_delay}秒")
+            logger.info(f"🎯 完整性阈值: {completeness_threshold:.1%}")
+
+            # 基于数据库检查现有数据
+            need_download, already_complete = self._check_database_completeness(
+                symbols, start_time, end_time, interval, completeness_threshold
+            )
+
+            logger.info("📊 数据状态检查完成:")
+            logger.info(f"   - 需要下载: {len(need_download)} 个")
+            logger.info(f"   - 已完整: {len(already_complete)} 个")
+
+            if not need_download:
+                logger.success("✅ 所有数据已完整，无需下载")
+                return IntegrityReport(
+                    total_symbols=len(symbols),
+                    successful_symbols=len(already_complete),
+                    failed_symbols=[],
+                    missing_periods=[],
+                    data_quality_score=1.0,
+                    recommendations=["✅ 所有数据完整，无需额外操作"],
+                )
+
+            # 转换时间戳
+            start_ts = self._date_to_timestamp_start(start_time)
+            end_ts = self._date_to_timestamp_end(end_time, interval)
+
+            # 执行多轮下载（主要下载 + 重试）
+            # 启用进度条显示
+            if not progress:
+                logger.set_output_mode(OutputMode.NORMAL)
+                logger.start_download_progress(len(need_download), "数据下载进度")
+
+            download_results = self._execute_multi_round_download(
+                need_download,
+                start_ts,
+                end_ts,
+                interval,
+                max_workers,
+                max_retries,
+                progress,
+                download_rate_manager,
+            )
+
+            if not progress:
+                logger.stop_download_progress()
+                logger.set_output_mode(OutputMode.COMPACT)
+
+            # 统计结果
+            successful_symbols = already_complete + [r["symbol"] for r in download_results if r["success"]]
+            failed_symbols = [r["symbol"] for r in download_results if not r["success"]]
+            total_records = sum(r.get("records", 0) for r in download_results)
+
+            logger.success("📊 下载任务完成统计:")
+            logger.info(
+                f"   ✅ 成功: {len(successful_symbols)}/{len(symbols)} ({len(successful_symbols) / len(symbols):.1%})"
+            )
+            if failed_symbols:
+                logger.warning(f"   ❌ 失败: {len(failed_symbols)} 个")
+            logger.info(f"   📈 新增记录: {total_records:,} 条")
+            logger.debug(f"   💾 数据库: {db_file_path}")
+
+            # 生成完整性报告
+            missing_periods = [
+                {
+                    "symbol": r["symbol"],
+                    "period": f"{start_time} - {end_time}",
+                    "reason": r.get("error", "Unknown error"),
+                }
+                for r in download_results
+                if not r["success"]
+            ]
+
+            if enable_integrity_check:
+                integrity_report = self._create_integrity_report(
+                    symbols=symbols,
+                    successful_symbols=successful_symbols,
+                    failed_symbols=failed_symbols,
+                    missing_periods=missing_periods,
+                    start_time=start_time,
+                    end_time=end_time,
+                    interval=interval,
+                    db_file_path=db_file_path,
+                )
+            else:
+                data_quality_score = len(successful_symbols) / len(symbols) if symbols else 0
+                recommendations = []
+                if data_quality_score < 0.8:
+                    recommendations.append("数据成功率较低，建议检查网络和API配置")
+                if failed_symbols:
+                    recommendations.append(f"有{len(failed_symbols)}个交易对下载失败，可重新运行继续下载")
+
+                integrity_report = IntegrityReport(
+                    total_symbols=len(symbols),
+                    successful_symbols=len(successful_symbols),
+                    failed_symbols=failed_symbols,
+                    missing_periods=missing_periods,
+                    data_quality_score=data_quality_score,
+                    recommendations=recommendations,
+                )
+
+            return integrity_report
+
+        except Exception as e:
+            logger.error(f"❌ 数据下载失败: {e}")
+            return IntegrityReport(
+                total_symbols=len(symbols),
+                successful_symbols=0,
+                failed_symbols=symbols,
+                missing_periods=[
+                    {
+                        "symbol": s,
+                        "period": f"{start_time} - {end_time or 'now'}",
+                        "reason": str(e),
+                    }
+                    for s in symbols
+                ],
+                data_quality_score=0.0,
+                recommendations=[
+                    f"下载失败: {e}",
+                    "检查网络连接和API配置",
+                    "可重新运行此方法进行重试",
+                ],
+            )
+        finally:
+            # 恢复原始的延迟设置
+            if "original_delay" in locals():
+                self.futures_rate_manager.base_delay = original_delay
+
+    def _check_database_completeness(
+        self,
+        symbols: list[str],
+        start_time: str,
+        end_time: str,
+        interval: Freq,
+        completeness_threshold: float = 0.95,
+    ) -> tuple[list[str], list[str]]:
+        """基于数据库检查数据完整性.
+
+        Args:
+            symbols: 交易对列表
+            start_time: 开始时间
+            end_time: 结束时间
+            interval: 时间间隔
+            completeness_threshold: 完整性阈值
+
+        Returns:
+            tuple: (需要下载的symbols, 已完整的symbols)
+        """
+        logger.info("🔍 检查数据库中的现有数据...")
+
+        need_download = []
+        already_complete = []
+
+        # 计算期望的数据点数量
+        start_dt = pd.to_datetime(start_time)
+        end_dt = pd.to_datetime(end_time)
+        time_diff = end_dt - start_dt
+        expected_points = self._calculate_expected_data_points(time_diff, interval)
+
+        for symbol in symbols:
+            try:
+                # 查询数据库中的数据
+                if self.db is None:
+                    raise MarketDataFetchError("Database is not initialized")
+
+                df = self.db.read_data(
+                    symbols=[symbol],
+                    start_time=start_time,
+                    end_time=end_time,
+                    freq=interval,
+                    raise_on_empty=False,
+                )
+
+                if df is not None and not df.empty:
+                    # 计算数据完整性
+                    actual_points = len(df)
+                    completeness = actual_points / expected_points if expected_points > 0 else 0
+
+                    if completeness >= completeness_threshold:
+                        already_complete.append(symbol)
+                        logger.debug(f"✅ {symbol}: 数据完整 ({completeness:.1%}, {actual_points}/{expected_points})")
+                    else:
+                        need_download.append(symbol)
+                        logger.debug(f"⚠️ {symbol}: 数据不完整 ({completeness:.1%}, {actual_points}/{expected_points})")
+                else:
+                    need_download.append(symbol)
+                    logger.debug(f"❌ {symbol}: 无数据")
+
+            except Exception as e:
+                logger.debug(f"检查 {symbol} 数据时出错: {e}")
+                need_download.append(symbol)
+
+        return need_download, already_complete
+
+    def _execute_multi_round_download(
+        self,
+        symbols: list[str],
+        start_ts: str,
+        end_ts: str,
+        interval: Freq,
+        max_workers: int,
+        max_retries: int,
+        progress: Progress | None = None,
+        rate_limit_manager: Optional[RateLimitManager] = None,
+    ) -> list[dict]:
+        """执行多轮下载（主要下载 + 重试失败的）.
+
+        Args:
+            symbols: 需要下载的交易对列表
+            start_ts: 开始时间戳
+            end_ts: 结束时间戳
+            interval: 时间间隔
+            max_workers: 最大线程数
+            max_retries: 最大重试次数
+            progress: 进度显示器
+            rate_limit_manager: 频率限制管理器
+
+        Returns:
+            list[dict]: 下载结果列表
+        """
+        from concurrent.futures import ThreadPoolExecutor, as_completed
+        from contextlib import nullcontext
+
+        all_results = []
+        symbols_to_process = symbols.copy()
+
+        for round_num in range(max_retries + 1):
+            if not symbols_to_process:
+                break
+
+            round_name = "主要下载" if round_num == 0 else f"重试第{round_num}轮"
+            logger.info(f"🔄 开始{round_name}: {len(symbols_to_process)} 个交易对")
+
+            round_results = []
+
+            with progress if progress is not None else nullcontext():
+                task_desc = f"[cyan]{round_name}"
+                overall_task = progress.add_task(task_desc, total=len(symbols_to_process)) if progress else None
+
+                with ThreadPoolExecutor(max_workers=max_workers) as executor:
+                    futures = [
+                        executor.submit(
+                            self._download_single_symbol,
+                            symbol,
+                            start_ts,
+                            end_ts,
+                            interval,
+                            rate_limit_manager,
+                        )
+                        for symbol in symbols_to_process
+                    ]
+
+                    for future in as_completed(futures):
+                        try:
+                            result = future.result()
+                            round_results.append(result)
+                            all_results.append(result)
+
+                            if progress and overall_task is not None:
+                                progress.update(overall_task, advance=1)
+
+                        except Exception as e:
+                            logger.error(f"❌ 处理异常: {e}")
+
+            # 准备下一轮的失败交易对
+            failed_symbols = [r["symbol"] for r in round_results if not r["success"]]
+            successful_count = len(round_results) - len(failed_symbols)
+
+            logger.info(f"📊 {round_name}完成: 成功 {successful_count}, 失败 {len(failed_symbols)}")
+
+            # 更新待处理列表
+            symbols_to_process = failed_symbols
+
+        return all_results
+
+    def _download_single_symbol(
+        self,
+        symbol: str,
+        start_ts: str,
+        end_ts: str,
+        interval: Freq,
+        rate_limit_manager: Optional[RateLimitManager] = None,
+    ) -> dict:
+        """下载单个交易对的数据.
+
+        Args:
+            symbol: 交易对
+            start_ts: 开始时间戳
+            end_ts: 结束时间戳
+            interval: 时间间隔
+            rate_limit_manager: 频率限制管理器
+
+        Returns:
+            dict: 下载结果
+        """
+        result = {
+            "symbol": symbol,
+            "success": False,
+            "records": 0,
+            "error": None,
+        }
+
+        try:
+            # 获取数据
+            data = self._fetch_symbol_data(
+                symbol=symbol,
+                start_ts=start_ts,
+                end_ts=end_ts,
+                interval=interval,
+                rate_limit_manager=rate_limit_manager,
+            )
+
+            if data:
+                if self.db is None:
+                    raise MarketDataFetchError("Database is not initialized")
+
+                # 存储到数据库
+                self.db.store_data(data, interval)
+
+                result.update(
+                    {
+                        "success": True,
+                        "records": len(data),
+                        "time_range": f"{data[0].open_time} - {data[-1].open_time}",
+                    }
+                )
+
+                # 使用自定义logger进行行内更新
+                if logger.output_mode == OutputMode.COMPACT:
+                    logger.print_inline(f"✅ {symbol}: {len(data)} 条记录")
+                else:
+                    logger.debug(f"✅ {symbol}: {len(data)} 条记录")
+
+                # 如果有启用的进度条，更新进度
+                try:
+                    logger.update_symbol_progress(symbol, "完成")
+                except Exception:
+                    pass  # 进度条可能未启用，忽略错误
+            else:
+                result["error"] = "无数据"
+                if logger.output_mode == OutputMode.COMPACT:
+                    logger.print_inline(f"⚠️ {symbol}: 无数据")
+                else:
+                    logger.debug(f"⚠️ {symbol}: 无数据")
+
+        except InvalidSymbolError as e:
+            result["error"] = f"无效交易对: {e}"
+            logger.warning(f"⚠️ 跳过无效交易对 {symbol}")
+
+        except Exception as e:
+            result["error"] = str(e)
+            logger.error(f"❌ {symbol} 失败: {e}")
+
+        return result

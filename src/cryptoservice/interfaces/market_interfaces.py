@@ -1,11 +1,10 @@
 from abc import abstractmethod
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Protocol, Optional
+from typing import Any, Protocol
 
 from rich.progress import Progress
 
-from cryptoservice.config import RetryConfig
 from cryptoservice.models import (
     DailyMarketTicker,
     Freq,
@@ -97,9 +96,9 @@ class IMarketDataService(Protocol):
         interval: Freq = Freq.h1,
         max_workers: int = 5,
         max_retries: int = 3,
-        progress: Progress | None = None,
         request_delay: float = 0.5,
-        retry_config: Optional[RetryConfig] = None,
+        progress: Progress | None = None,
+        completeness_threshold: float = 1.0,
         enable_integrity_check: bool = True,
     ) -> IntegrityReport:
         """获取永续合约历史数据, 并存储到指定数据库.
@@ -124,12 +123,11 @@ class IMarketDataService(Protocol):
         universe_file: Path | str,
         db_path: Path | str,
         data_path: Path | str | None = None,
-        interval: Freq = Freq.h1,
+        interval: Freq = Freq.m1,
         max_workers: int = 4,
         max_retries: int = 3,
         include_buffer_days: int = 7,
-        retry_config: Optional[RetryConfig] = None,
-        request_delay: float = 0.5,
+        request_delay: float = 0.5,  # 请求间隔（秒）
     ) -> None:
         """根据universe定义文件下载相应的历史数据到数据库.
 

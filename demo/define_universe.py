@@ -11,7 +11,7 @@ START_DATE = "2024-10-01"
 END_DATE = "2024-10-07"
 
 # 输出文件路径
-OUTPUT_PATH = "./data/universe.json"
+OUTPUT_PATH = "../data/universe.json"
 
 # Universe 配置参数
 T1_MONTHS = 1  # 1个月回看期
@@ -48,7 +48,7 @@ def main():
     service = MarketDataService(api_key=api_key, api_secret=api_secret)
 
     try:
-        universe_def = service.define_universe(
+        service.define_universe(
             start_date=START_DATE,
             end_date=END_DATE,
             t1_months=T1_MONTHS,
@@ -64,16 +64,6 @@ def main():
             batch_size=BATCH_SIZE,
             quote_asset=QUOTE_ASSET,
         )
-
-        print("✅ Universe定义完成!")
-        print(f"   📊 快照数量: {len(universe_def.snapshots)}")
-        print(f"   📁 输出文件: {OUTPUT_PATH}")
-
-        if universe_def.snapshots:
-            snapshot = universe_def.snapshots[0]
-            print(f"   🔍 示例快照: {snapshot.effective_date}")
-            print(f"   💱 交易对数量: {len(snapshot.symbols)}")
-            print(f"   📝 前5个交易对: {snapshot.symbols[:5]}")
 
     except Exception as e:
         print(f"❌ Universe定义失败: {e}")
