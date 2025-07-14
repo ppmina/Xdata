@@ -2,6 +2,72 @@
 
 <!-- next-version -->
 
+## v1.8.0 (2025-07-14)
+
+### Bug Fixes
+
+- Change default export path structure
+  ([`9cda028`](https://github.com/ppmina/Xdata/commit/9cda0282d6bfeee822c805de13f04be0995ebe93))
+
+- Change default export path structure ([#11](https://github.com/ppmina/Xdata/pull/11),
+  [`41dea5e`](https://github.com/ppmina/Xdata/commit/41dea5e650bb742aab88e3ac107f532b081ec750))
+
+- Enhance universe definition and market data service
+  ([`5f280f9`](https://github.com/ppmina/Xdata/commit/5f280f922792d07ec7d2c037c5860542f41d7e01))
+
+- Enhance universe definition and market data service
+  ([#11](https://github.com/ppmina/Xdata/pull/11),
+  [`41dea5e`](https://github.com/ppmina/Xdata/commit/41dea5e650bb742aab88e3ac107f532b081ec750))
+
+- Fix date to ts in storagedb
+  ([`9b5b7d3`](https://github.com/ppmina/Xdata/commit/9b5b7d3320fd4c063b5f4b22592252af1ce8e522))
+
+- Fix date to ts in storagedb ([#11](https://github.com/ppmina/Xdata/pull/11),
+  [`41dea5e`](https://github.com/ppmina/Xdata/commit/41dea5e650bb742aab88e3ac107f532b081ec750))
+
+- Fix pytest
+  ([`b128dc2`](https://github.com/ppmina/Xdata/commit/b128dc2a3bad23cf3b693ce0d118132c204c0612))
+
+- Fix pytest ([#11](https://github.com/ppmina/Xdata/pull/11),
+  [`41dea5e`](https://github.com/ppmina/Xdata/commit/41dea5e650bb742aab88e3ac107f532b081ec750))
+
+- Fix some olg bugs
+  ([`62ddeea`](https://github.com/ppmina/Xdata/commit/62ddeea6461d1f76b8895f3f16aec6e167cc2556))
+
+- Fix some olg bugs ([#11](https://github.com/ppmina/Xdata/pull/11),
+  [`41dea5e`](https://github.com/ppmina/Xdata/commit/41dea5e650bb742aab88e3ac107f532b081ec750))
+
+- Make three demo working fine
+  ([`3cb76cc`](https://github.com/ppmina/Xdata/commit/3cb76ccece32637714cf09f264ac6c54b398ef9d))
+
+- Make three demo working fine ([#11](https://github.com/ppmina/Xdata/pull/11),
+  [`41dea5e`](https://github.com/ppmina/Xdata/commit/41dea5e650bb742aab88e3ac107f532b081ec750))
+
+- Readme to latest
+  ([`3817eb4`](https://github.com/ppmina/Xdata/commit/3817eb46903de46db4b1c36da2713f50ccc01917))
+
+- Readme to latest ([#11](https://github.com/ppmina/Xdata/pull/11),
+  [`41dea5e`](https://github.com/ppmina/Xdata/commit/41dea5e650bb742aab88e3ac107f532b081ec750))
+
+### Features
+
+- Add four market features(oi, lsratio, funding rate, category)
+  ([#13](https://github.com/ppmina/Xdata/pull/13),
+  [`c2294ea`](https://github.com/ppmina/Xdata/commit/c2294ead8f4a3b1c50d5e282238254a258671ed7))
+
+- Add top_ratio feature replace top_k
+  ([`f1e0ccf`](https://github.com/ppmina/Xdata/commit/f1e0ccff4b60aea3df39b4b06794f9d89400d2ee))
+
+- Add top_ratio feature replace top_k ([#11](https://github.com/ppmina/Xdata/pull/11),
+  [`41dea5e`](https://github.com/ppmina/Xdata/commit/41dea5e650bb742aab88e3ac107f532b081ec750))
+
+- New feature( universe define and download data)
+  ([`fdaf46c`](https://github.com/ppmina/Xdata/commit/fdaf46cd9e80f9a1a7eeccdee5c02b1c6f8a2db6))
+
+- New feature( universe define and download data) ([#11](https://github.com/ppmina/Xdata/pull/11),
+  [`41dea5e`](https://github.com/ppmina/Xdata/commit/41dea5e650bb742aab88e3ac107f532b081ec750))
+
+
 ## v1.7.0 (2025-06-15)
 
 ### Bug Fixes
