@@ -27,6 +27,15 @@ RETRY_CONFIG = (
 REQUEST_DELAY = 2  # 请求间隔（秒）
 INCLUDE_BUFFER_DAYS = 7  # 包含缓冲期天数
 
+# 新特征配置
+DOWNLOAD_MARKET_METRICS = True  # 是否下载市场指标数据 (资金费率、持仓量、多空比例)
+METRICS_INTERVAL = Freq.h1  # 市场指标数据时间间隔 (考虑到资金费率最小粒度是小时)
+LONG_SHORT_RATIO_PERIOD = (
+    Freq.h1
+)  # 多空比例时间周期 (原始数据为m5, 上或下采样至目标频率)
+LONG_SHORT_RATIO_TYPES = ["account"]  # 多空比例类型: account, position, global, taker
+USE_BINANCE_VISION = True  # 是否使用 Binance Vision 下载特征数据 (推荐)
+
 # ========================================
 
 
@@ -62,6 +71,11 @@ def main():
             max_retries=MAX_RETRIES,
             include_buffer_days=INCLUDE_BUFFER_DAYS,
             request_delay=REQUEST_DELAY,
+            download_market_metrics=DOWNLOAD_MARKET_METRICS,
+            metrics_interval=METRICS_INTERVAL,
+            long_short_ratio_period=LONG_SHORT_RATIO_PERIOD,
+            long_short_ratio_types=LONG_SHORT_RATIO_TYPES,
+            use_binance_vision=USE_BINANCE_VISION,
         )
 
         print("✅ 数据下载完成!")

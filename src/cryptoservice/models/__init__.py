@@ -6,6 +6,11 @@ from .market_ticker import (
     PerpetualMarketTicker,
     SymbolTicker,
 )
+from .market_data import (
+    FundingRate,
+    OpenInterest,
+    LongShortRatio,
+)
 from .universe import UniverseConfig, UniverseDefinition, UniverseSnapshot
 from .integrity_report import IntegrityReport
 
@@ -14,6 +19,9 @@ __all__ = [
     "DailyMarketTicker",
     "KlineMarketTicker",
     "PerpetualMarketTicker",
+    "FundingRate",
+    "OpenInterest",
+    "LongShortRatio",
     "SortBy",
     "Freq",
     "HistoricalKlinesType",

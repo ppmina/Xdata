@@ -12,8 +12,14 @@ from datetime import datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
 from threading import Lock
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, cast
 import threading
+import requests
+import zipfile
+from io import BytesIO
+import csv
+from urllib3.util.retry import Retry
+from requests.adapters import HTTPAdapter
 
 import pandas as pd
 from rich.logging import RichHandler
@@ -46,6 +52,9 @@ from cryptoservice.models import (
     UniverseSnapshot,
     ErrorSeverity,
     IntegrityReport,
+    FundingRate,
+    OpenInterest,
+    LongShortRatio,
 )
 from cryptoservice.utils import DataConverter
 
@@ -198,6 +207,62 @@ class EnhancedErrorHandler:
         ):
             return ErrorSeverity.MEDIUM
 
+        # SSL相关错误 - 通常是网络不稳定，可重试
+        if any(
+            keyword in error_str
+            for keyword in [
+                "ssl",
+                "sslerror",
+                "ssleoferror",
+                "unexpected_eof_while_reading",
+                "ssl: unexpected_eof_while_reading",
+                "certificate verify failed",
+                "handshake failure",
+                "ssl: handshake_failure",
+                "ssl: tlsv1_alert_protocol_version",
+                "ssl: wrong_version_number",
+                "ssl context",
+                "ssl: certificate_verify_failed",
+                "ssl: bad_record_mac",
+                "ssl: decryption_failed_or_bad_record_mac",
+                "ssl: sslv3_alert_handshake_failure",
+                "ssl: tlsv1_alert_internal_error",
+                "ssl: connection_lost",
+                "ssl: application_data_after_close_notify",
+                "ssl: bad_certificate",
+                "ssl: unsupported_certificate",
+                "ssl: certificate_required",
+                "ssl: no_shared_cipher",
+                "ssl: peer_did_not_return_a_certificate",
+                "ssl: certificate_unknown",
+                "ssl: illegal_parameter",
+                "ssl: unknown_ca",
+                "ssl: access_denied",
+                "ssl: decode_error",
+                "ssl: decrypt_error",
+                "ssl: export_restriction",
+                "ssl: protocol_version",
+                "ssl: insufficient_security",
+                "ssl: internal_error",
+                "ssl: user_cancelled",
+                "ssl: no_renegotiation",
+                "ssl: unsupported_extension",
+                "ssl: certificate_unobtainable",
+                "ssl: unrecognized_name",
+                "ssl: bad_certificate_status_response",
+                "ssl: bad_certificate_hash_value",
+                "ssl: unknown_psk_identity",
+                "eof occurred in violation of protocol",
+                "connection was interrupted",
+                "connection aborted",
+                "connection reset by peer",
+                "broken pipe",
+                "connection timed out",
+                "connection refused",
+            ]
+        ):
+            return ErrorSeverity.MEDIUM
+
         # 网络相关错误
         if any(keyword in error_str for keyword in ["connection", "timeout", "network", "dns", "socket"]):
             return ErrorSeverity.MEDIUM
@@ -250,6 +315,16 @@ class EnhancedErrorHandler:
             return "检查API密钥和权限设置"
         elif "rate limit" in error_str or "-1003" in error_str:
             return "频率限制，自动调整请求间隔"
+        elif any(
+            keyword in error_str
+            for keyword in [
+                "ssl",
+                "sslerror",
+                "ssleoferror",
+                "unexpected_eof_while_reading",
+            ]
+        ):
+            return "SSL连接错误，自动重试并考虑网络稳定性"
         elif "connection" in error_str:
             return "检查网络连接，考虑使用代理"
         elif "invalid symbol" in error_str:
@@ -278,8 +353,10 @@ class MarketDataService(IMarketDataService):
         self.converter = DataConverter()
         self.db: MarketDB | None = None
         self.rate_limit_manager = RateLimitManager()
+        self.failed_downloads: dict[str, list[dict]] = {}  # 记录失败的下载
 
-    def _validate_and_prepare_path(self, path: Path | str, is_file: bool = False, file_name: str | None = None) -> Path:
+    @staticmethod
+    def _validate_and_prepare_path(path: Path | str, is_file: bool = False, file_name: str | None = None) -> Path:
         """验证并准备路径。
 
         Args:
@@ -1484,6 +1561,11 @@ class MarketDataService(IMarketDataService):
         include_buffer_days: int = 7,
         retry_config: RetryConfig | None = None,
         request_delay: float = 0.5,  # 请求间隔（秒）
+        download_market_metrics: bool = True,  # 是否下载市场指标数据（资金费率、持仓量、多空比例）
+        metrics_interval: Freq = Freq.m5,  # 市场指标数据的时间间隔
+        long_short_ratio_period: Freq = Freq.m5,  # 多空比例的时间周期
+        long_short_ratio_types: list[str] | None = None,  # 多空比例类型
+        use_binance_vision: bool = False,  # 是否使用 Binance Vision 下载指标数据
     ) -> None:
         """按周期分别下载universe数据（更精确的下载方式）。
 
@@ -1498,6 +1580,11 @@ class MarketDataService(IMarketDataService):
             max_retries: 最大重试次数
             include_buffer_days: 缓冲天数
             request_delay: 每次请求间隔（秒），默认0.5秒
+            download_funding_rate: 是否下载资金费率数据
+            download_market_metrics: 是否下载市场指标数据（资金费率、持仓量、多空比例）
+            metrics_interval: 市场指标数据的时间间隔
+            long_short_ratio_period: 多空比例的时间周期
+            long_short_ratio_types: 多空比例类型列表，默认['account', 'position']
         """
         try:
             # 验证路径
@@ -1516,12 +1603,20 @@ class MarketDataService(IMarketDataService):
             # 加载universe定义
             universe_def = UniverseDefinition.load_from_file(universe_file_obj)
 
+            # 设置多空比例类型默认值
+            if long_short_ratio_types is None:
+                long_short_ratio_types = ["account", "position"]
+
             logger.info("📊 按周期下载数据:")
             logger.info(f"   - 总快照数: {len(universe_def.snapshots)}")
             logger.info(f"   - 数据频率: {interval.value}")
             logger.info(f"   - 并发线程: {max_workers}")
             logger.info(f"   - 请求间隔: {request_delay}秒")
             logger.info(f"   - 数据库路径: {db_file_path}")
+            logger.info(f"   - 下载市场指标: {download_market_metrics}")
+            if download_market_metrics:
+                logger.info(f"   - 指标数据间隔: {metrics_interval}")
+                logger.info(f"   - 多空比例类型: {long_short_ratio_types}")
             if data_path_obj:
                 logger.info(f"   - 数据文件路径: {data_path_obj}")
 
@@ -1538,7 +1633,7 @@ class MarketDataService(IMarketDataService):
                     f"   - 下载范围: {snapshot.start_date} 到 {snapshot.end_date} (含{include_buffer_days}天缓冲)"
                 )
 
-                # 下载该周期的使用期间数据
+                # 下载K线数据
                 self.get_perpetual_data(
                     symbols=snapshot.symbols,
                     start_time=snapshot.start_date,
@@ -1552,6 +1647,19 @@ class MarketDataService(IMarketDataService):
                     request_delay=request_delay,
                 )
 
+                # 下载市场指标数据
+                if download_market_metrics:
+                    logger.info("   📈 开始下载市场指标数据...")
+                    self._download_market_metrics_for_snapshot(
+                        snapshot=snapshot,
+                        db_path=db_file_path,
+                        interval=metrics_interval,
+                        period=long_short_ratio_period,
+                        long_short_ratio_types=long_short_ratio_types,
+                        request_delay=request_delay,
+                        use_binance_vision=use_binance_vision,
+                    )
+
                 logger.info(f"   ✅ 快照 {snapshot.effective_date} 下载完成")
 
             logger.info("🎉 所有universe数据下载完成!")
@@ -1560,6 +1668,335 @@ class MarketDataService(IMarketDataService):
         except Exception as e:
             logger.error(f"[red]按周期下载universe数据失败: {e}[/red]")
             raise MarketDataFetchError(f"按周期下载universe数据失败: {e}") from e
+
+    def _download_market_metrics_for_snapshot(
+        self,
+        snapshot,
+        db_path: Path,
+        interval: Freq = Freq.m5,
+        period: Freq = Freq.m5,
+        long_short_ratio_types: list[str] | None = None,
+        request_delay: float = 0.5,
+        use_binance_vision: bool = False,
+    ) -> None:
+        """为单个快照下载市场指标数据。
+
+        Args:
+            snapshot: Universe快照
+            db_path: 数据库文件路径
+            interval: 时间间隔
+            period: 多空比例的时间周期
+            long_short_ratio_types: 多空比例类型列表
+            request_delay: 请求间隔
+            use_binance_vision: 是否使用 Binance Vision 下载数据
+        """
+        try:
+            # 初始化数据库连接
+            if self.db is None:
+                self.db = MarketDB(str(db_path))
+
+            # 设置默认值
+            if long_short_ratio_types is None:
+                long_short_ratio_types = ["account"]
+
+            symbols = snapshot.symbols
+            start_time = snapshot.start_date
+            end_time = snapshot.end_date
+
+            if use_binance_vision:
+                # 下载资金费率数据
+                self._download_funding_rate_batch(
+                    symbols=symbols,
+                    start_time=start_time,
+                    end_time=end_time,
+                    request_delay=request_delay,
+                )
+                logger.info("      📊 使用 Binance Vision 下载市场指标数据...")
+                # 使用 Binance Vision 下载数据
+                self.download_binance_vision_metrics(
+                    symbols=symbols,
+                    start_date=start_time,
+                    end_date=end_time,
+                    data_types=["openInterest", "longShortRatio"],
+                    request_delay=request_delay,
+                )
+            else:
+                logger.info("      📊 使用 API 下载市场指标数据...")
+                # 使用传统 API 方式下载数据
+                self._download_funding_rate_batch(
+                    symbols=symbols,
+                    start_time=start_time,
+                    end_time=end_time,
+                    request_delay=request_delay,
+                )
+
+                self._download_open_interest_batch(
+                    symbols=symbols,
+                    start_time=start_time,
+                    end_time=end_time,
+                    interval=interval,
+                    request_delay=request_delay,
+                )
+
+                for ratio_type in long_short_ratio_types:
+                    logger.info(f"        - 类型: {ratio_type}")
+                    self._download_long_short_ratio_batch(
+                        symbols=symbols,
+                        start_time=start_time,
+                        end_time=end_time,
+                        period=period,
+                        ratio_type=ratio_type,
+                        request_delay=request_delay,
+                    )
+
+            logger.info("      ✅ 市场指标数据下载完成")
+
+        except Exception as e:
+            logger.error(f"[red]下载市场指标数据失败: {e}[/red]")
+            raise MarketDataFetchError(f"下载市场指标数据失败: {e}") from e
+
+    def _download_funding_rate_batch(
+        self,
+        symbols: list[str],
+        start_time: str,
+        end_time: str,
+        request_delay: float = 0.5,
+    ) -> None:
+        """批量下载资金费率数据。
+
+        Args:
+            symbols: 交易对列表
+            start_time: 开始时间
+            end_time: 结束时间
+            request_delay: 请求延迟（秒）
+
+        Note:
+            - 速率限制: 与/fapi/v1/fundingInfo共享500请求/5分钟/IP限制
+            - 如果不发送时间参数，返回最近的数据
+            - 数据按升序排列
+        """
+        try:
+            logger.info("    💰 批量下载资金费率数据")
+
+            all_funding_rates = []
+            downloaded_count = 0
+            failed_count = 0
+
+            for i, symbol in enumerate(symbols):
+                try:
+                    logger.debug(f"        获取 {symbol} 资金费率 ({i + 1}/{len(symbols)})")
+
+                    # 频率限制 - 比其他API更严格 (500/5min vs 1000/5min)
+                    if request_delay > 0:
+                        time.sleep(request_delay)
+
+                    funding_rates = self.get_funding_rate(
+                        symbol=symbol,
+                        start_time=start_time,
+                        end_time=end_time,
+                        limit=1000,  # 使用最大值以获取更多数据
+                    )
+
+                    if funding_rates:
+                        all_funding_rates.extend(funding_rates)
+                        downloaded_count += 1
+                        logger.debug(f"        ✅ {symbol}: {len(funding_rates)} 条记录")
+                    else:
+                        logger.debug(f"        ⚠️ {symbol}: 无数据")
+
+                except Exception as e:
+                    failed_count += 1
+                    error_msg = str(e).lower()
+                    if any(keyword in error_msg for keyword in ["rate", "limit", "429", "exceeded"]):
+                        logger.warning(f"        ⚠️ {symbol}: 可能遇到速率限制 - {e}")
+                        # 遇到速率限制时增加延迟
+                        if request_delay < 2.0:
+                            time.sleep(2.0)
+                    else:
+                        logger.warning(f"        ❌ {symbol}: {e}")
+                    continue
+
+            # 批量存储
+            if all_funding_rates and self.db:
+                self.db.store_funding_rate(all_funding_rates)
+                logger.info(f"        ✅ 存储了 {len(all_funding_rates)} 条资金费率记录")
+
+            # 汇总结果
+            logger.info(f"    💰 资金费率数据下载完成: 成功 {downloaded_count}/{len(symbols)}，失败 {failed_count}")
+
+        except Exception as e:
+            logger.error(f"[red]批量下载资金费率失败: {e}[/red]")
+            raise MarketDataFetchError(f"批量下载资金费率失败: {e}") from e
+
+    def _download_open_interest_batch(
+        self,
+        symbols: list[str],
+        start_time: str,
+        end_time: str,
+        interval: Freq = Freq.m5,
+        request_delay: float = 0.5,
+    ) -> None:
+        """批量下载持仓量数据。"""
+        try:
+            logger.info("    📊 批量下载持仓量数据")
+
+            all_open_interests = []
+            downloaded_count = 0
+            failed_count = 0
+
+            for i, symbol in enumerate(symbols):
+                try:
+                    logger.debug(f"        获取 {symbol} 持仓量 ({i + 1}/{len(symbols)})")
+
+                    # 频率限制
+                    if request_delay > 0:
+                        time.sleep(request_delay)
+
+                    open_interests = self.get_open_interest(
+                        symbol=symbol,
+                        period=interval,
+                        start_time=start_time,
+                        end_time=end_time,
+                        limit=500,
+                    )
+
+                    if open_interests:
+                        all_open_interests.extend(open_interests)
+                        downloaded_count += 1
+                        logger.debug(f"        ✅ {symbol}: {len(open_interests)} 条记录")
+                    else:
+                        logger.debug(f"        ⚠️ {symbol}: 无数据")
+
+                except Exception as e:
+                    failed_count += 1
+                    error_msg = str(e).lower()
+                    if any(keyword in error_msg for keyword in ["invalid", "time", "range", "data", "starttime"]):
+                        logger.debug(f"        ⚠️ {symbol}: 时间范围问题 - {e}")
+                    else:
+                        logger.warning(f"        ❌ {symbol}: {e}")
+                    continue
+
+            # 批量存储
+            if all_open_interests and self.db:
+                self.db.store_open_interest(all_open_interests)
+                logger.info(f"        ✅ 存储了 {len(all_open_interests)} 条持仓量记录")
+
+            # 汇总结果
+            logger.info(f"    📊 持仓量数据下载完成: 成功 {downloaded_count}/{len(symbols)}，失败 {failed_count}")
+
+        except Exception as e:
+            logger.error(f"[red]批量下载持仓量失败: {e}[/red]")
+            raise MarketDataFetchError(f"批量下载持仓量失败: {e}") from e
+
+    def _download_long_short_ratio_batch(
+        self,
+        symbols: list[str],
+        start_time: str,
+        end_time: str,
+        period: str = "5m",
+        ratio_type: str = "account",
+        request_delay: float = 0.5,
+    ) -> None:
+        """批量下载多空比例数据。
+
+        Args:
+            symbols: 交易对列表
+            start_time: 开始时间
+            end_time: 结束时间
+            period: 时间周期，支持 "5m","15m","30m","1h","2h","4h","6h","12h","1d"
+            ratio_type: 比例类型
+            request_delay: 请求延迟（秒）
+
+        Note:
+            - 根据币安API限制，只有最近30天的数据可用
+            - 自动跳过超出30天限制的时间范围
+        """
+        try:
+            logger.info(f"    📊 批量下载多空比例数据 (类型: {ratio_type})")
+
+            # 检查30天限制
+            current_time = datetime.now()
+            thirty_days_ago = current_time - timedelta(days=30)
+
+            # 解析时间字符串
+            try:
+                start_dt = datetime.fromisoformat(
+                    start_time.replace("Z", "+00:00") if start_time.endswith("Z") else start_time
+                )
+                end_dt = datetime.fromisoformat(end_time.replace("Z", "+00:00") if end_time.endswith("Z") else end_time)
+            except ValueError:
+                # 如果时间格式不对，尝试其他格式
+                start_dt = pd.to_datetime(start_time)
+                end_dt = pd.to_datetime(end_time)
+
+            # 检查时间范围是否超出30天限制
+            if end_dt < thirty_days_ago:
+                logger.warning(f"    ⚠️ 请求时间范围完全超出30天限制 ({end_dt} < {thirty_days_ago})，跳过此批次")
+                return
+
+            # 调整开始时间以符合30天限制
+            original_start_time = start_time
+            if start_dt < thirty_days_ago:
+                logger.warning("    ⚠️ 开始时间超出30天限制，调整为最近30天")
+                start_time = thirty_days_ago.strftime("%Y-%m-%d")
+
+            # 参数验证
+            valid_periods = ["5m", "15m", "30m", "1h", "2h", "4h", "6h", "12h", "1d"]
+            if period not in valid_periods:
+                logger.error(f"    ❌ 无效的period参数: {period}，支持的值: {valid_periods}")
+                return
+
+            all_long_short_ratios = []
+            downloaded_count = 0
+            failed_count = 0
+
+            for i, symbol in enumerate(symbols):
+                try:
+                    logger.debug(f"        获取 {symbol} 多空比例 ({i + 1}/{len(symbols)})")
+
+                    # 频率限制
+                    if request_delay > 0:
+                        time.sleep(request_delay)
+
+                    long_short_ratios = self.get_long_short_ratio(
+                        symbol=symbol,
+                        period=period,
+                        ratio_type=ratio_type,
+                        start_time=start_time,
+                        end_time=end_time,
+                        limit=500,
+                    )
+
+                    if long_short_ratios:
+                        all_long_short_ratios.extend(long_short_ratios)
+                        downloaded_count += 1
+                        logger.debug(f"        ✅ {symbol}: {len(long_short_ratios)} 条记录")
+                    else:
+                        logger.debug(f"        ⚠️ {symbol}: 无数据 (可能超出30天限制)")
+
+                except Exception as e:
+                    failed_count += 1
+                    error_msg = str(e).lower()
+                    if any(keyword in error_msg for keyword in ["invalid", "time", "range", "data"]):
+                        logger.debug(f"        ⚠️ {symbol}: 可能超出30天限制 - {e}")
+                    else:
+                        logger.warning(f"        ❌ {symbol}: {e}")
+                    continue
+
+            # 批量存储
+            if all_long_short_ratios and self.db:
+                self.db.store_long_short_ratio(all_long_short_ratios)
+                logger.info(f"        ✅ 存储了 {len(all_long_short_ratios)} 条多空比例记录")
+
+            # 汇总结果
+            logger.info(f"    📊 多空比例数据下载完成: 成功 {downloaded_count}/{len(symbols)}，失败 {failed_count}")
+
+            if original_start_time != start_time:
+                logger.info(f"    📅 时间范围已调整: {original_start_time} -> {start_time} (受30天限制)")
+
+        except Exception as e:
+            logger.error(f"[red]批量下载多空比例失败: {e}[/red]")
+            raise MarketDataFetchError(f"批量下载多空比例失败: {e}") from e
 
     def _analyze_universe_data_requirements(
         self,
@@ -1627,6 +2064,253 @@ class MarketDataService(IMarketDataService):
             "snapshots_count": len(universe_def.snapshots),
             "note": "推荐使用download_universe_data_by_periods方法进行精确下载",
         }
+
+    def get_funding_rate(
+        self,
+        symbol: str,
+        start_time: str | datetime | None = None,
+        end_time: str | datetime | None = None,
+        limit: int = 100,  # 改为API默认值
+    ) -> list[FundingRate]:
+        """获取永续合约资金费率历史。
+
+        Args:
+            symbol: 交易对名称，如 'BTCUSDT'
+            start_time: 开始时间（毫秒时间戳或日期字符串）
+            end_time: 结束时间（毫秒时间戳或日期字符串）
+            limit: 返回数量限制，默认100，最大1000
+
+        Returns:
+            list[FundingRate]: 资金费率数据列表
+
+        Note:
+            - 如果不发送startTime和endTime，返回最近的limit条数据
+            - 如果时间范围内数据超过limit，从startTime开始返回limit条
+            - 数据按升序排列
+            - 速率限制: 与/fapi/v1/fundingInfo共享500/5分钟/IP限制
+
+        Raises:
+            MarketDataFetchError: 获取数据失败时
+        """
+        try:
+            logger.info(f"获取 {symbol} 的资金费率数据")
+
+            # 参数验证
+            if limit < 1 or limit > 1000:
+                raise ValueError(f"limit参数必须在1-1000范围内，当前值: {limit}")
+
+            # 构建请求参数
+            params = {
+                "symbol": symbol,
+                "limit": limit,
+            }
+
+            # 处理时间参数
+            if start_time is not None:
+                if isinstance(start_time, str):
+                    start_time_ts = self._date_to_timestamp_start(start_time)
+                elif isinstance(start_time, datetime):
+                    start_time_ts = str(int(start_time.timestamp() * 1000))
+                else:
+                    start_time_ts = str(start_time)
+                params["startTime"] = start_time_ts
+
+            if end_time is not None:
+                if isinstance(end_time, str):
+                    end_time_ts = self._date_to_timestamp_end(end_time)
+                elif isinstance(end_time, datetime):
+                    end_time_ts = str(int(end_time.timestamp() * 1000))
+                else:
+                    end_time_ts = str(end_time)
+                params["endTime"] = end_time_ts
+
+            # 频率限制控制 - Funding Rate API: 500请求/5分钟/IP (更严格)
+            self.rate_limit_manager.wait_before_request()
+
+            # 调用Binance API
+            data = self.client.futures_funding_rate(**params)
+
+            if not data:
+                logger.warning(f"未找到 {symbol} 的资金费率数据")
+                return []
+
+            # 转换为FundingRate对象
+            funding_rates = [FundingRate.from_binance_response(item) for item in data]
+
+            logger.info(f"成功获取 {symbol} 的 {len(funding_rates)} 条资金费率记录")
+            self.rate_limit_manager.handle_success()
+
+            return funding_rates
+
+        except ValueError as e:
+            logger.error(f"[red]参数验证失败 {symbol}: {e}[/red]")
+            raise
+        except Exception as e:
+            logger.error(f"[red]获取资金费率失败 {symbol}: {e}[/red]")
+            raise MarketDataFetchError(f"获取资金费率失败: {e}") from e
+
+    def get_open_interest(
+        self,
+        symbol: str,
+        period: str = "5m",
+        start_time: str | datetime | None = None,
+        end_time: str | datetime | None = None,
+        limit: int = 500,
+    ) -> list[OpenInterest]:
+        """获取永续合约持仓量数据。
+
+        Args:
+            symbol: 交易对名称，如 'BTCUSDT'
+            period: 时间周期，支持 "5m","15m","30m","1h","2h","4h","6h","12h","1d"
+            start_time: 开始时间（毫秒时间戳或日期字符串）
+            end_time: 结束时间（毫秒时间戳或日期字符串）
+            limit: 返回数量限制，默认500，最大500
+
+        Returns:
+            list[OpenInterest]: 持仓量数据列表
+
+        Raises:
+            MarketDataFetchError: 获取数据失败时
+        """
+        try:
+            logger.info(f"获取 {symbol} 的持仓量数据")
+
+            # 构建请求参数
+            params = {
+                "symbol": symbol,
+                "period": period,
+                "limit": min(limit, 500),
+            }
+
+            # 处理时间参数
+            if start_time is not None:
+                if isinstance(start_time, str):
+                    start_time_ts = self._date_to_timestamp_start(start_time)
+                elif isinstance(start_time, datetime):
+                    start_time_ts = str(int(start_time.timestamp() * 1000))
+                else:
+                    start_time_ts = str(start_time)
+                params["startTime"] = start_time_ts
+
+            if end_time is not None:
+                if isinstance(end_time, str):
+                    end_time_ts = self._date_to_timestamp_end(end_time)
+                elif isinstance(end_time, datetime):
+                    end_time_ts = str(int(end_time.timestamp() * 1000))
+                else:
+                    end_time_ts = str(end_time)
+                params["endTime"] = end_time_ts
+
+            # 频率限制控制
+            self.rate_limit_manager.wait_before_request()
+
+            # 调用Binance API - 获取历史持仓量数据
+            data = self.client.futures_open_interest_hist(**params)
+
+            if not data:
+                logger.warning(f"未找到 {symbol} 的持仓量数据")
+                return []
+
+            # 转换为OpenInterest对象
+            open_interests = [OpenInterest.from_binance_response(item) for item in data]
+
+            logger.info(f"成功获取 {symbol} 的 {len(open_interests)} 条持仓量记录")
+            self.rate_limit_manager.handle_success()
+
+            return open_interests
+
+        except Exception as e:
+            logger.error(f"[red]获取持仓量失败 {symbol}: {e}[/red]")
+            raise MarketDataFetchError(f"获取持仓量失败: {e}") from e
+
+    def get_long_short_ratio(
+        self,
+        symbol: str,
+        period: str = "5m",
+        ratio_type: str = "account",
+        start_time: str | datetime | None = None,
+        end_time: str | datetime | None = None,
+        limit: int = 500,
+    ) -> list[LongShortRatio]:
+        """获取多空比例数据。
+
+        Args:
+            symbol: 交易对名称，如 'BTCUSDT'
+            period: 时间周期，支持 "5m","15m","30m","1h","2h","4h","6h","12h","1d"
+            ratio_type: 比例类型:
+                - "account": 顶级交易者账户多空比
+                - "position": 顶级交易者持仓多空比
+                - "global": 全局多空比
+                - "taker": 大额交易者多空比
+            start_time: 开始时间（毫秒时间戳或日期字符串）
+            end_time: 结束时间（毫秒时间戳或日期字符串）
+            limit: 返回数量限制，默认500，最大500
+
+        Returns:
+            list[LongShortRatio]: 多空比例数据列表
+
+        Raises:
+            MarketDataFetchError: 获取数据失败时
+        """
+        try:
+            logger.info(f"获取 {symbol} 的多空比例数据 (类型: {ratio_type})")
+
+            # 构建请求参数
+            params = {
+                "symbol": symbol,
+                "period": period,
+                "limit": min(limit, 500),
+            }
+
+            # 处理时间参数
+            if start_time is not None:
+                if isinstance(start_time, str):
+                    start_time_ts = self._date_to_timestamp_start(start_time)
+                elif isinstance(start_time, datetime):
+                    start_time_ts = str(int(start_time.timestamp() * 1000))
+                else:
+                    start_time_ts = str(start_time)
+                params["startTime"] = start_time_ts
+
+            if end_time is not None:
+                if isinstance(end_time, str):
+                    end_time_ts = self._date_to_timestamp_end(end_time)
+                elif isinstance(end_time, datetime):
+                    end_time_ts = str(int(end_time.timestamp() * 1000))
+                else:
+                    end_time_ts = str(end_time)
+                params["endTime"] = end_time_ts
+
+            # 频率限制控制
+            self.rate_limit_manager.wait_before_request()
+
+            # 根据ratio_type选择不同的API端点
+            if ratio_type == "account":
+                data = self.client.futures_top_longshort_account_ratio(**params)
+            elif ratio_type == "position":
+                data = self.client.futures_top_longshort_position_ratio(**params)
+            elif ratio_type == "global":
+                data = self.client.futures_global_longshort_ratio(**params)
+            elif ratio_type == "taker":
+                data = self.client.futures_taker_longshort_ratio(**params)
+            else:
+                raise ValueError(f"不支持的ratio_type: {ratio_type}")
+
+            if not data:
+                logger.warning(f"未找到 {symbol} 的多空比例数据")
+                return []
+
+            # 转换为LongShortRatio对象
+            long_short_ratios = [LongShortRatio.from_binance_response(item, ratio_type) for item in data]
+
+            logger.info(f"成功获取 {symbol} 的 {len(long_short_ratios)} 条多空比例记录")
+            self.rate_limit_manager.handle_success()
+
+            return long_short_ratios
+
+        except Exception as e:
+            logger.error(f"[red]获取多空比例失败 {symbol}: {e}[/red]")
+            raise MarketDataFetchError(f"获取多空比例失败: {e}") from e
 
     def _verify_universe_data_integrity(
         self,
@@ -1720,3 +2404,1116 @@ class MarketDataService(IMarketDataService):
         except Exception as e:
             logger.warning(f"数据完整性验证过程中出现问题，但不影响数据使用: {e}")
             logger.info("💡 提示: 验证失败不代表数据下载失败，可以尝试查询具体数据进行确认")
+
+    def download_binance_vision_metrics(
+        self,
+        symbols: list[str],
+        start_date: str,
+        end_date: str,
+        data_types: list[str] | None = None,
+        request_delay: float = 1.0,
+    ) -> None:
+        """从 Binance Vision 下载期货指标数据 (OI 和 Long-Short Ratio)。
+
+        Args:
+            symbols: 交易对列表
+            start_date: 开始日期 (YYYY-MM-DD)
+            end_date: 结束日期 (YYYY-MM-DD)
+            data_types: 数据类型列表，支持 "openInterest", "longShortRatio"
+            request_delay: 请求延迟（秒）
+        """
+        if data_types is None:
+            data_types = ["openInterest", "longShortRatio"]
+
+        try:
+            logger.info(f"开始从 Binance Vision 下载指标数据: {data_types}")
+
+            if self.db is None:
+                raise ValueError("数据库未初始化")
+
+            # 创建日期范围
+            date_range = pd.date_range(start=start_date, end=end_date, freq="D")
+
+            for date in date_range:
+                date_str = date.strftime("%Y-%m-%d")
+                logger.info(f"处理日期: {date_str}")
+
+                # 下载指标数据（所有类型都在同一个文件中）
+                self._download_metrics_from_vision(symbols, date_str, request_delay)
+
+                # 请求延迟
+                if request_delay > 0:
+                    time.sleep(request_delay)
+
+            logger.info("✅ Binance Vision 指标数据下载完成")
+
+        except Exception as e:
+            logger.error(f"从 Binance Vision 下载指标数据失败: {e}")
+            raise
+
+    def _download_metrics_from_vision(
+        self,
+        symbols: list[str],
+        date: str,
+        request_delay: float = 1.0,
+    ) -> None:
+        """从 Binance Vision 下载指标数据（持仓量和多空比例）。
+
+        Args:
+            symbols: 交易对列表
+            date: 日期 (YYYY-MM-DD)
+            request_delay: 请求延迟（秒）
+        """
+        try:
+            date_obj = datetime.strptime(date, "%Y-%m-%d")
+            date_str = date_obj.strftime("%Y-%m-%d")
+
+            # Binance Vision S3 URL 格式
+            base_url = "https://s3-ap-northeast-1.amazonaws.com/data.binance.vision/data/futures/um/daily/metrics"
+
+            for symbol in symbols:
+                try:
+                    # 构建 URL - 所有指标数据在同一个文件中
+                    url = f"{base_url}/{symbol}/{symbol}-metrics-{date_str}.zip"
+
+                    logger.debug(f"下载 {symbol} 指标数据: {url}")
+
+                    # 下载并解析数据（带重试机制）
+                    retry_config = RetryConfig(max_retries=3, base_delay=2.0)
+                    metrics_data = self._download_and_parse_metrics_csv(url, symbol, retry_config)
+
+                    if metrics_data and self.db:
+                        # 存储持仓量数据
+                        if metrics_data.get("open_interest"):
+                            self.db.store_open_interest(metrics_data["open_interest"])
+                            logger.info(
+                                f"✅ {symbol}: 存储了 {date_str} {len(metrics_data['open_interest'])} 条持仓量记录"
+                            )
+
+                        # 存储多空比例数据
+                        if metrics_data.get("long_short_ratio"):
+                            self.db.store_long_short_ratio(metrics_data["long_short_ratio"])
+                            logger.info(
+                                f"✅ {symbol}: 存储了 {date_str} {len(metrics_data['long_short_ratio'])} 条多空比例记录"
+                            )
+                    else:
+                        logger.warning(f"⚠️ {symbol}: 无法获取指标数据")
+
+                except Exception as e:
+                    logger.warning(f"下载 {symbol} 指标数据失败: {e}")
+                    # 记录失败的下载
+                    self._record_failed_download(symbol, url, str(e), date_str)
+                    continue
+
+                # 请求延迟
+                if request_delay > 0:
+                    time.sleep(request_delay)
+
+        except Exception as e:
+            logger.error(f"从 Binance Vision 下载指标数据失败: {e}")
+            raise
+
+    def _create_enhanced_session(self) -> requests.Session:
+        """创建增强的网络请求会话，具有更好的SSL配置和连接池设置。"""
+        session = requests.Session()
+
+        # 配置重试策略
+        retry_strategy = Retry(
+            total=3,
+            backoff_factor=1,
+            status_forcelist=[429, 500, 502, 503, 504],
+            allowed_methods=["GET", "POST"],
+        )
+
+        # 创建自定义的 HTTPAdapter
+        adapter = HTTPAdapter(
+            max_retries=retry_strategy,
+            pool_connections=10,
+            pool_maxsize=20,
+            pool_block=False,
+        )
+
+        # 挂载适配器到会话
+        session.mount("http://", adapter)
+        session.mount("https://", adapter)
+
+        # 设置默认头部
+        session.headers.update(
+            {
+                "User-Agent": (
+                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                    "AppleWebKit/537.36 (KHTML, like Gecko) "
+                    "Chrome/91.0.4472.124 Safari/537.36"
+                ),
+                "Accept": "application/json, text/plain, */*",
+                "Accept-Language": "en-US,en;q=0.9",
+                "Accept-Encoding": "gzip, deflate, br",
+                "Connection": "keep-alive",
+                "Upgrade-Insecure-Requests": "1",
+            }
+        )
+
+        return session
+
+    def _record_failed_download(self, symbol: str, url: str, error: str, date: str) -> None:
+        """记录失败的下载。
+
+        Args:
+            symbol: 交易对符号
+            url: 下载URL
+            error: 错误信息
+            date: 日期
+        """
+        if symbol not in self.failed_downloads:
+            self.failed_downloads[symbol] = []
+
+        self.failed_downloads[symbol].append(
+            {
+                "url": url,
+                "error": error,
+                "date": date,
+                "timestamp": datetime.now().isoformat(),
+                "retry_count": 0,
+            }
+        )
+
+    def get_failed_downloads(self) -> dict[str, list[dict]]:
+        """获取失败的下载记录。
+
+        Returns:
+            失败下载记录的字典
+        """
+        return self.failed_downloads.copy()
+
+    def clear_failed_downloads(self, symbol: str | None = None) -> None:
+        """清除失败的下载记录。
+
+        Args:
+            symbol: 可选，指定要清除的交易对，如果不指定则清除所有
+        """
+        if symbol:
+            self.failed_downloads.pop(symbol, None)
+        else:
+            self.failed_downloads.clear()
+
+    def retry_failed_downloads(self, symbol: str | None = None, max_retries: int = 3) -> dict[str, Any]:
+        """重试失败的下载。
+
+        Args:
+            symbol: 可选，指定要重试的交易对，如果不指定则重试所有
+            max_retries: 最大重试次数
+
+        Returns:
+            重试结果统计
+        """
+        if not self.failed_downloads:
+            logger.info("📋 没有失败的下载记录")
+            return {"total": 0, "success": 0, "failed": 0}
+
+        symbols_to_retry = [symbol] if symbol else list(self.failed_downloads.keys())
+        total_attempts = 0
+        success_count = 0
+        failed_count = 0
+
+        for retry_symbol in symbols_to_retry:
+            if retry_symbol not in self.failed_downloads:
+                continue
+
+            failures = self.failed_downloads[retry_symbol].copy()
+
+            for failure in failures:
+                if failure["retry_count"] >= max_retries:
+                    logger.debug(f"⏭️ {retry_symbol}: 跳过，已达到最大重试次数")
+                    continue
+
+                total_attempts += 1
+
+                try:
+                    logger.info(f"🔄 重试下载 {retry_symbol}: {failure['date']}")
+
+                    # 尝试重新下载
+                    retry_config = RetryConfig(max_retries=2, base_delay=3.0)
+                    metrics_data = self._download_and_parse_metrics_csv(failure["url"], retry_symbol, retry_config)
+
+                    if metrics_data and self.db:
+                        # 存储数据
+                        if metrics_data.get("open_interest"):
+                            self.db.store_open_interest(metrics_data["open_interest"])
+                        if metrics_data.get("long_short_ratio"):
+                            self.db.store_long_short_ratio(metrics_data["long_short_ratio"])
+
+                        # 从失败列表中移除
+                        self.failed_downloads[retry_symbol].remove(failure)
+                        if not self.failed_downloads[retry_symbol]:
+                            del self.failed_downloads[retry_symbol]
+
+                        success_count += 1
+                        logger.info(f"✅ {retry_symbol}: 重试成功")
+
+                    else:
+                        failure["retry_count"] += 1
+                        failed_count += 1
+                        logger.warning(f"❌ {retry_symbol}: 重试失败")
+
+                except Exception as e:
+                    failure["retry_count"] += 1
+                    failed_count += 1
+                    logger.warning(f"❌ {retry_symbol}: 重试异常 - {e}")
+
+                # 避免过于频繁的重试
+                time.sleep(1.0)
+
+        result: dict[str, Any] = {
+            "total": total_attempts,
+            "success": success_count,
+            "failed": failed_count,
+        }
+
+        logger.info(f"📊 重试统计: 总计 {total_attempts}, 成功 {success_count}, 失败 {failed_count}")
+        return result
+
+    def _validate_metrics_data(self, data: dict[str, list], symbol: str, url: str) -> dict[str, list] | None:
+        """验证 metrics 数据的完整性和质量。
+
+        Args:
+            data: 包含 metrics 数据的字典
+            symbol: 交易对符号
+            url: 数据源URL
+
+        Returns:
+            验证后的数据字典，如果数据不合格则返回None
+        """
+        try:
+            issues = []
+            validated_data: dict[str, list] = {
+                "open_interest": [],
+                "long_short_ratio": [],
+            }
+
+            # 验证持仓量数据
+            if data.get("open_interest"):
+                oi_data = data["open_interest"]
+                valid_oi = []
+
+                for i, oi in enumerate(oi_data):
+                    try:
+                        # 检查必要字段
+                        if not hasattr(oi, "symbol") or not hasattr(oi, "open_interest") or not hasattr(oi, "time"):
+                            issues.append(f"持仓量记录 {i}: 缺少必要字段")
+                            continue
+
+                        # 检查数据有效性
+                        if oi.open_interest < 0:
+                            issues.append(f"持仓量记录 {i}: 持仓量为负数")
+                            continue
+
+                        # 检查时间戳有效性
+                        if oi.time <= 0:
+                            issues.append(f"持仓量记录 {i}: 时间戳无效")
+                            continue
+
+                        valid_oi.append(oi)
+
+                    except Exception as e:
+                        issues.append(f"持仓量记录 {i}: 验证失败 - {e}")
+                        continue
+
+                validated_data["open_interest"] = valid_oi
+
+                # 质量检查
+                if len(valid_oi) < len(oi_data) * 0.5:
+                    logger.warning(f"⚠️ {symbol}: 持仓量数据质量较低，有效记录 {len(valid_oi)}/{len(oi_data)}")
+
+            # 验证多空比例数据
+            if data.get("long_short_ratio"):
+                lsr_data = data["long_short_ratio"]
+                valid_lsr = []
+
+                for i, lsr in enumerate(lsr_data):
+                    try:
+                        # 检查必要字段
+                        if (
+                            not hasattr(lsr, "symbol")
+                            or not hasattr(lsr, "long_short_ratio")
+                            or not hasattr(lsr, "time")
+                        ):
+                            issues.append(f"多空比例记录 {i}: 缺少必要字段")
+                            continue
+
+                        # 检查数据有效性
+                        if lsr.long_short_ratio < 0:
+                            issues.append(f"多空比例记录 {i}: 比例为负数")
+                            continue
+
+                        # 检查时间戳有效性
+                        if lsr.time <= 0:
+                            issues.append(f"多空比例记录 {i}: 时间戳无效")
+                            continue
+
+                        valid_lsr.append(lsr)
+
+                    except Exception as e:
+                        issues.append(f"多空比例记录 {i}: 验证失败 - {e}")
+                        continue
+
+                validated_data["long_short_ratio"] = valid_lsr
+
+                # 质量检查
+                if len(valid_lsr) < len(lsr_data) * 0.5:
+                    logger.warning(f"⚠️ {symbol}: 多空比例数据质量较低，有效记录 {len(valid_lsr)}/{len(lsr_data)}")
+
+            # 记录验证结果
+            if issues:
+                logger.debug(f"📋 {symbol}: 数据验证发现 {len(issues)} 个问题")
+                if len(issues) <= 3:
+                    for issue in issues:
+                        logger.debug(f"  - {issue}")
+                else:
+                    for issue in issues[:3]:
+                        logger.debug(f"  - {issue}")
+                    logger.debug(f"  - ... 还有 {len(issues) - 3} 个问题")
+
+            # 检查是否有有效数据
+            if not validated_data["open_interest"] and not validated_data["long_short_ratio"]:
+                logger.warning(f"⚠️ {symbol}: 没有有效的metrics数据")
+                return None
+
+            logger.debug(
+                f"✅ {symbol}: 数据验证通过 - "
+                f"持仓量: {len(validated_data['open_interest'])}, "
+                f"多空比例: {len(validated_data['long_short_ratio'])}"
+            )
+            return validated_data
+
+        except Exception as e:
+            logger.warning(f"❌ {symbol}: 数据验证失败 - {e}")
+            return data  # 验证失败时返回原始数据
+
+    def _download_and_parse_metrics_csv(
+        self,
+        url: str,
+        symbol: str,
+        retry_config: Optional[RetryConfig] = None,
+    ) -> dict[str, list] | None:
+        """下载并解析 Binance Vision 指标 CSV 数据（带重试机制）。
+
+        Args:
+            url: 下载 URL
+            symbol: 交易对符号
+            retry_config: 重试配置
+
+        Returns:
+            包含不同指标数据的字典
+        """
+        if retry_config is None:
+            retry_config = RetryConfig(max_retries=3, base_delay=2.0)
+
+        backoff = ExponentialBackoff(retry_config)
+        error_handler = EnhancedErrorHandler()
+
+        while True:
+            try:
+                # 使用增强的会话下载 ZIP 文件
+                session = self._create_enhanced_session()
+                response = session.get(url, timeout=30)
+                response.raise_for_status()
+
+                # 解压 ZIP 文件
+                with zipfile.ZipFile(BytesIO(response.content)) as zip_file:
+                    # 在 ZIP 文件中查找 CSV 文件
+                    csv_files = [f for f in zip_file.namelist() if f.endswith(".csv")]
+
+                    if not csv_files:
+                        logger.warning(f"ZIP 文件中没有找到 CSV 文件: {url}")
+                        return None
+
+                    result: dict[str, list] = {
+                        "open_interest": [],
+                        "long_short_ratio": [],
+                    }
+
+                    # 处理每个 CSV 文件
+                    for csv_file in csv_files:
+                        try:
+                            with zip_file.open(csv_file) as f:
+                                content = f.read().decode("utf-8")
+
+                            # 解析 CSV 内容
+                            csv_reader = csv.DictReader(content.splitlines())
+                            rows = list(csv_reader)
+
+                            if not rows:
+                                logger.warning(f"CSV 文件 {csv_file} 为空")
+                                continue
+
+                            # 检查数据结构，所有指标数据都在同一个 CSV 文件中
+                            first_row = rows[0]
+
+                            # 如果包含持仓量字段，解析持仓量数据
+                            if "sum_open_interest" in first_row:
+                                oi_data = self._parse_oi_data(rows, symbol)
+                                result["open_interest"].extend(oi_data)
+
+                            # 如果包含多空比例字段，解析多空比例数据
+                            if any(
+                                field in first_row
+                                for field in [
+                                    "sum_toptrader_long_short_ratio",
+                                    "count_long_short_ratio",
+                                    "sum_taker_long_short_vol_ratio",
+                                ]
+                            ):
+                                lsr_data = self._parse_lsr_data(rows, symbol, csv_file)
+                                result["long_short_ratio"].extend(lsr_data)
+
+                        except Exception as e:
+                            logger.warning(f"解析 CSV 文件 {csv_file} 时出错: {e}")
+                            continue
+
+                    # 数据完整性检查
+                    if result["open_interest"] or result["long_short_ratio"]:
+                        validated_result = self._validate_metrics_data(result, symbol, url)
+                        return validated_result
+                    else:
+                        return None
+
+            except Exception as e:
+                severity = error_handler.classify_error(e)
+
+                # 处理不可重试的错误
+                if severity == ErrorSeverity.CRITICAL:
+                    logger.error(f"❌ 致命错误 - {symbol}: {e}")
+                    logger.error(f"建议: {error_handler.get_recommended_action(e)}")
+                    return None
+
+                # 判断是否重试
+                if not error_handler.should_retry(e, backoff.attempt, retry_config.max_retries):
+                    logger.warning(f"❌ 重试失败 - {symbol}: {e}")
+                    if severity == ErrorSeverity.LOW:
+                        # 对于低严重性错误，返回None而不记录错误
+                        return None
+                    logger.warning(f"🔗 URL: {url}")
+                    logger.warning(f"💡 建议: {error_handler.get_recommended_action(e)}")
+                    return None
+
+                # 执行重试
+                logger.warning(f"🔄 重试 {backoff.attempt + 1}/{retry_config.max_retries} - {symbol}: {e}")
+                logger.info(f"💡 建议: {error_handler.get_recommended_action(e)}")
+
+                try:
+                    backoff.wait()
+                except Exception:
+                    logger.warning(f"❌ 超过最大重试次数 - {symbol}")
+                    return None
+
+    def _parse_oi_data(self, raw_data: list[dict], symbol: str) -> list[OpenInterest]:
+        """解析持仓量数据。
+
+        Args:
+            raw_data: 原始 CSV 数据
+            symbol: 交易对符号
+
+        Returns:
+            OpenInterest 对象列表
+        """
+        open_interests = []
+
+        for row in raw_data:
+            try:
+                # 解析时间字段 (create_time 格式: YYYY-MM-DD HH:MM:SS)
+                create_time = row["create_time"]
+                timestamp = int(datetime.strptime(create_time, "%Y-%m-%d %H:%M:%S").timestamp() * 1000)
+
+                # Binance Vision 持仓量数据格式
+                open_interest = OpenInterest(
+                    symbol=symbol,
+                    open_interest=Decimal(str(row["sum_open_interest"])),
+                    time=timestamp,
+                    open_interest_value=(
+                        Decimal(str(row["sum_open_interest_value"])) if row.get("sum_open_interest_value") else None
+                    ),
+                )
+                open_interests.append(open_interest)
+
+            except (ValueError, KeyError) as e:
+                logger.warning(f"解析持仓量数据行时出错: {e}, 行数据: {row}")
+                continue
+
+        return open_interests
+
+    def _parse_lsr_data(self, raw_data: list[dict], symbol: str, file_name: str) -> list[LongShortRatio]:
+        """解析多空比例数据。
+
+        Args:
+            raw_data: 原始 CSV 数据
+            symbol: 交易对符号
+            file_name: CSV 文件名（用于判断比例类型）
+
+        Returns:
+            LongShortRatio 对象列表
+        """
+        long_short_ratios = []
+
+        for row in raw_data:
+            try:
+                # 解析时间字段 (create_time 格式: YYYY-MM-DD HH:MM:SS)
+                create_time = row["create_time"]
+                timestamp = int(datetime.strptime(create_time, "%Y-%m-%d %H:%M:%S").timestamp() * 1000)
+
+                # 处理顶级交易者数据 (如果存在)
+                if "sum_toptrader_long_short_ratio" in row:
+                    ratio_value = Decimal(str(row["sum_toptrader_long_short_ratio"]))
+
+                    # 计算平均比例 (使用计数来平均)
+                    if "count_toptrader_long_short_ratio" in row:
+                        count = Decimal(str(row["count_toptrader_long_short_ratio"]))
+                        if count > 0:
+                            ratio_value = ratio_value / count
+
+                    # 从比例计算多空账户比例 (假设比例是long/short)
+                    if ratio_value > 0:
+                        total = ratio_value + 1  # long + short
+                        long_account = ratio_value / total
+                        short_account = Decimal("1") / total
+                    else:
+                        long_account = Decimal("0.5")
+                        short_account = Decimal("0.5")
+
+                    long_short_ratios.append(
+                        LongShortRatio(
+                            symbol=symbol,
+                            long_short_ratio=ratio_value,
+                            long_account=long_account,
+                            short_account=short_account,
+                            timestamp=timestamp,
+                            ratio_type="account",
+                        )
+                    )
+
+                # 处理 Taker 数据 (如果存在)
+                if "sum_taker_long_short_vol_ratio" in row:
+                    taker_ratio = Decimal(str(row["sum_taker_long_short_vol_ratio"]))
+
+                    # 从比例计算多空成交量比例
+                    if taker_ratio > 0:
+                        total = taker_ratio + 1
+                        long_vol = taker_ratio / total
+                        short_vol = Decimal("1") / total
+                    else:
+                        long_vol = Decimal("0.5")
+                        short_vol = Decimal("0.5")
+
+                    long_short_ratios.append(
+                        LongShortRatio(
+                            symbol=symbol,
+                            long_short_ratio=taker_ratio,
+                            long_account=long_vol,
+                            short_account=short_vol,
+                            timestamp=timestamp,
+                            ratio_type="taker",
+                        )
+                    )
+
+            except (ValueError, KeyError) as e:
+                logger.warning(f"解析多空比例数据行时出错: {e}, 行数据: {row}")
+                continue
+
+        return long_short_ratios
+
+    def _resample_metrics_data(
+        self,
+        metrics_data: dict[str, list],
+        target_freq: Freq,
+        source_freq: Freq = Freq.m5,
+    ) -> dict[str, list]:
+        """对 metrics 数据进行频率转换。
+
+        Args:
+            metrics_data: 包含 open_interest 和 long_short_ratio 的数据字典
+            target_freq: 目标频率
+            source_freq: 源数据频率，默认为 5 分钟
+
+        Returns:
+            频率转换后的数据字典
+        """
+        try:
+            # 如果目标频率与源频率相同，直接返回
+            if target_freq == source_freq:
+                return metrics_data
+
+            result: dict[str, list] = {"open_interest": [], "long_short_ratio": []}
+
+            # 处理持仓量数据
+            if metrics_data.get("open_interest"):
+                result["open_interest"] = self._resample_open_interest_data(
+                    metrics_data["open_interest"], target_freq, source_freq
+                )
+
+            # 处理多空比例数据
+            if metrics_data.get("long_short_ratio"):
+                result["long_short_ratio"] = self._resample_long_short_ratio_data(
+                    metrics_data["long_short_ratio"], target_freq, source_freq
+                )
+
+            return result
+
+        except Exception as e:
+            logger.warning(f"频率转换失败: {e}")
+            return metrics_data  # 返回原始数据
+
+    def _resample_open_interest_data(
+        self,
+        oi_data: list[OpenInterest],
+        target_freq: Freq,
+        source_freq: Freq = Freq.m5,
+    ) -> list[OpenInterest]:
+        """对持仓量数据进行频率转换。
+
+        Args:
+            oi_data: 持仓量数据列表
+            target_freq: 目标频率
+            source_freq: 源数据频率
+
+        Returns:
+            频率转换后的持仓量数据列表
+        """
+        if not oi_data:
+            return []
+
+        # 按symbol分组处理
+        symbol_groups: dict[str, list] = {}
+        for item in oi_data:
+            if item.symbol not in symbol_groups:
+                symbol_groups[item.symbol] = []
+            symbol_groups[item.symbol].append(item)
+
+        result = []
+        for symbol, symbol_data in symbol_groups.items():
+            # 按时间排序
+            symbol_data.sort(key=lambda x: x.time)
+
+            # 转换为DataFrame进行重采样
+            df = pd.DataFrame(
+                [
+                    {
+                        "timestamp": pd.to_datetime(item.time, unit="ms"),
+                        "open_interest": float(item.open_interest),
+                        "open_interest_value": (float(item.open_interest_value) if item.open_interest_value else None),
+                    }
+                    for item in symbol_data
+                ]
+            )
+
+            if df.empty:
+                continue
+
+            df.set_index("timestamp", inplace=True)
+
+            # 根据目标频率进行重采样
+            freq_str = self._freq_to_pandas_freq(target_freq)
+
+            if self._is_upsampling(source_freq, target_freq):
+                # 上采样：使用前向填充
+                resampled = df.resample(freq_str).ffill()
+            else:
+                # 下采样：使用平均值
+                resampled = df.resample(freq_str).agg({"open_interest": "mean", "open_interest_value": "mean"})
+
+            # 转换回 OpenInterest 对象
+            for timestamp, row in resampled.iterrows():
+                if not pd.isna(row["open_interest"]):
+                    # 转换时间戳为毫秒
+                    result.append(
+                        OpenInterest(
+                            symbol=symbol,
+                            open_interest=Decimal(str(row["open_interest"])),
+                            time=int(cast(pd.Timestamp, timestamp).timestamp() * 1000),
+                            open_interest_value=(
+                                Decimal(str(row["open_interest_value"]))
+                                if not pd.isna(row["open_interest_value"])
+                                else None
+                            ),
+                        )
+                    )
+
+        return result
+
+    def _resample_long_short_ratio_data(
+        self,
+        lsr_data: list[LongShortRatio],
+        target_freq: Freq,
+        source_freq: Freq = Freq.m5,
+    ) -> list[LongShortRatio]:
+        """对多空比例数据进行频率转换。
+
+        Args:
+            lsr_data: 多空比例数据列表
+            target_freq: 目标频率
+            source_freq: 源数据频率
+
+        Returns:
+            频率转换后的多空比例数据列表
+        """
+        if not lsr_data:
+            return []
+
+        # 按symbol和ratio_type分组处理
+        groups: dict[tuple[str, str], list] = {}
+        for item in lsr_data:
+            key = (item.symbol, item.ratio_type)
+            if key not in groups:
+                groups[key] = []
+            groups[key].append(item)
+
+        result = []
+        for (symbol, ratio_type), group_data in groups.items():
+            # 按时间排序
+            group_data.sort(key=lambda x: x.timestamp)
+
+            # 转换为DataFrame进行重采样
+            df = pd.DataFrame(
+                [
+                    {
+                        "timestamp": pd.to_datetime(item.timestamp, unit="ms"),
+                        "long_short_ratio": float(item.long_short_ratio),
+                        "long_account": (float(item.long_account) if item.long_account else None),
+                        "short_account": (float(item.short_account) if item.short_account else None),
+                    }
+                    for item in group_data
+                ]
+            )
+
+            if df.empty:
+                continue
+
+            df.set_index("timestamp", inplace=True)
+
+            # 根据目标频率进行重采样
+            freq_str = self._freq_to_pandas_freq(target_freq)
+
+            if self._is_upsampling(source_freq, target_freq):
+                # 上采样：使用前向填充
+                resampled = df.resample(freq_str).ffill()
+            else:
+                # 下采样：使用加权平均（对于比例数据）
+                resampled = df.resample(freq_str).agg(
+                    {
+                        "long_short_ratio": "mean",
+                        "long_account": "mean",
+                        "short_account": "mean",
+                    }
+                )
+
+            # 转换回 LongShortRatio 对象
+            for timestamp, row in resampled.iterrows():
+                if not pd.isna(row["long_short_ratio"]):
+                    result.append(
+                        LongShortRatio(
+                            symbol=symbol,
+                            long_short_ratio=Decimal(str(row["long_short_ratio"])),
+                            long_account=(
+                                Decimal(str(row["long_account"])) if not pd.isna(row["long_account"]) else Decimal("0")
+                            ),
+                            short_account=(
+                                Decimal(str(row["short_account"]))
+                                if not pd.isna(row["short_account"])
+                                else Decimal("0")
+                            ),
+                            timestamp=int(cast(pd.Timestamp, timestamp).timestamp() * 1000),
+                            ratio_type=ratio_type,
+                        )
+                    )
+
+        return result
+
+    def _freq_to_pandas_freq(self, freq: Freq) -> str:
+        """将 Freq 枚举转换为 pandas 频率字符串。
+
+        Args:
+            freq: 频率枚举
+
+        Returns:
+            pandas 频率字符串
+        """
+        freq_map = {
+            Freq.m1: "1min",
+            Freq.m3: "3min",
+            Freq.m5: "5min",
+            Freq.m15: "15min",
+            Freq.m30: "30min",
+            Freq.h1: "1h",
+            Freq.h2: "2h",
+            Freq.h4: "4h",
+            Freq.h6: "6h",
+            Freq.h8: "8h",
+            Freq.h12: "12h",
+            Freq.d1: "1D",
+            Freq.w1: "1W",
+            Freq.M1: "1M",
+        }
+        return freq_map.get(freq, "5min")
+
+    def _is_upsampling(self, source_freq: Freq, target_freq: Freq) -> bool:
+        """判断是否为上采样（目标频率更高）。
+
+        Args:
+            source_freq: 源频率
+            target_freq: 目标频率
+
+        Returns:
+            如果是上采样返回 True，否则返回 False
+        """
+        # 定义频率的分钟数
+        freq_minutes = {
+            Freq.m1: 1,
+            Freq.m3: 3,
+            Freq.m5: 5,
+            Freq.m15: 15,
+            Freq.m30: 30,
+            Freq.h1: 60,
+            Freq.h2: 120,
+            Freq.h4: 240,
+            Freq.h6: 360,
+            Freq.h8: 480,
+            Freq.h12: 720,
+            Freq.d1: 1440,
+            Freq.w1: 10080,
+            Freq.M1: 43200,  # 约30天
+        }
+
+        source_minutes = freq_minutes.get(source_freq, 5)
+        target_minutes = freq_minutes.get(target_freq, 5)
+
+        return target_minutes < source_minutes
+
+    @staticmethod
+    def get_symbol_categories() -> dict[str, list[str]]:
+        """获取当前所有交易对的分类信息。
+
+        Returns:
+            字典，key为交易对symbol，value为分类标签列表
+        """
+        try:
+            logger.info("获取 Binance 交易对分类信息...")
+
+            # 调用 Binance 分类 API
+            url = "https://www.binance.com/bapi/composite/v1/public/marketing/symbol/list"
+            response = requests.get(url, timeout=30)
+            response.raise_for_status()
+
+            data = response.json()
+
+            if data.get("code") != "000000":
+                raise ValueError(f"API 返回错误: {data.get('message', 'Unknown error')}")
+
+            # 提取 symbol 和 tags 的映射关系
+            symbol_categories = {}
+            for item in data.get("data", []):
+                symbol = item.get("symbol", "")
+                tags = item.get("tags", [])
+
+                # 只保留 USDT 交易对
+                if symbol.endswith("USDT"):
+                    symbol_categories[symbol] = sorted(tags)  # 对标签进行排序
+
+            logger.info(f"成功获取 {len(symbol_categories)} 个交易对的分类信息")
+            return symbol_categories
+
+        except Exception as e:
+            logger.error(f"获取交易对分类信息失败: {e}")
+            raise
+
+    @staticmethod
+    def get_all_categories() -> list[str]:
+        """获取所有可能的分类标签。
+
+        Returns:
+            按字母排序的分类标签列表
+        """
+        try:
+            symbol_categories = MarketDataService.get_symbol_categories()
+
+            # 收集所有标签
+            all_tags = set()
+            for tags in symbol_categories.values():
+                all_tags.update(tags)
+
+            # 按字母排序
+            return sorted(list(all_tags))
+
+        except Exception as e:
+            logger.error(f"获取分类标签失败: {e}")
+            raise
+
+    @staticmethod
+    def create_category_matrix(
+        symbols: list[str], categories: list[str] | None = None
+    ) -> tuple[list[str], list[str], list[list[int]]]:
+        """创建 symbols 和 categories 的对应矩阵。
+
+        Args:
+            symbols: 交易对列表
+            categories: 分类列表，None表示自动获取所有分类
+
+        Returns:
+            元组 (symbols, categories, matrix)
+            - symbols: 排序后的交易对列表
+            - categories: 排序后的分类列表
+            - matrix: 二维矩阵，matrix[i][j] = 1 表示 symbols[i] 属于 categories[j]
+        """
+        try:
+            # 获取当前分类信息
+            symbol_categories = MarketDataService.get_symbol_categories()
+
+            # 如果没有指定分类，获取所有分类
+            if categories is None:
+                categories = MarketDataService.get_all_categories()
+            else:
+                categories = sorted(categories)
+
+            # 过滤并排序symbols（只保留有分类信息的）
+            valid_symbols = [s for s in symbols if s in symbol_categories]
+            valid_symbols.sort()
+
+            # 创建矩阵
+            matrix = []
+            for symbol in valid_symbols:
+                symbol_tags = symbol_categories.get(symbol, [])
+                row = [1 if category in symbol_tags else 0 for category in categories]
+                matrix.append(row)
+
+            logger.info(f"创建分类矩阵: {len(valid_symbols)} symbols × {len(categories)} categories")
+
+            return valid_symbols, categories, matrix
+
+        except Exception as e:
+            logger.error(f"创建分类矩阵失败: {e}")
+            raise
+
+    @staticmethod
+    def save_category_matrix_csv(
+        output_path: Path | str,
+        symbols: list[str],
+        date_str: str | None = None,
+        categories: list[str] | None = None,
+    ) -> None:
+        """将分类矩阵保存为 CSV 文件。
+
+        Args:
+            output_path: 输出目录路径
+            symbols: 交易对列表
+            date_str: 日期字符串 (YYYY-MM-DD)，None 表示使用当前日期
+            categories: 分类列表，None表示自动获取所有分类
+        """
+        try:
+            import csv
+            from datetime import datetime
+
+            output_path = Path(output_path)
+            output_path.mkdir(parents=True, exist_ok=True)
+
+            # 如果没有指定日期，使用当前日期
+            if date_str is None:
+                date_str = datetime.now().strftime("%Y-%m-%d")
+
+            # 创建分类矩阵
+            valid_symbols, sorted_categories, matrix = MarketDataService.create_category_matrix(symbols, categories)
+
+            # 文件名格式: categories_YYYY-MM-DD.csv
+            filename = f"categories_{date_str}.csv"
+            file_path = output_path / filename
+
+            # 写入 CSV 文件
+            with open(file_path, "w", newline="", encoding="utf-8") as csvfile:
+                writer = csv.writer(csvfile)
+
+                # 写入表头 (symbol, category1, category2, ...)
+                header = ["symbol"] + sorted_categories
+                writer.writerow(header)
+
+                # 写入数据行
+                for i, symbol in enumerate(valid_symbols):
+                    row = [symbol] + matrix[i]
+                    writer.writerow(row)
+
+            logger.info(f"成功保存分类矩阵到: {file_path}")
+            logger.info(f"矩阵大小: {len(valid_symbols)} symbols × {len(sorted_categories)} categories")
+
+        except Exception as e:
+            logger.error(f"保存分类矩阵失败: {e}")
+            raise
+
+    @staticmethod
+    def download_and_save_categories_for_universe(
+        universe_file: Path | str,
+        output_path: Path | str,
+        categories: list[str] | None = None,
+    ) -> None:
+        """为 universe 中的所有交易对下载并保存分类信息。
+
+        Args:
+            universe_file: universe 定义文件
+            output_path: 输出目录
+            categories: 分类列表，None表示自动获取所有分类
+        """
+        try:
+            from datetime import datetime
+
+            # 验证路径
+            universe_file_obj = MarketDataService._validate_and_prepare_path(universe_file, is_file=True)
+            output_path_obj = MarketDataService._validate_and_prepare_path(output_path, is_file=False)
+
+            # 检查universe文件是否存在
+            if not universe_file_obj.exists():
+                raise FileNotFoundError(f"Universe文件不存在: {universe_file_obj}")
+
+            # 加载universe定义
+            universe_def = UniverseDefinition.load_from_file(universe_file_obj)
+
+            logger.info("🏷️ 开始为 universe 下载分类信息:")
+            logger.info(f"   - Universe快照数: {len(universe_def.snapshots)}")
+            logger.info(f"   - 输出目录: {output_path_obj}")
+
+            # 收集所有交易对
+            all_symbols = set()
+            for snapshot in universe_def.snapshots:
+                all_symbols.update(snapshot.symbols)
+
+            all_symbols_list = sorted(list(all_symbols))
+            logger.info(f"   - 总交易对数: {len(all_symbols_list)}")
+
+            # 获取当前分类信息（用于所有历史数据）
+            current_date = datetime.now().strftime("%Y-%m-%d")
+            logger.info(f"   📅 获取 {current_date} 的分类信息（用于填充历史数据）")
+
+            # 为每个快照日期保存分类矩阵
+            for i, snapshot in enumerate(universe_def.snapshots):
+                logger.info(f"   📅 处理快照 {i + 1}/{len(universe_def.snapshots)}: {snapshot.effective_date}")
+
+                # 使用快照的有效日期
+                snapshot_date = snapshot.effective_date
+
+                # 保存该快照的分类矩阵
+                MarketDataService.save_category_matrix_csv(
+                    output_path=output_path_obj,
+                    symbols=snapshot.symbols,
+                    date_str=snapshot_date,
+                    categories=categories,
+                )
+
+                logger.info(f"       ✅ 保存了 {len(snapshot.symbols)} 个交易对的分类信息")
+
+            # 也保存一个当前日期的完整矩阵（包含所有交易对）
+            logger.info(f"   📅 保存当前日期 ({current_date}) 的完整分类矩阵")
+            MarketDataService.save_category_matrix_csv(
+                output_path=output_path_obj,
+                symbols=all_symbols_list,
+                date_str=current_date,
+                categories=categories,
+            )
+
+            logger.info("✅ 所有分类信息下载和保存完成")
+
+        except Exception as e:
+            logger.error(f"为 universe 下载分类信息失败: {e}")
+            raise

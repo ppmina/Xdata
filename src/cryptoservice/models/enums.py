@@ -138,6 +138,53 @@ class Freq(str, Enum):
                 return freq
         raise ValueError(f"Invalid Binance interval: {binance_interval}")
 
+    @classmethod
+    def from_string(cls, interval_str: str) -> "Freq":
+        """从字符串间隔转换为 Freq 枚举
+
+        Args:
+            interval_str: 间隔字符串，如 "1m", "5m", "1h", "1d" 等
+
+        Returns:
+            对应的 Freq 枚举值
+
+        Raises:
+            ValueError: 如果间隔字符串无效
+        """
+        # 保存原始字符串用于大小写敏感比较
+        original_str = interval_str.strip()
+
+        # 处理大小写敏感的月份
+        if original_str == "1M":
+            return cls.M1
+
+        # 标准化输入字符串为小写
+        interval_str = original_str.lower()
+
+        # 映射字典
+        string_to_freq = {
+            "1s": cls.s1,
+            "1m": cls.m1,
+            "3m": cls.m3,
+            "5m": cls.m5,
+            "15m": cls.m15,
+            "30m": cls.m30,
+            "1h": cls.h1,
+            "2h": cls.h2,
+            "4h": cls.h4,
+            "6h": cls.h6,
+            "8h": cls.h8,
+            "12h": cls.h12,
+            "1d": cls.d1,
+            "3d": cls.d3,
+            "1w": cls.w1,
+        }
+
+        result = string_to_freq.get(interval_str)
+        if result is None:
+            raise ValueError(f"Invalid interval string: {original_str}")
+        return result
+
 
 class Univ(str, Enum):
     """数据集枚举"""
