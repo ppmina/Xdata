@@ -2,6 +2,7 @@ from pathlib import Path
 from cryptoservice.models.universe import UniverseDefinition
 from cryptoservice.models.enums import Freq
 from cryptoservice.data import MarketDB
+from cryptoservice.services.market_service import MarketDataService
 
 # ============== 配置参数 ==============
 # 文件路径
@@ -29,6 +30,10 @@ EXPORT_FEATURES = [
     "ret",
     "tsvol",
     "tsamt",
+    # 新特征（三个核心特征）
+    "fr",  # 资金费率
+    "oi",  # 持仓量
+    "lsr",  # 多空比例
 ]
 
 # 特征描述（用于显示）
@@ -46,6 +51,10 @@ FEATURE_DESCRIPTIONS = {
     "ret": "收益率",
     "tsvol": "主动卖出量",
     "tsamt": "主动卖出额",
+    # 新特征描述
+    "fr": "资金费率",
+    "oi": "持仓量",
+    "lsr": "多空比例",
 }
 
 # ========================================
@@ -99,7 +108,6 @@ def main():
             print(
                 f"\n📋 处理快照 {i+1}/{len(universe_def.snapshots)}: {snapshot.start_date} - {snapshot.end_date}"
             )
-
             start_date_ts = snapshot.start_date_ts
             end_date_ts = snapshot.end_date_ts
             symbols = snapshot.symbols
@@ -123,6 +131,11 @@ def main():
                 target_freq=EXPORT_FREQ,
                 symbols=symbols,
                 chunk_days=CHUNK_DAYS,
+            )
+
+            MarketDataService.download_and_save_categories_for_universe(
+                universe_file=UNIVERSE_FILE,
+                output_path=snapshot_export_path,
             )
 
             # 显示导出的文件信息

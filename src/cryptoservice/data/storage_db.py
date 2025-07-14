@@ -40,6 +40,7 @@ class DatabaseConnectionPool:
             self._local.connections = queue.Queue(maxsize=self.max_connections)
             for _ in range(self.max_connections):
                 conn = sqlite3.connect(self.db_path)
+                conn.row_factory = sqlite3.Row
                 self._local.connections.put(conn)
 
     @contextmanager
@@ -84,6 +85,7 @@ class MarketDB:
     def _init_db(self) -> None:
         """初始化数据库表结构"""
         with sqlite3.connect(self.db_path) as conn:
+            # 原有的market_data表
             conn.execute(
                 """
                 CREATE TABLE IF NOT EXISTS market_data (
@@ -105,6 +107,53 @@ class MarketDB:
                 )
             """
             )
+
+            # 资金费率表
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS funding_rate (
+                    symbol TEXT,
+                    timestamp INTEGER,
+                    funding_rate REAL,
+                    funding_time INTEGER,
+                    mark_price REAL,
+                    index_price REAL,
+                    PRIMARY KEY (symbol, timestamp)
+                )
+            """
+            )
+
+            # 持仓量表
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS open_interest (
+                    symbol TEXT,
+                    timestamp INTEGER,
+                    interval TEXT,
+                    open_interest REAL,
+                    open_interest_value REAL,
+                    PRIMARY KEY (symbol, timestamp, interval)
+                )
+            """
+            )
+
+            # 多空比例表
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS long_short_ratio (
+                    symbol TEXT,
+                    timestamp INTEGER,
+                    period TEXT,
+                    ratio_type TEXT,
+                    long_short_ratio REAL,
+                    long_account REAL,
+                    short_account REAL,
+                    PRIMARY KEY (symbol, timestamp, period, ratio_type)
+                )
+            """
+            )
+
+            # 创建索引
             conn.execute("CREATE INDEX IF NOT EXISTS idx_symbol ON market_data(symbol)")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_timestamp ON market_data(timestamp)")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_freq ON market_data(freq)")
@@ -115,6 +164,14 @@ class MarketDB:
                 """
             )
 
+            # 新特征表的索引
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_funding_symbol ON funding_rate(symbol)")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_funding_timestamp ON funding_rate(timestamp)")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_oi_symbol ON open_interest(symbol)")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_oi_timestamp ON open_interest(timestamp)")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_lsr_symbol ON long_short_ratio(symbol)")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_lsr_timestamp ON long_short_ratio(timestamp)")
+
     @contextmanager
     def _get_connection(self) -> Generator[sqlite3.Connection, None, None]:
         """获取数据库连接的内部实现"""
@@ -123,6 +180,7 @@ class MarketDB:
                 yield conn
         else:
             conn = sqlite3.connect(self.db_path)
+            conn.row_factory = sqlite3.Row
             try:
                 yield conn
             finally:
@@ -237,6 +295,132 @@ class MarketDB:
             logger.exception("Failed to store market data")
             raise
 
+    def store_funding_rate(self, data: list) -> None:
+        """存储资金费率数据.
+
+        Args:
+            data: FundingRate对象列表
+        """
+        try:
+            if not data:
+                logger.warning("No funding rate data to store")
+                return
+
+            records = []
+            for item in data:
+                record = {
+                    "symbol": item.symbol,
+                    "timestamp": item.funding_time,
+                    "funding_rate": float(item.funding_rate),
+                    "funding_time": item.funding_time,
+                    "mark_price": float(item.mark_price) if item.mark_price else None,
+                    "index_price": (float(item.index_price) if item.index_price else None),
+                }
+                records.append(record)
+
+            with self._get_connection() as conn:
+                conn.executemany(
+                    """
+                    INSERT OR REPLACE INTO funding_rate (
+                        symbol, timestamp, funding_rate, funding_time, mark_price, index_price
+                    ) VALUES (
+                        :symbol, :timestamp, :funding_rate, :funding_time, :mark_price, :index_price
+                    )
+                    """,
+                    records,
+                )
+                conn.commit()
+
+            logger.info(f"Successfully stored {len(records)} funding rate records")
+
+        except Exception:
+            logger.exception("Failed to store funding rate data")
+            raise
+
+    def store_open_interest(self, data: list) -> None:
+        """存储持仓量数据.
+
+        Args:
+            data: OpenInterest对象列表
+        """
+        try:
+            if not data:
+                logger.warning("No open interest data to store")
+                return
+
+            records = []
+            for item in data:
+                record = {
+                    "symbol": item.symbol,
+                    "timestamp": item.time,
+                    "interval": getattr(item, "interval", "5m"),  # 默认5m间隔
+                    "open_interest": float(item.open_interest),
+                    "open_interest_value": (float(item.open_interest_value) if item.open_interest_value else None),
+                }
+                records.append(record)
+
+            with self._get_connection() as conn:
+                conn.executemany(
+                    """
+                    INSERT OR REPLACE INTO open_interest (
+                        symbol, timestamp, interval, open_interest, open_interest_value
+                    ) VALUES (
+                        :symbol, :timestamp, :interval, :open_interest, :open_interest_value
+                    )
+                    """,
+                    records,
+                )
+                conn.commit()
+
+            logger.info(f"Successfully stored {len(records)} open interest records")
+
+        except Exception:
+            logger.exception("Failed to store open interest data")
+            raise
+
+    def store_long_short_ratio(self, data: list) -> None:
+        """存储多空比例数据.
+
+        Args:
+            data: LongShortRatio对象列表
+        """
+        try:
+            if not data:
+                logger.warning("No long short ratio data to store")
+                return
+
+            records = []
+            for item in data:
+                record = {
+                    "symbol": item.symbol,
+                    "timestamp": item.timestamp,
+                    "period": getattr(item, "period", "5m"),  # 默认5m周期
+                    "ratio_type": item.ratio_type,
+                    "long_short_ratio": float(item.long_short_ratio),
+                    "long_account": (float(item.long_account) if item.long_account else None),
+                    "short_account": (float(item.short_account) if item.short_account else None),
+                }
+                records.append(record)
+
+            with self._get_connection() as conn:
+                conn.executemany(
+                    """
+                    INSERT OR REPLACE INTO long_short_ratio (
+                        symbol, timestamp, period, ratio_type, long_short_ratio, long_account, short_account
+                    ) VALUES (
+                        :symbol, :timestamp, :period, :ratio_type, :long_short_ratio, :long_account, :short_account
+                    )
+                    """,
+                    records,
+                )
+                conn.commit()
+
+            logger.info(f"Successfully stored {len(records)} long short ratio records")
+
+        except Exception:
+            logger.exception("Failed to store long short ratio data")
+            raise
+
     def read_data(
         self,
         start_time: str,
@@ -301,6 +485,195 @@ class MarketDB:
 
         except Exception:
             logger.exception("Failed to read market data by timestamp")
+            raise
+
+    def read_funding_rate(
+        self,
+        start_time: str,
+        end_time: str,
+        symbols: list[str],
+        raise_on_empty: bool = True,
+    ) -> pd.DataFrame:
+        """读取资金费率数据.
+
+        Args:
+            start_time: 开始时间 (YYYY-MM-DD)
+            end_time: 结束时间 (YYYY-MM-DD)
+            symbols: 交易对列表
+            raise_on_empty: 当没有数据时是否抛出异常
+
+        Returns:
+            pd.DataFrame: 资金费率数据
+        """
+        try:
+            # 转换时间格式
+            start_ts = int(pd.Timestamp(start_time).timestamp() * 1000)
+            end_ts = int(pd.Timestamp(end_time).timestamp() * 1000)
+
+            query = """
+                SELECT symbol, timestamp, funding_rate, funding_time, mark_price, index_price
+                FROM funding_rate
+                WHERE timestamp BETWEEN ? AND ?
+                AND symbol IN ({})
+                ORDER BY symbol, timestamp
+            """.format(",".join("?" * len(symbols)))
+
+            params = [start_ts, end_ts] + symbols
+
+            with self._get_connection() as conn:
+                df = pd.read_sql_query(query, conn, params=tuple(params), parse_dates={"timestamp": "ms"})
+
+            if df.empty:
+                if raise_on_empty:
+                    raise ValueError("No funding rate data found for the specified criteria")
+                else:
+                    empty_df = pd.DataFrame(
+                        columns=[
+                            "symbol",
+                            "timestamp",
+                            "funding_rate",
+                            "funding_time",
+                            "mark_price",
+                            "index_price",
+                        ]
+                    )
+                    empty_df = empty_df.set_index(["symbol", "timestamp"])
+                    return empty_df
+
+            df = df.set_index(["symbol", "timestamp"])
+            return df
+
+        except Exception:
+            logger.exception("Failed to read funding rate data")
+            raise
+
+    def read_open_interest(
+        self,
+        start_time: str,
+        end_time: str,
+        symbols: list[str],
+        interval: str = "5m",
+        raise_on_empty: bool = True,
+    ) -> pd.DataFrame:
+        """读取持仓量数据.
+
+        Args:
+            start_time: 开始时间 (YYYY-MM-DD)
+            end_time: 结束时间 (YYYY-MM-DD)
+            symbols: 交易对列表
+            interval: 时间间隔
+            raise_on_empty: 当没有数据时是否抛出异常
+
+        Returns:
+            pd.DataFrame: 持仓量数据
+        """
+        try:
+            # 转换时间格式
+            start_ts = int(pd.Timestamp(start_time).timestamp() * 1000)
+            end_ts = int(pd.Timestamp(end_time).timestamp() * 1000)
+
+            query = """
+                SELECT symbol, timestamp, interval, open_interest, open_interest_value
+                FROM open_interest
+                WHERE timestamp BETWEEN ? AND ?
+                AND interval = ?
+                AND symbol IN ({})
+                ORDER BY symbol, timestamp
+            """.format(",".join("?" * len(symbols)))
+
+            params: list[Any] = [start_ts, end_ts, interval] + symbols
+
+            with self._get_connection() as conn:
+                df = pd.read_sql_query(query, conn, params=params, parse_dates={"timestamp": "ms"})
+
+            if df.empty:
+                if raise_on_empty:
+                    raise ValueError("No open interest data found for the specified criteria")
+                else:
+                    empty_df = pd.DataFrame(
+                        columns=[
+                            "symbol",
+                            "timestamp",
+                            "interval",
+                            "open_interest",
+                            "open_interest_value",
+                        ]
+                    )
+                    empty_df = empty_df.set_index(["symbol", "timestamp"])
+                    return empty_df
+
+            df = df.set_index(["symbol", "timestamp"])
+            return df
+
+        except Exception:
+            logger.exception("Failed to read open interest data")
+            raise
+
+    def read_long_short_ratio(
+        self,
+        start_time: str,
+        end_time: str,
+        symbols: list[str],
+        period: str = "5m",
+        ratio_type: str = "account",
+        raise_on_empty: bool = True,
+    ) -> pd.DataFrame:
+        """读取多空比例数据.
+
+        Args:
+            start_time: 开始时间 (YYYY-MM-DD)
+            end_time: 结束时间 (YYYY-MM-DD)
+            symbols: 交易对列表
+            period: 时间周期
+            ratio_type: 比例类型
+            raise_on_empty: 当没有数据时是否抛出异常
+
+        Returns:
+            pd.DataFrame: 多空比例数据
+        """
+        try:
+            # 转换时间格式
+            start_ts = int(pd.Timestamp(start_time).timestamp() * 1000)
+            end_ts = int(pd.Timestamp(end_time).timestamp() * 1000)
+
+            query = """
+                SELECT symbol, timestamp, period, ratio_type, long_short_ratio, long_account, short_account
+                FROM long_short_ratio
+                WHERE timestamp BETWEEN ? AND ?
+                AND period = ?
+                AND ratio_type = ?
+                AND symbol IN ({})
+                ORDER BY symbol, timestamp
+            """.format(",".join("?" * len(symbols)))
+
+            params: list[Any] = [start_ts, end_ts, period, ratio_type] + symbols
+
+            with self._get_connection() as conn:
+                df = pd.read_sql_query(query, conn, params=params, parse_dates={"timestamp": "ms"})
+
+            if df.empty:
+                if raise_on_empty:
+                    raise ValueError("No long short ratio data found for the specified criteria")
+                else:
+                    empty_df = pd.DataFrame(
+                        columns=[
+                            "symbol",
+                            "timestamp",
+                            "period",
+                            "ratio_type",
+                            "long_short_ratio",
+                            "long_account",
+                            "short_account",
+                        ]
+                    )
+                    empty_df = empty_df.set_index(["symbol", "timestamp"])
+                    return empty_df
+
+            df = df.set_index(["symbol", "timestamp"])
+            return df
+
+        except Exception:
+            logger.exception("Failed to read long short ratio data")
             raise
 
     def _read_data_by_timestamp(
@@ -670,9 +1043,13 @@ class MarketDB:
             # 需要计算的字段
             "vwap": (None, True),  # quote_volume / volume
             "ret": (None, True),  # (close_price - open_price) / open_price
+            # 新特征字段 (简化为三个核心特征)
+            "fr": ("funding_rate", False),
+            "oi": ("open_interest", False),
+            "lsr": ("long_short_ratio", False),
         }
 
-        # 定义需要导出的特征（按您指定的顺序）
+        # 定义需要导出的特征（按您指定的顺序 + 新特征）
         features = [
             "cls",
             "hgh",
@@ -687,6 +1064,10 @@ class MarketDB:
             "ret",
             "tsvol",
             "tsamt",
+            # 新特征 (简化为三个核心特征)
+            "fr",
+            "oi",
+            "lsr",
         ]
 
         # 处理每一天
@@ -709,6 +1090,10 @@ class MarketDB:
 
             # 为每个特征创建并存储数据
             for short_name in features:
+                # 检查特征是否存在于数据中
+                if short_name not in FIELD_MAPPING:
+                    continue
+
                 db_field, needs_calculation = FIELD_MAPPING[short_name]
 
                 if needs_calculation:
@@ -729,6 +1114,8 @@ class MarketDB:
                         continue  # 未知的计算字段
                 else:
                     # 直接从数据库字段获取
+                    if db_field not in day_data.columns:
+                        continue  # 跳过不存在的字段
                     feature_data = day_data[db_field]
 
                 # 重塑数据为 K x T 矩阵
@@ -769,9 +1156,13 @@ class MarketDB:
             # 需要计算的字段
             "vwap": (None, True),  # quote_volume / volume
             "ret": (None, True),  # (close_price - open_price) / open_price
+            # 新特征字段 (简化为三个核心特征)
+            "fr": ("funding_rate", False),
+            "oi": ("open_interest", False),
+            "lsr": ("long_short_ratio", False),
         }
 
-        # 定义需要导出的特征（按您指定的顺序）
+        # 定义需要导出的特征（按您指定的顺序 + 新特征）
         features = [
             "cls",
             "hgh",
@@ -786,6 +1177,10 @@ class MarketDB:
             "ret",
             "tsvol",
             "tsamt",
+            # 新特征 (简化为三个核心特征)
+            "fr",
+            "oi",
+            "lsr",
         ]
 
         # 获取时间戳范围内的所有唯一日期
@@ -813,6 +1208,10 @@ class MarketDB:
 
             # 为每个特征创建并存储数据
             for short_name in features:
+                # 检查特征是否存在于数据中
+                if short_name not in FIELD_MAPPING:
+                    continue
+
                 db_field, needs_calculation = FIELD_MAPPING[short_name]
 
                 if needs_calculation:
@@ -833,6 +1232,8 @@ class MarketDB:
                         continue  # 未知的计算字段
                 else:
                     # 直接从数据库字段获取
+                    if db_field not in day_data.columns:
+                        continue  # 跳过不存在的字段
                     feature_data = day_data[db_field]
 
                 # 重塑数据为 K x T 矩阵
@@ -985,6 +1386,53 @@ class MarketDB:
         for feature in df.columns:
             feature_processor(day_data, feature)
 
+    def _handle_funding_rate_frequency(
+        self,
+        funding_rate_data: pd.DataFrame,
+        target_freq: Freq,
+        target_index: pd.Index | None = None,
+    ) -> pd.DataFrame:
+        """处理资金费率频率问题。
+
+        资金费率的最小粒度是小时级别，如果目标频率更细（如分钟级），需要进行频率调整。
+        对于缺失的时间戳，使用 NaN 填充。
+
+        Args:
+            funding_rate_data: 资金费率数据
+            target_freq: 目标频率
+            target_index: 目标时间索引
+
+        Returns:
+            pd.DataFrame: 频率调整后的数据
+        """
+        try:
+            # 如果目标频率是小时或更粗的粒度，直接返回
+            if target_freq in [
+                Freq.h1,
+                Freq.h2,
+                Freq.h4,
+                Freq.h6,
+                Freq.h8,
+                Freq.h12,
+                Freq.d1,
+                Freq.w1,
+                Freq.M1,
+            ]:
+                return funding_rate_data
+
+            # 对于分钟级别的频率，需要进行上采样
+            if target_index is not None:
+                # 使用目标索引进行重新索引，缺失值用 NaN 填充
+                funding_rate_data = funding_rate_data.reindex(target_index, method="ffill")
+                # 资金费率通常每8小时更新一次，所以用前向填充是合适的
+                # 但是为了保持数据的真实性，我们可能需要在某些时间点设置为 NaN
+
+            return funding_rate_data
+
+        except Exception as e:
+            logger.warning(f"处理资金费率频率时出错: {e}")
+            return funding_rate_data
+
     def close(self) -> None:
         """关闭数据库连接"""
         if self._use_pool and self._pool is not None:
@@ -1002,3 +1450,517 @@ class MarketDB:
     ) -> None:
         """退出上下文管理器时关闭数据库连接"""
         self.close()
+
+    # 新增的数据查询功能
+    def get_data_summary(self) -> dict[str, Any]:
+        """获取数据库中数据的概况统计.
+
+        Returns:
+            dict: 包含各种统计信息的字典
+        """
+        try:
+            with self._get_connection() as conn:
+                # 获取市场数据统计
+                market_stats = conn.execute(
+                    """
+                    SELECT
+                        freq,
+                        COUNT(*) as record_count,
+                        COUNT(DISTINCT symbol) as unique_symbols,
+                        MIN(timestamp) as earliest_timestamp,
+                        MAX(timestamp) as latest_timestamp,
+                        MIN(date(timestamp/1000, 'unixepoch')) as earliest_date,
+                        MAX(date(timestamp/1000, 'unixepoch')) as latest_date
+                    FROM market_data
+                    GROUP BY freq
+                """
+                ).fetchall()
+
+                # 获取资金费率统计
+                funding_stats = conn.execute(
+                    """
+                    SELECT
+                        COUNT(*) as record_count,
+                        COUNT(DISTINCT symbol) as unique_symbols,
+                        MIN(timestamp) as earliest_timestamp,
+                        MAX(timestamp) as latest_timestamp
+                    FROM funding_rate
+                """
+                ).fetchone()
+
+                # 获取持仓量统计
+                oi_stats = conn.execute(
+                    """
+                    SELECT
+                        interval,
+                        COUNT(*) as record_count,
+                        COUNT(DISTINCT symbol) as unique_symbols,
+                        MIN(timestamp) as earliest_timestamp,
+                        MAX(timestamp) as latest_timestamp
+                    FROM open_interest
+                    GROUP BY interval
+                """
+                ).fetchall()
+
+                # 获取多空比例统计
+                lsr_stats = conn.execute(
+                    """
+                    SELECT
+                        period,
+                        ratio_type,
+                        COUNT(*) as record_count,
+                        COUNT(DISTINCT symbol) as unique_symbols,
+                        MIN(timestamp) as earliest_timestamp,
+                        MAX(timestamp) as latest_timestamp
+                    FROM long_short_ratio
+                    GROUP BY period, ratio_type
+                """
+                ).fetchall()
+
+                return {
+                    "market_data": [dict(row) for row in market_stats],
+                    "funding_rate": dict(funding_stats) if funding_stats else {},
+                    "open_interest": [dict(row) for row in oi_stats],
+                    "long_short_ratio": [dict(row) for row in lsr_stats],
+                }
+
+        except Exception:
+            logger.exception("Failed to get data summary")
+            raise
+
+    def get_symbol_data_range(self, symbol: str, freq: Freq | None = None) -> dict[str, Any]:
+        """获取指定交易对的数据时间范围.
+
+        Args:
+            symbol: 交易对
+            freq: 数据频率，None表示获取所有频率
+
+        Returns:
+            dict: 包含时间范围信息的字典
+        """
+        try:
+            with self._get_connection() as conn:
+                if freq is None:
+                    # 获取所有频率的数据范围
+                    query = """
+                        SELECT
+                            freq,
+                            COUNT(*) as record_count,
+                            MIN(timestamp) as earliest_timestamp,
+                            MAX(timestamp) as latest_timestamp,
+                            MIN(date(timestamp/1000, 'unixepoch')) as earliest_date,
+                            MAX(date(timestamp/1000, 'unixepoch')) as latest_date
+                        FROM market_data
+                        WHERE symbol = ?
+                        GROUP BY freq
+                    """
+                    result = conn.execute(query, (symbol,)).fetchall()
+                    return {
+                        "symbol": symbol,
+                        "frequencies": [dict(row) for row in result],
+                    }
+                else:
+                    # 获取指定频率的数据范围
+                    query = """
+                        SELECT
+                            COUNT(*) as record_count,
+                            MIN(timestamp) as earliest_timestamp,
+                            MAX(timestamp) as latest_timestamp,
+                            MIN(date(timestamp/1000, 'unixepoch')) as earliest_date,
+                            MAX(date(timestamp/1000, 'unixepoch')) as latest_date
+                        FROM market_data
+                        WHERE symbol = ? AND freq = ?
+                    """
+                    result = conn.execute(query, (symbol, freq.value)).fetchone()
+                    result_dict = {
+                        "symbol": symbol,
+                        "frequency": freq.value,
+                    }
+                    if result:
+                        result_dict.update(dict(result))
+                    return result_dict
+
+        except Exception:
+            logger.exception("Failed to get symbol data range")
+            raise
+
+    def check_data_completeness(
+        self,
+        symbol: str,
+        start_time: str,
+        end_time: str,
+        freq: Freq,
+        expected_interval_minutes: int | None = None,
+    ) -> dict[str, Any]:
+        """检查数据的完整性.
+
+        Args:
+            symbol: 交易对
+            start_time: 开始时间 (YYYY-MM-DD)
+            end_time: 结束时间 (YYYY-MM-DD)
+            freq: 数据频率
+            expected_interval_minutes: 预期的时间间隔（分钟），None表示自动推断
+
+        Returns:
+            dict: 包含完整性检查结果的字典
+        """
+        try:
+            # 自动推断时间间隔
+            if expected_interval_minutes is None:
+                freq_to_minutes = {
+                    Freq.m1: 1,
+                    Freq.m3: 3,
+                    Freq.m5: 5,
+                    Freq.m15: 15,
+                    Freq.m30: 30,
+                    Freq.h1: 60,
+                    Freq.h2: 120,
+                    Freq.h4: 240,
+                    Freq.h6: 360,
+                    Freq.h8: 480,
+                    Freq.h12: 720,
+                    Freq.d1: 1440,
+                }
+                expected_interval_minutes = freq_to_minutes.get(freq, 1)
+
+            # 读取数据
+            df = self.read_data(start_time, end_time, freq, [symbol], raise_on_empty=False)
+
+            if df.empty:
+                return {
+                    "symbol": symbol,
+                    "period": f"{start_time} to {end_time}",
+                    "frequency": freq.value,
+                    "total_records": 0,
+                    "missing_records": 0,
+                    "completeness_rate": 0.0,
+                    "missing_periods": [],
+                }
+
+            # 获取实际时间戳
+            actual_timestamps = sorted(df.index.get_level_values("timestamp").unique())
+
+            # 生成预期的时间戳序列
+            start_ts = pd.Timestamp(start_time)
+            end_ts = pd.Timestamp(end_time)
+            expected_timestamps = pd.date_range(start=start_ts, end=end_ts, freq=f"{expected_interval_minutes}min")
+
+            # 转换为毫秒时间戳
+            expected_ts_ms = [int(ts.timestamp() * 1000) for ts in expected_timestamps]
+            actual_ts_ms = [int(pd.Timestamp(ts).timestamp() * 1000) for ts in actual_timestamps]
+
+            # 找出缺失的时间戳
+            missing_ts = set(expected_ts_ms) - set(actual_ts_ms)
+            missing_periods = [pd.Timestamp(ts, unit="ms").strftime("%Y-%m-%d %H:%M:%S") for ts in sorted(missing_ts)]
+
+            return {
+                "symbol": symbol,
+                "period": f"{start_time} to {end_time}",
+                "frequency": freq.value,
+                "expected_records": len(expected_ts_ms),
+                "actual_records": len(actual_ts_ms),
+                "missing_records": len(missing_ts),
+                "completeness_rate": ((len(actual_ts_ms) / len(expected_ts_ms)) * 100 if expected_ts_ms else 0),
+                "missing_periods": missing_periods[:10],  # 只显示前10个缺失时间点
+            }
+
+        except Exception:
+            logger.exception("Failed to check data completeness")
+            raise
+
+    def get_latest_data(self, symbols: list[str], freq: Freq, limit: int = 1) -> pd.DataFrame:
+        """获取最新的数据点.
+
+        Args:
+            symbols: 交易对列表
+            freq: 数据频率
+            limit: 每个symbol返回的记录数
+
+        Returns:
+            pd.DataFrame: 最新数据
+        """
+        try:
+            placeholders = ",".join("?" * len(symbols))
+            query = f"""
+                SELECT symbol, timestamp,
+                       open_price, high_price, low_price, close_price,
+                       volume, quote_volume, trades_count,
+                       taker_buy_volume, taker_buy_quote_volume,
+                       taker_sell_volume, taker_sell_quote_volume
+                FROM (
+                    SELECT *,
+                           ROW_NUMBER() OVER (PARTITION BY symbol ORDER BY timestamp DESC) as rn
+                    FROM market_data
+                    WHERE freq = ? AND symbol IN ({placeholders})
+                ) ranked
+                WHERE rn <= ?
+                ORDER BY symbol, timestamp DESC
+            """
+
+            params = tuple([freq.value] + symbols + [limit])
+
+            with self._get_connection() as conn:
+                df = pd.read_sql_query(query, conn, params=params, parse_dates={"timestamp": "ms"})
+
+            if df.empty:
+                return pd.DataFrame()
+
+            df = df.set_index(["symbol", "timestamp"])
+            return df
+
+        except Exception:
+            logger.exception("Failed to get latest data")
+            raise
+
+    def get_combined_data(
+        self,
+        symbols: list[str],
+        start_time: str,
+        end_time: str,
+        freq: Freq,
+        include_funding_rate: bool = False,
+        include_open_interest: bool = False,
+        include_long_short_ratio: bool = False,
+        oi_interval: str = "5m",
+        lsr_period: str = "5m",
+        lsr_ratio_type: str = "account",
+    ) -> pd.DataFrame:
+        """获取合并的多类型数据.
+
+        Args:
+            symbols: 交易对列表
+            start_time: 开始时间 (YYYY-MM-DD)
+            end_time: 结束时间 (YYYY-MM-DD)
+            freq: 数据频率
+            include_funding_rate: 是否包含资金费率数据
+            include_open_interest: 是否包含持仓量数据
+            include_long_short_ratio: 是否包含多空比例数据
+            oi_interval: 持仓量时间间隔
+            lsr_period: 多空比例时间周期
+            lsr_ratio_type: 多空比例类型
+
+        Returns:
+            pd.DataFrame: 合并后的数据
+        """
+        try:
+            # 获取基础市场数据
+            base_data = self.read_data(start_time, end_time, freq, symbols, raise_on_empty=False)
+
+            if base_data.empty:
+                return pd.DataFrame()
+
+            # 如果不需要额外数据，直接返回基础数据
+            if not any([include_funding_rate, include_open_interest, include_long_short_ratio]):
+                return base_data
+
+            # 获取额外数据并合并
+            additional_data = []
+
+            if include_funding_rate:
+                try:
+                    funding_data = self.read_funding_rate(start_time, end_time, symbols, raise_on_empty=False)
+                    if not funding_data.empty:
+                        additional_data.append(funding_data[["funding_rate"]])
+                except Exception as e:
+                    logger.warning(f"Failed to get funding rate data: {e}")
+
+            if include_open_interest:
+                try:
+                    oi_data = self.read_open_interest(start_time, end_time, symbols, oi_interval, raise_on_empty=False)
+                    if not oi_data.empty:
+                        additional_data.append(oi_data[["open_interest", "open_interest_value"]])
+                except Exception as e:
+                    logger.warning(f"Failed to get open interest data: {e}")
+
+            if include_long_short_ratio:
+                try:
+                    lsr_data = self.read_long_short_ratio(
+                        start_time,
+                        end_time,
+                        symbols,
+                        lsr_period,
+                        lsr_ratio_type,
+                        raise_on_empty=False,
+                    )
+                    if not lsr_data.empty:
+                        additional_data.append(lsr_data[["long_short_ratio", "long_account", "short_account"]])
+                except Exception as e:
+                    logger.warning(f"Failed to get long short ratio data: {e}")
+
+            # 合并数据
+            if additional_data:
+                for data in additional_data:
+                    base_data = base_data.join(data, how="left")
+
+            return base_data
+
+        except Exception:
+            logger.exception("Failed to get combined data")
+            raise
+
+    def get_symbols_list(self, freq: Freq | None = None) -> list[str]:
+        """获取数据库中所有交易对列表.
+
+        Args:
+            freq: 数据频率，None表示获取所有频率的交易对
+
+        Returns:
+            list[str]: 交易对列表
+        """
+        try:
+            with self._get_connection() as conn:
+                if freq is None:
+                    query = "SELECT DISTINCT symbol FROM market_data ORDER BY symbol"
+                    result = conn.execute(query).fetchall()
+                else:
+                    query = "SELECT DISTINCT symbol FROM market_data WHERE freq = ? ORDER BY symbol"
+                    result = conn.execute(query, (freq.value,)).fetchall()
+
+                return [row[0] for row in result]
+
+        except Exception:
+            logger.exception("Failed to get symbols list")
+            raise
+
+    def data_exists(self, symbol: str, start_time: str, end_time: str, freq: Freq) -> bool:
+        """检查指定时间范围内是否存在数据.
+
+        Args:
+            symbol: 交易对
+            start_time: 开始时间 (YYYY-MM-DD)
+            end_time: 结束时间 (YYYY-MM-DD)
+            freq: 数据频率
+
+        Returns:
+            bool: 是否存在数据
+        """
+        try:
+            start_ts = int(pd.Timestamp(start_time).timestamp() * 1000)
+            end_ts = int(pd.Timestamp(end_time).timestamp() * 1000)
+
+            with self._get_connection() as conn:
+                query = """
+                    SELECT COUNT(*) as count
+                    FROM market_data
+                    WHERE symbol = ? AND freq = ? AND timestamp BETWEEN ? AND ?
+                """
+                result = conn.execute(query, (symbol, freq.value, start_ts, end_ts)).fetchone()
+                return result[0] > 0 if result else False
+
+        except Exception:
+            logger.exception("Failed to check data existence")
+            raise
+
+    def get_aggregated_data(
+        self,
+        symbols: list[str],
+        start_time: str,
+        end_time: str,
+        freq: Freq,
+        agg_period: str = "1D",  # 聚合周期：1D, 1W, 1M等
+        agg_functions: Any = None,
+    ) -> pd.DataFrame:
+        """获取聚合数据.
+
+        Args:
+            symbols: 交易对列表
+            start_time: 开始时间 (YYYY-MM-DD)
+            end_time: 结束时间 (YYYY-MM-DD)
+            freq: 原始数据频率
+            agg_period: 聚合周期
+            agg_functions: 聚合函数字典，key为列名，value为聚合函数
+
+        Returns:
+            pd.DataFrame: 聚合后的数据
+        """
+        try:
+            # 默认聚合函数
+            if agg_functions is None:
+                agg_functions = {
+                    "open_price": "first",
+                    "high_price": "max",
+                    "low_price": "min",
+                    "close_price": "last",
+                    "volume": "sum",
+                    "quote_volume": "sum",
+                    "trades_count": "sum",
+                }
+
+            # 获取原始数据
+            df = self.read_data(start_time, end_time, freq, symbols, raise_on_empty=False)
+
+            if df.empty:
+                return pd.DataFrame()
+
+            # 按symbol分组聚合
+            aggregated_dfs = []
+            for symbol in symbols:
+                if symbol in df.index.get_level_values("symbol"):
+                    symbol_data = df.loc[symbol]
+
+                    # 执行聚合 - 使用字典类型转换确保类型正确
+                    agg_data = symbol_data.resample(agg_period).agg(dict(agg_functions))
+
+                    # 添加symbol级别的索引 - 使用list()确保类型正确
+                    agg_data.index = pd.MultiIndex.from_product(
+                        [[symbol], list(agg_data.index)], names=["symbol", "timestamp"]
+                    )
+                    aggregated_dfs.append(agg_data)
+
+            if aggregated_dfs:
+                return pd.concat(aggregated_dfs)
+            else:
+                return pd.DataFrame()
+
+        except Exception:
+            logger.exception("Failed to get aggregated data")
+            raise
+
+    def get_data_statistics(
+        self,
+        symbols: list[str],
+        start_time: str,
+        end_time: str,
+        freq: Freq,
+        features: list[str] | None = None,
+    ) -> pd.DataFrame:
+        """获取数据的统计信息.
+
+        Args:
+            symbols: 交易对列表
+            start_time: 开始时间 (YYYY-MM-DD)
+            end_time: 结束时间 (YYYY-MM-DD)
+            freq: 数据频率
+            features: 需要统计的特征列表
+
+        Returns:
+            pd.DataFrame: 统计信息
+        """
+        try:
+            # 获取数据
+            df = self.read_data(start_time, end_time, freq, symbols, features, raise_on_empty=False)
+
+            if df.empty:
+                return pd.DataFrame()
+
+            # 按symbol分组计算统计信息
+            stats_list = []
+            for symbol in symbols:
+                if symbol in df.index.get_level_values("symbol"):
+                    symbol_data = df.loc[symbol]
+
+                    # 计算统计信息
+                    stats = symbol_data.describe()
+                    stats.index = pd.MultiIndex.from_product(
+                        [[symbol], list(stats.index)], names=["symbol", "statistic"]
+                    )
+                    stats_list.append(stats)
+
+            if stats_list:
+                return pd.concat(stats_list)
+            else:
+                return pd.DataFrame()
+
+        except Exception:
+            logger.exception("Failed to get data statistics")
+            raise

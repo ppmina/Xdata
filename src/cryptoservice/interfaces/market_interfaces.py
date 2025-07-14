@@ -14,6 +14,9 @@ from cryptoservice.models import (
     SymbolTicker,
     UniverseDefinition,
     IntegrityReport,
+    FundingRate,
+    OpenInterest,
+    LongShortRatio,
 )
 
 
@@ -184,5 +187,87 @@ class IMarketDataService(Protocol):
 
         Returns:
             UniverseDefinition: 定义的universe
+        """
+        pass
+
+    @abstractmethod
+    def get_funding_rate(
+        self,
+        symbol: str,
+        start_time: str | datetime | None = None,
+        end_time: str | datetime | None = None,
+        limit: int = 500,
+    ) -> list[FundingRate]:
+        """获取永续合约资金费率历史.
+
+        Args:
+            symbol: 交易对名称，如 'BTCUSDT'
+            start_time: 开始时间（毫秒时间戳或日期字符串）
+            end_time: 结束时间（毫秒时间戳或日期字符串）
+            limit: 返回数量限制，默认500，最大1000
+
+        Returns:
+            list[FundingRate]: 资金费率数据列表
+
+        Raises:
+            MarketDataFetchError: 获取数据失败时
+        """
+        pass
+
+    @abstractmethod
+    def get_open_interest(
+        self,
+        symbol: str,
+        period: str = "5m",
+        start_time: str | datetime | None = None,
+        end_time: str | datetime | None = None,
+        limit: int = 500,
+    ) -> list[OpenInterest]:
+        """获取永续合约持仓量数据.
+
+        Args:
+            symbol: 交易对名称，如 'BTCUSDT'
+            period: 时间周期，支持 "5m","15m","30m","1h","2h","4h","6h","12h","1d"
+            start_time: 开始时间（毫秒时间戳或日期字符串）
+            end_time: 结束时间（毫秒时间戳或日期字符串）
+            limit: 返回数量限制，默认500，最大500
+
+        Returns:
+            list[OpenInterest]: 持仓量数据列表
+
+        Raises:
+            MarketDataFetchError: 获取数据失败时
+        """
+        pass
+
+    @abstractmethod
+    def get_long_short_ratio(
+        self,
+        symbol: str,
+        period: str = "5m",
+        ratio_type: str = "account",
+        start_time: str | datetime | None = None,
+        end_time: str | datetime | None = None,
+        limit: int = 500,
+    ) -> list[LongShortRatio]:
+        """获取多空比例数据.
+
+        Args:
+            symbol: 交易对名称，如 'BTCUSDT'
+            period: 时间周期，支持 "5m","15m","30m","1h","2h","4h","6h","12h","1d"
+            ratio_type: 比例类型:
+                - "account": 顶级交易者账户多空比
+                - "position": 顶级交易者持仓多空比
+                - "global": 全局多空比
+                - "taker": 大额交易者多空比
+            start_time: 开始时间（毫秒时间戳或日期字符串）
+            end_time: 结束时间（毫秒时间戳或日期字符串）
+            limit: 返回数量限制，默认500，最大500
+
+        Returns:
+            list[LongShortRatio]: 多空比例数据列表
+
+        Raises:
+            MarketDataFetchError: 获取数据失败时
         """
         pass
