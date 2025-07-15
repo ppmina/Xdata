@@ -2,6 +2,15 @@
 
 <!-- next-version -->
 
+## v1.9.0 (2025-07-15)
+
+### Features
+
+- Add four market features(oi, lsratio, funding rate, category)
+  ([#14](https://github.com/ppmina/Xdata/pull/14),
+  [`11f3eb3`](https://github.com/ppmina/Xdata/commit/11f3eb3e4457731f734e311373211112e97ea0e1))
+
+
 ## v1.8.0 (2025-07-14)
 
 ### Bug Fixes
