@@ -1,8 +1,11 @@
 from pathlib import Path
 from cryptoservice.models.universe import UniverseDefinition
 from cryptoservice.models.enums import Freq
-from cryptoservice.data import MarketDB
+from cryptoservice.storage import AsyncMarketDB
 from cryptoservice.services.market_service import MarketDataService
+import asyncio
+import dotenv
+import os
 
 # ============== 配置参数 ==============
 # 文件路径
@@ -14,6 +17,7 @@ EXPORT_BASE_PATH = "./data/exports"  # 导出文件基础路径
 DATA_FREQ = Freq.d1  # 数据库数据频率
 EXPORT_FREQ = Freq.d1  # 导出数据频率
 CHUNK_DAYS = 100  # 分块天数
+DOWNLOAD_CATEGORIES = True  # 是否下载类别数据
 
 # 导出的特征（短字段名格式，按指定顺序）
 EXPORT_FEATURES = [
@@ -60,7 +64,7 @@ FEATURE_DESCRIPTIONS = {
 # ========================================
 
 
-def main():
+async def main():
     """从数据库导出数据脚本"""
     print("📤 开始从数据库导出数据")
     print(f"📋 Universe文件: {UNIVERSE_FILE}")
@@ -68,9 +72,7 @@ def main():
     print(f"📁 导出路径: {EXPORT_BASE_PATH}")
     print(f"⏱️ 导出频率: {EXPORT_FREQ}")
     print(f"📊 导出特征: {len(EXPORT_FEATURES)}个")
-    print(
-        f"    {', '.join([f'{feat}({FEATURE_DESCRIPTIONS[feat]})' for feat in EXPORT_FEATURES[:5]])}..."
-    )
+    print(f"    {', '.join([f'{feat}({FEATURE_DESCRIPTIONS[feat]})' for feat in EXPORT_FEATURES[:5]])}...")
 
     # 检查必要文件是否存在
     if not Path(UNIVERSE_FILE).exists():
@@ -91,6 +93,10 @@ def main():
         print("📖 加载Universe定义...")
         universe_def = UniverseDefinition.load_from_file(UNIVERSE_FILE)
         print(f"   ✅ 成功加载 {len(universe_def.snapshots)} 个快照")
+        dotenv.load_dotenv()
+        api_key = os.getenv("BINANCE_API_KEY") or ""
+        api_secret = os.getenv("BINANCE_API_SECRET") or ""
+        market_service = MarketDataService(api_key=api_key, api_secret=api_secret)
 
         t1 = universe_def.config.t1_months
         t2 = universe_def.config.t2_months
@@ -101,13 +107,11 @@ def main():
         quote_asset = universe_def.config.quote_asset
 
         # 创建MarketDB实例
-        db = MarketDB(DB_PATH)
+        db = AsyncMarketDB(DB_PATH)
 
         # 处理每个快照
         for i, snapshot in enumerate(universe_def.snapshots):
-            print(
-                f"\n📋 处理快照 {i+1}/{len(universe_def.snapshots)}: {snapshot.start_date} - {snapshot.end_date}"
-            )
+            print(f"\n📋 处理快照 {i + 1}/{len(universe_def.snapshots)}: {snapshot.start_date} - {snapshot.end_date}")
             start_date_ts = snapshot.start_date_ts
             end_date_ts = snapshot.end_date_ts
             symbols = snapshot.symbols
@@ -118,12 +122,11 @@ def main():
 
             # 创建快照专用的导出目录
             snapshot_export_path = (
-                Path(EXPORT_BASE_PATH)
-                / f"{t1}_{t2}_{t3}_{(top_k if top_k else top_ratio)}_{delay_days}_{quote_asset}"
+                Path(EXPORT_BASE_PATH) / f"{t1}_{t2}_{t3}_{(top_k if top_k else top_ratio)}_{delay_days}_{quote_asset}"
             )
 
             # 导出数据
-            db.export_to_files_by_timestamp(
+            await db.export_to_files_by_timestamp(
                 output_path=snapshot_export_path,
                 start_ts=start_date_ts,
                 end_ts=end_date_ts,
@@ -133,10 +136,11 @@ def main():
                 chunk_days=CHUNK_DAYS,
             )
 
-            MarketDataService.download_and_save_categories_for_universe(
-                universe_file=UNIVERSE_FILE,
-                output_path=snapshot_export_path,
-            )
+            if DOWNLOAD_CATEGORIES:
+                market_service.download_and_save_categories_for_universe(
+                    universe_file=UNIVERSE_FILE,
+                    output_path=snapshot_export_path,
+                )
 
             # 显示导出的文件信息
             if snapshot_export_path.exists():
@@ -144,9 +148,7 @@ def main():
                 universe_files = list(snapshot_export_path.rglob("universe_token.pkl"))
 
                 if export_files:
-                    total_size = sum(f.stat().st_size for f in export_files) / (
-                        1024 * 1024
-                    )  # MB
+                    total_size = sum(f.stat().st_size for f in export_files) / (1024 * 1024)  # MB
                     print(f"      📊 导出文件数量: {len(export_files)}个.npy文件")
                     print(f"      🎯 Universe文件: {len(universe_files)}个.pkl文件")
                     print(f"      💾 总文件大小: {total_size:.1f} MB")
@@ -154,9 +156,7 @@ def main():
                     # 显示特征分布
                     feature_dirs = [f.parent.name for f in export_files]
                     unique_features = set(feature_dirs)
-                    print(
-                        f"      📈 特征类型: {len(unique_features)}种 ({', '.join(sorted(unique_features))})"
-                    )
+                    print(f"      📈 特征类型: {len(unique_features)}种 ({', '.join(sorted(unique_features))})")
 
     except Exception as e:
         print(f"❌ 数据导出失败: {e}")
@@ -167,4 +167,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    asyncio.run(main())
