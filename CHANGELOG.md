@@ -6,45 +6,24 @@
 
 ### Bug Fixes
 
-- Change default export path structure
-  ([`9cda028`](https://github.com/ppmina/Xdata/commit/9cda0282d6bfeee822c805de13f04be0995ebe93))
-
 - Change default export path structure ([#11](https://github.com/ppmina/Xdata/pull/11),
   [`41dea5e`](https://github.com/ppmina/Xdata/commit/41dea5e650bb742aab88e3ac107f532b081ec750))
-
-- Enhance universe definition and market data service
-  ([`5f280f9`](https://github.com/ppmina/Xdata/commit/5f280f922792d07ec7d2c037c5860542f41d7e01))
 
 - Enhance universe definition and market data service
   ([#11](https://github.com/ppmina/Xdata/pull/11),
   [`41dea5e`](https://github.com/ppmina/Xdata/commit/41dea5e650bb742aab88e3ac107f532b081ec750))
 
-- Fix date to ts in storagedb
-  ([`9b5b7d3`](https://github.com/ppmina/Xdata/commit/9b5b7d3320fd4c063b5f4b22592252af1ce8e522))
-
 - Fix date to ts in storagedb ([#11](https://github.com/ppmina/Xdata/pull/11),
   [`41dea5e`](https://github.com/ppmina/Xdata/commit/41dea5e650bb742aab88e3ac107f532b081ec750))
-
-- Fix pytest
-  ([`b128dc2`](https://github.com/ppmina/Xdata/commit/b128dc2a3bad23cf3b693ce0d118132c204c0612))
 
 - Fix pytest ([#11](https://github.com/ppmina/Xdata/pull/11),
   [`41dea5e`](https://github.com/ppmina/Xdata/commit/41dea5e650bb742aab88e3ac107f532b081ec750))
 
-- Fix some olg bugs
-  ([`62ddeea`](https://github.com/ppmina/Xdata/commit/62ddeea6461d1f76b8895f3f16aec6e167cc2556))
-
 - Fix some olg bugs ([#11](https://github.com/ppmina/Xdata/pull/11),
   [`41dea5e`](https://github.com/ppmina/Xdata/commit/41dea5e650bb742aab88e3ac107f532b081ec750))
 
-- Make three demo working fine
-  ([`3cb76cc`](https://github.com/ppmina/Xdata/commit/3cb76ccece32637714cf09f264ac6c54b398ef9d))
-
 - Make three demo working fine ([#11](https://github.com/ppmina/Xdata/pull/11),
   [`41dea5e`](https://github.com/ppmina/Xdata/commit/41dea5e650bb742aab88e3ac107f532b081ec750))
-
-- Readme to latest
-  ([`3817eb4`](https://github.com/ppmina/Xdata/commit/3817eb46903de46db4b1c36da2713f50ccc01917))
 
 - Readme to latest ([#11](https://github.com/ppmina/Xdata/pull/11),
   [`41dea5e`](https://github.com/ppmina/Xdata/commit/41dea5e650bb742aab88e3ac107f532b081ec750))
@@ -55,14 +34,8 @@
   ([#13](https://github.com/ppmina/Xdata/pull/13),
   [`c2294ea`](https://github.com/ppmina/Xdata/commit/c2294ead8f4a3b1c50d5e282238254a258671ed7))
 
-- Add top_ratio feature replace top_k
-  ([`f1e0ccf`](https://github.com/ppmina/Xdata/commit/f1e0ccff4b60aea3df39b4b06794f9d89400d2ee))
-
 - Add top_ratio feature replace top_k ([#11](https://github.com/ppmina/Xdata/pull/11),
   [`41dea5e`](https://github.com/ppmina/Xdata/commit/41dea5e650bb742aab88e3ac107f532b081ec750))
-
-- New feature( universe define and download data)
-  ([`fdaf46c`](https://github.com/ppmina/Xdata/commit/fdaf46cd9e80f9a1a7eeccdee5c02b1c6f8a2db6))
 
 - New feature( universe define and download data) ([#11](https://github.com/ppmina/Xdata/pull/11),
   [`41dea5e`](https://github.com/ppmina/Xdata/commit/41dea5e650bb742aab88e3ac107f532b081ec750))
@@ -255,20 +228,12 @@
 - Fix version problem
   ([`ed20e4f`](https://github.com/ppmina/Xdata/commit/ed20e4fff4f52a70fb3b92fdb60f582fac26fca5))
 
-- Fix version problem
-  ([`545c070`](https://github.com/ppmina/Xdata/commit/545c0702d153523717609eeaef937fee308abc90))
-
 ### Features
 
 - Aaa ([`e907a99`](https://github.com/ppmina/Xdata/commit/e907a9991d33f2c1481dba9096e03832c9adc681))
 
-- Aaa ([`b1ec053`](https://github.com/ppmina/Xdata/commit/b1ec053ecf289cf1136c45c33b9d0ee04308b586))
-
 - New thing
   ([`2d26c85`](https://github.com/ppmina/Xdata/commit/2d26c85339df374be4ad1fa87481646cfbb5a90d))
-
-- New thing
-  ([`797c3ca`](https://github.com/ppmina/Xdata/commit/797c3ca032bd403c92035fb86a1b2223a24dc968))
 
 
 ## v0.1.1 (2025-01-01)
@@ -281,20 +246,11 @@
 - Fix some problems
   ([`ba1c211`](https://github.com/ppmina/Xdata/commit/ba1c2116eb37c47fcda58796defe8216cfb3a702))
 
-- Fix some problems
-  ([`a49f271`](https://github.com/ppmina/Xdata/commit/a49f271330e7731674c4f4a1fe71ca96740b955c))
-
-- Fix some problems
-  ([`0b9d046`](https://github.com/ppmina/Xdata/commit/0b9d0464a26438b429bb350c5265f11b9a9a015f))
-
 - Fix version problem
   ([`ed10d5a`](https://github.com/ppmina/Xdata/commit/ed10d5a64c4faae0c5bd88223f43545b45103bc4))
 
 - **ci**: Fix ci problems
   ([`9faffab`](https://github.com/ppmina/Xdata/commit/9faffab7e0dc7e989cfe2186063f9f4454db4847))
-
-- **ci**: Fix ci problems
-  ([`bbfe98d`](https://github.com/ppmina/Xdata/commit/bbfe98d6a3126ba348dbc6208eb0b16d136cf3a5))
 
 ### Chores
 
@@ -313,9 +269,6 @@
 
 - Add some storege fuc and pypi publish
   ([`2484f61`](https://github.com/ppmina/Xdata/commit/2484f61d8c59b421f1ddf3b716b250f13a2fd865))
-
-- Add some storege fuc and pypi publish
-  ([`7b4b0b1`](https://github.com/ppmina/Xdata/commit/7b4b0b1fff0b341b8c3a0a86c429332f4e921be0))
 
 - Consructed some ability
   ([`33a7c65`](https://github.com/ppmina/Xdata/commit/33a7c65eb530a1f9244bb111fe761a1c67d3bb5b))

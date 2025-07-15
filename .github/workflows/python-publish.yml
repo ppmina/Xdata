@@ -97,15 +97,18 @@ jobs:
         run: |
           # 使用 semantic release 生成的 changelog
           if [ -f "CHANGELOG.md" ]; then
-            # 提取当前版本的 changelog 内容
-            CHANGELOG=$(awk "/## v${{ steps.release.outputs.version }}/{flag=1; next} /## v/{flag=0} flag" CHANGELOG.md)
+            # 提取当前版本的 changelog 内容，避免重复
+            CHANGELOG=$(awk "/## v${{ steps.release.outputs.version }}/{flag=1; next} /## v/{flag=0} flag && !/^$/" CHANGELOG.md | head -20)
             if [ -z "$CHANGELOG" ]; then
               # 如果没有找到版本特定的内容，尝试提取第一个版本块
-              CHANGELOG=$(awk '/## v/{if(first){exit} first=1; next} first' CHANGELOG.md)
+              CHANGELOG=$(awk '/## v/{if(first){exit} first=1; next} first && !/^$/' CHANGELOG.md | head -20)
             fi
           else
             CHANGELOG="No changelog available"
           fi
+
+          # 清理可能的重复条目
+          CHANGELOG=$(echo "$CHANGELOG" | awk '!seen[$0]++')
 
           echo "changelog<<EOF" >> $GITHUB_OUTPUT
           echo "$CHANGELOG" >> $GITHUB_OUTPUT
@@ -132,14 +135,3 @@ jobs:
               "repository": "${{ github.repository }}",
               "release_url": "https://github.com/${{ github.repository }}/releases/tag/v${{ steps.release.outputs.version }}"
             }
-
-      - name: Create PR to develop
-        if: steps.release.outputs.released == 'true'
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          gh pr create \
-            --base develop \
-            --head main \
-            --title "chore(release): sync v${{ steps.release.outputs.version }} from main to develop" \
-            --body "This PR syncs the latest release from the main branch back to develop."

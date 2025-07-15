@@ -51,7 +51,6 @@ major_on_zero = false
 
 [tool.semantic_release.changelog]
 changelog_file = "CHANGELOG.md"
-template_dir = "templates"
 exclude_commit_patterns = [
     "^chore",
     "^ci",
