@@ -1,5 +1,10 @@
+"""应用配置管理.
+
+使用 Pydantic BaseSettings 加载和管理配置。
+"""
+
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any
 
 from pydantic_settings import BaseSettings
 
@@ -19,7 +24,7 @@ class Settings(BaseSettings):
     BINANCE_API_SECRET: str = ""
 
     # 数据存储配置
-    DATA_STORAGE: Dict[str, Any] = {
+    DATA_STORAGE: dict[str, Any] = {
         "ROOT_PATH": ROOT_DIR / "data",  # 数据根目录
         "MARKET_DATA": ROOT_DIR / "data/market",  # 市场数据目录
         "PERPETUAL_DATA": ROOT_DIR / "data/perpetual",  # 永续合约数据目录
@@ -30,6 +35,8 @@ class Settings(BaseSettings):
     CACHE_TTL: int = 60  # 缓存过期时间（秒）
 
     class Config:
+        """基本配置."""
+
         env_file = ".env"
         env_file_encoding = "utf-8"
         extra = "allow"  # 允许额外的字段

@@ -1,26 +1,26 @@
-"""
-交易对分类数据处理工具模块
+"""交易对分类数据处理工具模块.
 
 提供分类数据的读取、处理和分析功能
 """
 
 import logging
 from pathlib import Path
-from typing import Any, Dict, List, Tuple
-import pandas as pd
+from typing import Any
+
 import numpy as np
+import pandas as pd
 
 logger = logging.getLogger(__name__)
 
 
 class CategoryUtils:
-    """分类数据处理工具类"""
+    """分类数据处理工具类."""
 
     @staticmethod
     def read_category_csv(
         file_path: Path | str,
-    ) -> Tuple[List[str], List[str], np.ndarray]:
-        """从 CSV 文件读取分类矩阵。
+    ) -> tuple[list[str], list[str], np.ndarray]:
+        """从 CSV 文件读取分类矩阵。.
 
         Args:
             file_path: CSV 文件路径
@@ -59,13 +59,13 @@ class CategoryUtils:
 
     @staticmethod
     def filter_symbols_by_category(
-        symbols: List[str],
-        categories: List[str],
+        symbols: list[str],
+        categories: list[str],
         matrix: np.ndarray,
-        target_categories: List[str],
+        target_categories: list[str],
         require_all: bool = False,
-    ) -> List[str]:
-        """根据分类筛选交易对。
+    ) -> list[str]:
+        """根据分类筛选交易对。.
 
         Args:
             symbols: 交易对列表
@@ -113,9 +113,9 @@ class CategoryUtils:
 
     @staticmethod
     def get_category_statistics(
-        symbols: List[str], categories: List[str], matrix: np.ndarray
-    ) -> Dict[str, Dict[str, Any]]:
-        """获取分类统计信息。
+        symbols: list[str], categories: list[str], matrix: np.ndarray
+    ) -> dict[str, dict[str, Any]]:
+        """获取分类统计信息。.
 
         Args:
             symbols: 交易对列表
@@ -184,13 +184,13 @@ class CategoryUtils:
 
     @staticmethod
     def create_category_subset_matrix(
-        symbols: List[str],
-        categories: List[str],
+        symbols: list[str],
+        categories: list[str],
         matrix: np.ndarray,
-        target_symbols: List[str] | None = None,
-        target_categories: List[str] | None = None,
-    ) -> Tuple[List[str], List[str], np.ndarray]:
-        """创建分类矩阵的子集。
+        target_symbols: list[str] | None = None,
+        target_categories: list[str] | None = None,
+    ) -> tuple[list[str], list[str], np.ndarray]:
+        """创建分类矩阵的子集。.
 
         Args:
             symbols: 原始交易对列表
@@ -252,7 +252,7 @@ class CategoryUtils:
         output_path: Path | str,
         analysis_name: str = "category_analysis",
     ) -> None:
-        """导出分类分析报告。
+        """导出分类分析报告。.
 
         Args:
             file_path: 输入的分类CSV文件路径
@@ -316,8 +316,6 @@ class CategoryUtils:
                 import importlib.util
 
                 if importlib.util.find_spec("openpyxl") is not None:
-                    import openpyxl  # noqa: F401
-
                     excel_file = output_path / f"{analysis_name}.xlsx"
                 else:
                     raise ImportError("openpyxl not available")

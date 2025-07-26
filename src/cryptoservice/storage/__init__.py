@@ -1,4 +1,4 @@
-"""现代化存储包。
+"""现代化存储包。.
 
 提供同步和异步的SQLite存储解决方案。
 
@@ -11,17 +11,24 @@
 使用示例：
 ```python
 # 异步方式
-from cryptoservice.storage import MarketDB
-async with MarketDB("data/market.db") as db:
-    await db.store_data(data, freq)
+from cryptoservice.storage import (
+    MarketDB,
+)
+
+async with MarketDB(
+    "data/market.db"
+) as db:
+    await db.store_data(
+        data, freq
+    )
 ```
 """
 
 # 向后兼容的同步接口
 
 # 新的异步接口
-from .async_storage_db import AsyncMarketDB
 from .async_export import AsyncDataExporter
+from .async_storage_db import AsyncMarketDB
 from .pool_manager import PoolManager
 
 __all__ = [

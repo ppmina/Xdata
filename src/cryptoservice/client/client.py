@@ -1,3 +1,5 @@
+"""Binance API 客户端工厂，用于创建和管理客户端实例."""
+
 import logging
 
 from binance import Client
@@ -21,7 +23,7 @@ class BinanceClientFactory:
 
     @classmethod
     def create_client(cls, api_key: str, api_secret: str) -> Client:
-        """创建或获取Binance客户端实例（单例模式）
+        """创建或获取Binance客户端实例（单例模式）.
 
         Args:
             api_key: API密钥

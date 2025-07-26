@@ -1,3 +1,5 @@
+"""Universe 定义及相关数据模型."""
+
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -42,7 +44,7 @@ class UniverseConfig:
             raise ValueError("top_ratio 必须在 (0, 1] 范围内。")
 
     def to_dict(self) -> dict[str, Any]:
-        """转换为字典格式"""
+        """转换为字典格式."""
         data = {
             "start_date": self.start_date,
             "end_date": self.end_date,
@@ -99,7 +101,7 @@ class UniverseSnapshot:
 
     @staticmethod
     def _calculate_timestamp(date_str: str, time_str: str = "00:00:00") -> str:
-        """计算日期的时间戳（毫秒）
+        """计算日期的时间戳（毫秒）.
 
         Args:
             date_str: 日期字符串 (YYYY-MM-DD)
@@ -122,7 +124,7 @@ class UniverseSnapshot:
         metadata: dict[str, Any] | None = None,
         next_effective_date: str | None = None,
     ) -> "UniverseSnapshot":
-        """创建快照并自动推断周期日期和时间戳
+        """创建快照并自动推断周期日期和时间戳.
 
         根据重平衡日期（effective_date）和回看窗口（t1_months），
         自动计算数据计算的时间区间和对应的时间戳。
@@ -192,7 +194,7 @@ class UniverseSnapshot:
         mean_daily_amounts: dict[str, float],
         metadata: dict[str, Any] | None = None,
     ) -> "UniverseSnapshot":
-        """创建快照，明确指定所有日期和时间戳
+        """创建快照，明确指定所有日期和时间戳.
 
         Args:
             usage_t1_start: 实际使用开始日期
@@ -228,7 +230,7 @@ class UniverseSnapshot:
         )
 
     def validate_period_consistency(self, expected_t1_months: int) -> dict[str, Any]:
-        """验证周期日期的一致性
+        """验证周期日期的一致性.
 
         检查存储的period日期是否与预期的T1配置一致。
         适用于月末重平衡和其他重平衡策略。
@@ -271,7 +273,7 @@ class UniverseSnapshot:
         }
 
     def to_dict(self) -> dict[str, Any]:
-        """转换为字典格式"""
+        """转换为字典格式."""
         return {
             "effective_date": self.effective_date,
             "start_date": self.start_date,  # 实际使用开始日期
@@ -288,7 +290,7 @@ class UniverseSnapshot:
         }
 
     def get_period_info(self) -> dict[str, str]:
-        """获取周期信息
+        """获取周期信息.
 
         Returns:
             Dict: 包含周期相关的详细信息
@@ -309,7 +311,7 @@ class UniverseSnapshot:
         }
 
     def get_usage_period_info(self) -> dict[str, str]:
-        """获取Universe使用周期信息
+        """获取Universe使用周期信息.
 
         返回该快照对应的实际使用期间和计算期间。
 
@@ -348,7 +350,7 @@ class UniverseDefinition:
     description: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
-        """转换为字典格式"""
+        """转换为字典格式."""
         return {
             "config": self.config.to_dict(),
             "snapshots": [snapshot.to_dict() for snapshot in self.snapshots],
@@ -358,7 +360,7 @@ class UniverseDefinition:
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "UniverseDefinition":
-        """从字典创建Universe定义"""
+        """从字典创建Universe定义."""
         config = UniverseConfig(**data["config"])
         snapshots = []
 
@@ -413,7 +415,7 @@ class UniverseDefinition:
         )
 
     def save_to_file(self, file_path: Path | str) -> None:
-        """保存universe定义到文件"""
+        """保存universe定义到文件."""
         import json
 
         file_path = Path(file_path)
@@ -424,7 +426,7 @@ class UniverseDefinition:
 
     @classmethod
     def load_from_file(cls, file_path: Path | str) -> "UniverseDefinition":
-        """从文件加载universe定义"""
+        """从文件加载universe定义."""
         import json
 
         with open(file_path, encoding="utf-8") as f:
@@ -433,7 +435,7 @@ class UniverseDefinition:
         return cls.from_dict(data)
 
     def get_symbols_for_date(self, target_date: str, date_type: str = "usage") -> list[str]:
-        """获取指定日期的universe交易对列表
+        """获取指定日期的universe交易对列表.
 
         Args:
             target_date: 目标日期 (YYYY-MM-DD)
@@ -462,7 +464,7 @@ class UniverseDefinition:
         return []
 
     def get_snapshot_for_date(self, target_date: str, date_type: str = "usage") -> UniverseSnapshot | None:
-        """获取指定日期的UniverseSnapshot
+        """获取指定日期的UniverseSnapshot.
 
         Args:
             target_date: 目标日期 (YYYY-MM-DD)
@@ -490,7 +492,7 @@ class UniverseDefinition:
 
     @classmethod
     def get_schema(cls) -> dict[str, Any]:
-        """获取Universe定义的JSON Schema
+        """获取Universe定义的JSON Schema.
 
         Returns:
             Dict: JSON Schema定义
@@ -669,7 +671,7 @@ class UniverseDefinition:
 
     @classmethod
     def get_schema_example(cls) -> dict[str, Any]:
-        """获取Universe定义的示例数据
+        """获取Universe定义的示例数据.
 
         Returns:
             Dict: 符合schema的示例数据
@@ -714,7 +716,7 @@ class UniverseDefinition:
         }
 
     def export_schema_to_file(self, file_path: Path | str, include_example: bool = True) -> None:
-        """导出schema定义到文件
+        """导出schema定义到文件.
 
         Args:
             file_path: 输出文件路径
@@ -737,65 +739,69 @@ class UniverseDefinition:
         with open(file_path, "w", encoding="utf-8") as f:
             json.dump(schema_data, f, indent=2, ensure_ascii=False)
 
+    def _validate_main_structure(self, data: dict[str, Any], errors: list[str]) -> None:
+        """验证主结构."""
+        required_fields = ["config", "snapshots", "creation_time"]
+        for field in required_fields:
+            if field not in data:
+                errors.append(f"Missing required field: {field}")
+
+    def _validate_config(self, data: dict[str, Any], errors: list[str]) -> None:
+        """验证配置部分."""
+        if "config" in data:
+            config = data["config"]
+            config_required = [
+                "start_date",
+                "end_date",
+                "t1_months",
+                "t2_months",
+                "t3_months",
+            ]
+            if "top_k" not in config and "top_ratio" not in config:
+                errors.append("Config must contain either 'top_k' or 'top_ratio'")
+
+            for field in config_required:
+                if field not in config:
+                    errors.append(f"Missing required config field: {field}")
+
+            import re
+
+            date_pattern = r"^\d{4}-\d{2}-\d{2}$"
+            for date_field in ["start_date", "end_date"]:
+                if date_field in config and not re.match(date_pattern, config[date_field]):
+                    errors.append(f"Invalid date format for {date_field}: {config[date_field]}")
+
+    def _validate_snapshots(self, data: dict[str, Any], errors: list[str]) -> None:
+        """验证快照部分."""
+        if "snapshots" in data:
+            for i, snapshot in enumerate(data["snapshots"]):
+                snapshot_required = [
+                    "effective_date",
+                    "calculated_t1_start",
+                    "calculated_t1_end",
+                    "calculated_t1_start_ts",
+                    "calculated_t1_end_ts",
+                    "symbols",
+                    "mean_daily_amounts",
+                ]
+                for field in snapshot_required:
+                    if field not in snapshot:
+                        errors.append(f"Missing required field in snapshot {i}: {field}")
+
     def validate_against_schema(self) -> dict[str, Any]:
-        """验证当前universe定义是否符合schema
+        """验证当前universe定义是否符合schema.
 
         Returns:
             Dict: 验证结果
         """
         try:
-            # 这里可以使用jsonschema库进行验证，但为了减少依赖，我们进行基本验证
             data = self.to_dict()
-
             errors: list[str] = []
             warnings: list[str] = []
 
-            # 基本结构验证
-            required_fields = ["config", "snapshots", "creation_time"]
-            for field in required_fields:
-                if field not in data:
-                    errors.append(f"Missing required field: {field}")
-
-            # 配置验证
-            if "config" in data:
-                config = data["config"]
-                config_required = [
-                    "start_date",
-                    "end_date",
-                    "t1_months",
-                    "t2_months",
-                    "t3_months",
-                ]
-                if "top_k" not in config and "top_ratio" not in config:
-                    errors.append("Config must contain either 'top_k' or 'top_ratio'")
-
-                for field in config_required:
-                    if field not in config:
-                        errors.append(f"Missing required config field: {field}")
-
-                # 日期格式验证
-                import re
-
-                date_pattern = r"^\d{4}-\d{2}-\d{2}$"
-                for date_field in ["start_date", "end_date"]:
-                    if date_field in config and not re.match(date_pattern, config[date_field]):
-                        errors.append(f"Invalid date format for {date_field}: {config[date_field]}")
-
-            # 快照验证
-            if "snapshots" in data:
-                for i, snapshot in enumerate(data["snapshots"]):
-                    snapshot_required = [
-                        "effective_date",
-                        "calculated_t1_start",
-                        "calculated_t1_end",
-                        "calculated_t1_start_ts",
-                        "calculated_t1_end_ts",
-                        "symbols",
-                        "mean_daily_amounts",
-                    ]
-                    for field in snapshot_required:
-                        if field not in snapshot:
-                            errors.append(f"Missing required field in snapshot {i}: {field}")
+            self._validate_main_structure(data, errors)
+            self._validate_config(data, errors)
+            self._validate_snapshots(data, errors)
 
             return {
                 "valid": len(errors) == 0,

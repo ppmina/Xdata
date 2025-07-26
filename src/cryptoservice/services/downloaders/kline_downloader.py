@@ -1,33 +1,39 @@
-"""K线数据下载器。
+"""K线数据下载器。.
 
 专门处理K线数据的下载，包括现货和期货K线数据。
 """
 
 import logging
 from datetime import datetime
-from typing import List, Optional
 from pathlib import Path
 
+from cryptoservice.config import RetryConfig
+from cryptoservice.exceptions import InvalidSymbolError, MarketDataFetchError
 from cryptoservice.models import (
-    PerpetualMarketTicker,
     Freq,
     HistoricalKlinesType,
     IntegrityReport,
+    PerpetualMarketTicker,
 )
-from cryptoservice.exceptions import InvalidSymbolError, MarketDataFetchError
-from cryptoservice.config import RetryConfig
 from cryptoservice.storage import AsyncMarketDB
+
 from .base_downloader import BaseDownloader
 
 logger = logging.getLogger(__name__)
 
 
 class KlineDownloader(BaseDownloader):
-    """K线数据下载器"""
+    """K线数据下载器."""
 
     def __init__(self, client, request_delay: float = 0.5):
+        """初始化K线数据下载器.
+
+        Args:
+            client: API 客户端实例.
+            request_delay: 请求之间的基础延迟（秒）.
+        """
         super().__init__(client, request_delay)
-        self.db: Optional[AsyncMarketDB] = None
+        self.db: AsyncMarketDB | None = None
 
     def download_single_symbol(
         self,
@@ -36,9 +42,9 @@ class KlineDownloader(BaseDownloader):
         end_ts: str,
         interval: Freq,
         klines_type: HistoricalKlinesType = HistoricalKlinesType.FUTURES,
-        retry_config: Optional[RetryConfig] = None,
-    ) -> List[PerpetualMarketTicker]:
-        """下载单个交易对的K线数据"""
+        retry_config: RetryConfig | None = None,
+    ) -> list[PerpetualMarketTicker]:
+        """下载单个交易对的K线数据."""
         try:
             logger.debug(f"下载 {symbol} 的K线数据: {start_ts} - {end_ts}")
 
@@ -93,15 +99,15 @@ class KlineDownloader(BaseDownloader):
 
     async def download_multiple_symbols(
         self,
-        symbols: List[str],
+        symbols: list[str],
         start_time: str,
         end_time: str,
         interval: Freq,
         db_path: Path,
         max_workers: int = 5,
-        retry_config: Optional[RetryConfig] = None,
+        retry_config: RetryConfig | None = None,
     ) -> IntegrityReport:
-        """批量下载多个交易对的K线数据"""
+        """批量下载多个交易对的K线数据."""
         from concurrent.futures import ThreadPoolExecutor, as_completed
 
         # 初始化数据库
@@ -119,7 +125,7 @@ class KlineDownloader(BaseDownloader):
         logger.info(f"🚀 开始批量下载 {len(symbols)} 个交易对的K线数据")
 
         async def process_symbol(symbol: str):
-            """处理单个交易对"""
+            """处理单个交易对."""
             try:
                 data = self.download_single_symbol(
                     symbol=symbol,
@@ -175,8 +181,8 @@ class KlineDownloader(BaseDownloader):
             recommendations=self._generate_recommendations(successful_symbols, failed_symbols),
         )
 
-    def _validate_kline_data(self, data: List, symbol: str) -> List:
-        """验证K线数据质量"""
+    def _validate_kline_data(self, data: list, symbol: str) -> list:
+        """验证K线数据质量."""
         if not data:
             return data
 
@@ -225,17 +231,17 @@ class KlineDownloader(BaseDownloader):
         return valid_data
 
     def _date_to_timestamp_start(self, date: str) -> str:
-        """将日期字符串转换为当天开始的时间戳"""
+        """将日期字符串转换为当天开始的时间戳."""
         timestamp = int(datetime.strptime(f"{date} 00:00:00", "%Y-%m-%d %H:%M:%S").timestamp() * 1000)
         return str(timestamp)
 
     def _date_to_timestamp_end(self, date: str) -> str:
-        """将日期字符串转换为当天结束的时间戳"""
+        """将日期字符串转换为当天结束的时间戳."""
         timestamp = int(datetime.strptime(f"{date} 23:59:59", "%Y-%m-%d %H:%M:%S").timestamp() * 1000)
         return str(timestamp)
 
-    def _generate_recommendations(self, successful_symbols: List[str], failed_symbols: List[str]) -> List[str]:
-        """生成建议"""
+    def _generate_recommendations(self, successful_symbols: list[str], failed_symbols: list[str]) -> list[str]:
+        """生成建议."""
         recommendations = []
         success_rate = len(successful_symbols) / (len(successful_symbols) + len(failed_symbols))
 
@@ -252,5 +258,5 @@ class KlineDownloader(BaseDownloader):
         return recommendations
 
     def download(self, *args, **kwargs):
-        """实现基类的抽象方法"""
+        """实现基类的抽象方法."""
         return self.download_multiple_symbols(*args, **kwargs)

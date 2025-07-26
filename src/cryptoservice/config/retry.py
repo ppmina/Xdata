@@ -1,9 +1,11 @@
+"""重试机制的配置模型."""
+
 from dataclasses import dataclass
 
 
 @dataclass
 class RetryConfig:
-    """重试配置"""
+    """重试配置."""
 
     max_retries: int = 3
     base_delay: float = 1.0

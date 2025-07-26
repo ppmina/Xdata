@@ -1,4 +1,4 @@
-"""市场数据服务。
+"""市场数据服务。.
 
 专注于核心API功能，使用组合模式整合各个专业模块。
 """
@@ -6,39 +6,39 @@
 import logging
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 from cryptoservice.client import BinanceClientFactory
-from cryptoservice.utils import DataConverter
-from cryptoservice.storage import AsyncMarketDB
+from cryptoservice.config import RetryConfig, settings
 from cryptoservice.exceptions import InvalidSymbolError, MarketDataFetchError
 from cryptoservice.models import (
     DailyMarketTicker,
     Freq,
+    FundingRate,
     HistoricalKlinesType,
+    IntegrityReport,
     KlineMarketTicker,
+    LongShortRatio,
+    OpenInterest,
     SortBy,
     SymbolTicker,
     UniverseDefinition,
-    IntegrityReport,
-    FundingRate,
-    OpenInterest,
-    LongShortRatio,
 )
-from cryptoservice.config import settings, RetryConfig
+from cryptoservice.storage import AsyncMarketDB
+from cryptoservice.utils import DataConverter
 
 # 导入新的模块
 from .downloaders import KlineDownloader, MetricsDownloader, VisionDownloader
-from .processors import DataValidator, UniverseManager, CategoryManager
+from .processors import CategoryManager, DataValidator, UniverseManager
 
 logger = logging.getLogger(__name__)
 
 
 class MarketDataService:
-    """市场数据服务实现类（重构版）"""
+    """市场数据服务实现类（重构版）."""
 
     def __init__(self, api_key: str, api_secret: str) -> None:
-        """初始化市场数据服务"""
+        """初始化市场数据服务."""
         self.client = BinanceClientFactory.create_client(api_key, api_secret)
         self.converter = DataConverter()
         self.db: AsyncMarketDB | None = None
@@ -54,7 +54,7 @@ class MarketDataService:
     # ==================== 基础市场数据API ====================
 
     def get_symbol_ticker(self, symbol: str | None = None) -> SymbolTicker | list[SymbolTicker]:
-        """获取单个或所有交易对的行情数据"""
+        """获取单个或所有交易对的行情数据."""
         try:
             ticker = self.client.get_symbol_ticker(symbol=symbol)
             if not ticker:
@@ -69,7 +69,7 @@ class MarketDataService:
             raise MarketDataFetchError(f"Failed to fetch ticker: {e}") from e
 
     def get_perpetual_symbols(self, only_trading: bool = True, quote_asset: str = "USDT") -> list[str]:
-        """获取当前市场上所有永续合约交易对"""
+        """获取当前市场上所有永续合约交易对."""
         try:
             logger.info(f"获取当前永续合约交易对列表（筛选条件：{quote_asset}结尾）")
             futures_info = self.client.futures_exchange_info()
@@ -94,7 +94,7 @@ class MarketDataService:
         sort_by: SortBy = SortBy.QUOTE_VOLUME,
         quote_asset: str | None = None,
     ) -> list[DailyMarketTicker]:
-        """获取前N个交易对"""
+        """获取前N个交易对."""
         try:
             tickers = self.client.get_ticker()
             market_tickers = [DailyMarketTicker.from_binance_ticker(t) for t in tickers]
@@ -113,7 +113,7 @@ class MarketDataService:
             raise MarketDataFetchError(f"Failed to get top coins: {e}") from e
 
     def get_market_summary(self, interval: Freq = Freq.d1) -> dict[str, Any]:
-        """获取市场概览"""
+        """获取市场概览."""
         try:
             summary: dict[str, Any] = {"snapshot_time": datetime.now(), "data": {}}
             tickers_result = self.get_symbol_ticker()
@@ -137,7 +137,7 @@ class MarketDataService:
         interval: Freq = Freq.h1,
         klines_type: HistoricalKlinesType = HistoricalKlinesType.SPOT,
     ) -> list[KlineMarketTicker]:
-        """获取历史行情数据"""
+        """获取历史行情数据."""
         try:
             # 处理时间格式
             if isinstance(start_time, str):
@@ -205,7 +205,7 @@ class MarketDataService:
         end_time: str | datetime | None = None,
         limit: int = 100,
     ) -> list[FundingRate]:
-        """获取永续合约资金费率历史"""
+        """获取永续合约资金费率历史."""
         # 转换时间格式
         start_time_str = self._convert_time_to_string(start_time) if start_time else ""
         end_time_str = self._convert_time_to_string(end_time) if end_time else ""
@@ -225,7 +225,7 @@ class MarketDataService:
         end_time: str | datetime | None = None,
         limit: int = 500,
     ) -> list[OpenInterest]:
-        """获取永续合约持仓量数据"""
+        """获取永续合约持仓量数据."""
         # 转换时间格式
         start_time_str = self._convert_time_to_string(start_time) if start_time else ""
         end_time_str = self._convert_time_to_string(end_time) if end_time else ""
@@ -247,7 +247,7 @@ class MarketDataService:
         end_time: str | datetime | None = None,
         limit: int = 500,
     ) -> list[LongShortRatio]:
-        """获取多空比例数据"""
+        """获取多空比例数据."""
         # 转换时间格式
         start_time_str = self._convert_time_to_string(start_time) if start_time else ""
         end_time_str = self._convert_time_to_string(end_time) if end_time else ""
@@ -274,10 +274,10 @@ class MarketDataService:
         max_retries: int = 3,
         progress=None,
         request_delay: float = 0.5,
-        retry_config: Optional[RetryConfig] = None,
+        retry_config: RetryConfig | None = None,
         enable_integrity_check: bool = True,
     ) -> IntegrityReport:
-        """获取永续合约数据并存储"""
+        """获取永续合约数据并存储."""
         # 验证并准备数据库文件路径
         db_file_path = self._validate_and_prepare_path(db_path, is_file=True)
         end_time = end_time or datetime.now().strftime("%Y-%m-%d")
@@ -310,7 +310,7 @@ class MarketDataService:
         long_short_ratio_types: list[str] | None = None,
         use_binance_vision: bool = False,
     ) -> None:
-        """按周期分别下载universe数据"""
+        """按周期分别下载universe数据."""
         try:
             # 验证路径
             universe_file_obj = self._validate_and_prepare_path(universe_file, is_file=True)
@@ -393,7 +393,7 @@ class MarketDataService:
         batch_size: int = 5,
         quote_asset: str = "USDT",
     ) -> UniverseDefinition:
-        """定义universe并保存到文件"""
+        """定义universe并保存到文件."""
         return self.universe_manager.define_universe(
             start_date=start_date,
             end_date=end_date,
@@ -414,17 +414,17 @@ class MarketDataService:
     # ==================== 分类管理 ====================
 
     def get_symbol_categories(self) -> dict[str, list[str]]:
-        """获取当前所有交易对的分类信息"""
+        """获取当前所有交易对的分类信息."""
         return self.category_manager.get_symbol_categories()
 
     def get_all_categories(self) -> list[str]:
-        """获取所有可能的分类标签"""
+        """获取所有可能的分类标签."""
         return self.category_manager.get_all_categories()
 
     def create_category_matrix(
         self, symbols: list[str], categories: list[str] | None = None
     ) -> tuple[list[str], list[str], list[list[int]]]:
-        """创建 symbols 和 categories 的对应矩阵"""
+        """创建 symbols 和 categories 的对应矩阵."""
         categories_list = categories if categories is not None else []
         return self.category_manager.create_category_matrix(symbols, categories_list)
 
@@ -435,7 +435,7 @@ class MarketDataService:
         date_str: str | None = None,
         categories: list[str] | None = None,
     ) -> None:
-        """将分类矩阵保存为 CSV 文件"""
+        """将分类矩阵保存为 CSV 文件."""
         date_str_value = date_str if date_str is not None else ""
         categories_list = categories if categories is not None else []
         self.category_manager.save_category_matrix_csv(
@@ -451,7 +451,7 @@ class MarketDataService:
         output_path: Path | str,
         categories: list[str] | None = None,
     ) -> None:
-        """为 universe 中的所有交易对下载并保存分类信息"""
+        """为 universe 中的所有交易对下载并保存分类信息."""
         categories_list = categories if categories is not None else []
         self.category_manager.download_and_save_categories_for_universe(
             universe_file=universe_file,
@@ -470,7 +470,7 @@ class MarketDataService:
         long_short_ratio_types: list[str] | None = None,
         request_delay: float = 0.5,
     ) -> None:
-        """为单个快照下载市场指标数据"""
+        """为单个快照下载市场指标数据."""
         try:
             # 初始化数据库连接
             if self.db is None:
@@ -500,7 +500,7 @@ class MarketDataService:
             raise MarketDataFetchError(f"下载市场指标数据失败: {e}") from e
 
     def _validate_and_prepare_path(self, path: Path | str, is_file: bool = False, file_name: str | None = None) -> Path:
-        """验证并准备路径"""
+        """验证并准备路径."""
         if not path:
             raise ValueError("路径不能为空，必须手动指定")
 
@@ -519,17 +519,17 @@ class MarketDataService:
         return path_obj
 
     def _date_to_timestamp_start(self, date: str) -> str:
-        """将日期字符串转换为当天开始的时间戳"""
+        """将日期字符串转换为当天开始的时间戳."""
         timestamp = int(datetime.strptime(f"{date} 00:00:00", "%Y-%m-%d %H:%M:%S").timestamp() * 1000)
         return str(timestamp)
 
     def _date_to_timestamp_end(self, date: str) -> str:
-        """将日期字符串转换为当天结束的时间戳"""
+        """将日期字符串转换为当天结束的时间戳."""
         timestamp = int(datetime.strptime(f"{date} 23:59:59", "%Y-%m-%d %H:%M:%S").timestamp() * 1000)
         return str(timestamp)
 
     def _convert_time_to_string(self, time_value: str | datetime | None) -> str:
-        """将时间值转换为字符串格式"""
+        """将时间值转换为字符串格式."""
         if time_value is None:
             return ""
         if isinstance(time_value, str):
@@ -539,7 +539,7 @@ class MarketDataService:
         raise ValueError(f"Unsupported time type: {type(time_value)}")
 
     def check_symbol_exists_on_date(self, symbol: str, date: str) -> bool:
-        """检查指定日期是否存在该交易对"""
+        """检查指定日期是否存在该交易对."""
         try:
             # 将日期转换为时间戳范围
             start_time = self._date_to_timestamp_start(date)

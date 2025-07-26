@@ -1,32 +1,32 @@
-"""基于aiosqlitepool的连接池管理器。
+"""基于aiosqlitepool的连接池管理器。.
 
 高性能的异步SQLite连接池实现。
 """
 
 import logging
-import aiosqlitepool
 from pathlib import Path
-from typing import Union
+
+import aiosqlitepool
 
 logger = logging.getLogger(__name__)
 
 
 class PoolManager:
-    """统一的连接池管理器。
+    """统一的连接池管理器。.
 
     根据可用库自动选择最优的连接池实现。
     """
 
     def __init__(
         self,
-        db_path: Union[str, Path],
+        db_path: str | Path,
         max_connections: int = 10,
         min_connections: int = 1,
         connection_timeout: float = 30.0,
         enable_wal: bool = True,
         enable_optimizations: bool = True,
     ):
-        """初始化连接池管理器。
+        """初始化连接池管理器。.
 
         Args:
             db_path: 数据库文件路径
@@ -50,7 +50,7 @@ class PoolManager:
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
 
     async def initialize(self) -> None:
-        """初始化连接池。"""
+        """初始化连接池。."""
         if self._initialized:
             return
 
@@ -64,7 +64,7 @@ class PoolManager:
         logger.info(f"连接池初始化完成: {self.db_path}")
 
     async def _create_aiosqlitepool(self) -> "aiosqlitepool.SQLiteConnectionPool":
-        """创建aiosqlitepool连接池。"""
+        """创建aiosqlitepool连接池。."""
         # 配置选项
         config = {
             "database": str(self.db_path),
@@ -97,7 +97,7 @@ class PoolManager:
         return pool
 
     async def close(self) -> None:
-        """关闭连接池。"""
+        """关闭连接池。."""
         if self._pool:
             await self._pool.close()
             self._pool = None
@@ -105,10 +105,10 @@ class PoolManager:
         logger.info("连接池已关闭")
 
     async def __aenter__(self):
-        """异步上下文管理器入口。"""
+        """异步上下文管理器入口。."""
         await self.initialize()
         return self
 
     async def __aexit__(self, exc_type, exc_val, exc_tb):
-        """异步上下文管理器出口。"""
+        """异步上下文管理器出口。."""
         await self.close()

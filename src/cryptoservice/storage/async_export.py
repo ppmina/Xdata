@@ -1,4 +1,4 @@
-"""异步数据导出工具。
+"""异步数据导出工具.
 
 基于异步数据库的高性能数据导出功能。
 """
@@ -6,22 +6,23 @@
 import asyncio
 import logging
 from pathlib import Path
-from typing import List, Optional, Union, Literal
+from typing import Literal
 
 import numpy as np
 import pandas as pd
 
 from cryptoservice.models import Freq
+
 from .async_storage_db import AsyncMarketDB
 
 logger = logging.getLogger(__name__)
 
 
 class AsyncDataExporter:
-    """异步数据导出器。"""
+    """异步数据导出器."""
 
     def __init__(self, db: AsyncMarketDB):
-        """初始化异步数据导出器。
+        """初始化异步数据导出器.
 
         Args:
             db: 异步市场数据库实例
@@ -30,15 +31,15 @@ class AsyncDataExporter:
 
     async def export_to_numpy(
         self,
-        symbols: List[str],
+        symbols: list[str],
         start_time: str,
         end_time: str,
         freq: Freq,
-        output_path: Union[str, Path],
-        features: Optional[List[str]] = None,
+        output_path: str | Path,
+        features: list[str] | None = None,
         chunk_size: int = 1000000,  # 1M记录一批
     ) -> None:
-        """异步导出数据为NumPy格式。
+        """异步导出数据为NumPy格式.
 
         Args:
             symbols: 交易对列表
@@ -80,9 +81,9 @@ class AsyncDataExporter:
         freq: Freq,
         chunk_size: int,
     ) -> None:
-        """按日期分组导出数据。"""
+        """按日期分组导出数据。."""
         timestamps = df.index.get_level_values("timestamp")
-        dates = sorted(set(pd.to_datetime(ts, unit="ms").date() for ts in timestamps))
+        dates = sorted({pd.to_datetime(ts, unit="ms").date() for ts in timestamps})
 
         # 并发处理多个日期
         tasks = []
@@ -107,7 +108,7 @@ class AsyncDataExporter:
         output_path: Path,
         freq: Freq,
     ) -> None:
-        """导出单个日期的数据。"""
+        """导出单个日期的数据。."""
         date_str = date.strftime("%Y%m%d")
 
         # 筛选当天数据
@@ -141,7 +142,7 @@ class AsyncDataExporter:
         freq: Freq,
         date_str: str,
     ) -> None:
-        """导出单个特征的数据。"""
+        """导出单个特征的数据。."""
         # 在线程池中执行CPU密集型操作
         loop = asyncio.get_event_loop()
 
@@ -171,15 +172,15 @@ class AsyncDataExporter:
 
     async def export_to_csv(
         self,
-        symbols: List[str],
+        symbols: list[str],
         start_time: str,
         end_time: str,
         freq: Freq,
-        output_path: Union[str, Path],
-        features: Optional[List[str]] = None,
+        output_path: str | Path,
+        features: list[str] | None = None,
         chunk_size: int = 100000,
     ) -> None:
-        """异步导出数据为CSV格式。
+        """异步导出数据为CSV格式。.
 
         Args:
             symbols: 交易对列表
@@ -234,15 +235,15 @@ class AsyncDataExporter:
 
     async def export_to_parquet(
         self,
-        symbols: List[str],
+        symbols: list[str],
         start_time: str,
         end_time: str,
         freq: Freq,
-        output_path: Union[str, Path],
-        features: Optional[List[str]] = None,
+        output_path: str | Path,
+        features: list[str] | None = None,
         compression: Literal["snappy", "gzip", "brotli", "lz4", "zstd"] = "snappy",
     ) -> None:
-        """异步导出数据为Parquet格式。
+        """异步导出数据为Parquet格式。.
 
         Args:
             symbols: 交易对列表
@@ -288,13 +289,13 @@ class AsyncDataExporter:
 
     async def export_summary_statistics(
         self,
-        symbols: List[str],
+        symbols: list[str],
         start_time: str,
         end_time: str,
         freq: Freq,
-        output_path: Union[str, Path],
+        output_path: str | Path,
     ) -> None:
-        """异步导出数据统计摘要。
+        """异步导出数据统计摘要。.
 
         Args:
             symbols: 交易对列表

@@ -1,13 +1,12 @@
-"""分类管理器。
+"""分类管理器。.
 
 专门处理交易对分类相关的功能。
 """
 
-import logging
 import csv
+import logging
 from datetime import datetime
 from pathlib import Path
-from typing import List, Dict, Tuple, Optional
 
 import requests
 
@@ -17,20 +16,24 @@ logger = logging.getLogger(__name__)
 
 
 class CategoryManager:
-    """分类管理器"""
+    """分类管理器."""
 
     def __init__(self) -> None:
-        self.categories_cache: Dict[str, List[str]] = {}
-        self.cache_timestamp: Optional[datetime] = None
+        """初始化分类管理器."""
+        self.categories_cache: dict[str, list[str]] = {}
+        self.cache_timestamp: datetime | None = None
 
-    def get_symbol_categories(self, use_cache: bool = True) -> Dict[str, List[str]]:
-        """获取当前所有交易对的分类信息"""
+    def get_symbol_categories(self, use_cache: bool = True) -> dict[str, list[str]]:
+        """获取当前所有交易对的分类信息."""
         try:
             # 检查缓存
-            if use_cache and self.categories_cache and self.cache_timestamp:
-                # 缓存1小时
-                if (datetime.now() - self.cache_timestamp).seconds < 3600:
-                    return self.categories_cache
+            if (
+                use_cache
+                and self.categories_cache
+                and self.cache_timestamp
+                and (datetime.now() - self.cache_timestamp).seconds < 3600
+            ):
+                return self.categories_cache
 
             logger.info("获取 Binance 交易对分类信息...")
 
@@ -65,8 +68,8 @@ class CategoryManager:
             logger.error(f"获取交易对分类信息失败: {e}")
             raise
 
-    def get_all_categories(self) -> List[str]:
-        """获取所有可能的分类标签"""
+    def get_all_categories(self) -> list[str]:
+        """获取所有可能的分类标签."""
         try:
             symbol_categories = self.get_symbol_categories()
 
@@ -76,25 +79,22 @@ class CategoryManager:
                 all_tags.update(tags)
 
             # 按字母排序
-            return sorted(list(all_tags))
+            return sorted(all_tags)
 
         except Exception as e:
             logger.error(f"获取分类标签失败: {e}")
             raise
 
     def create_category_matrix(
-        self, symbols: List[str], categories: List[str] | None = None
-    ) -> Tuple[List[str], List[str], List[List[int]]]:
-        """创建 symbols 和 categories 的对应矩阵"""
+        self, symbols: list[str], categories: list[str] | None = None
+    ) -> tuple[list[str], list[str], list[list[int]]]:
+        """创建 symbols 和 categories 的对应矩阵."""
         try:
             # 获取当前分类信息
             symbol_categories = self.get_symbol_categories()
 
             # 如果没有指定分类，获取所有分类
-            if categories is None:
-                categories = self.get_all_categories()
-            else:
-                categories = sorted(categories)
+            categories = self.get_all_categories() if categories is None else sorted(categories)
 
             # 过滤并排序symbols（只保留有分类信息的）
             valid_symbols = [s for s in symbols if s in symbol_categories]
@@ -118,11 +118,11 @@ class CategoryManager:
     def save_category_matrix_csv(
         self,
         output_path: Path | str,
-        symbols: List[str],
+        symbols: list[str],
         date_str: str,
-        categories: List[str] | None = None,
+        categories: list[str] | None = None,
     ) -> None:
-        """将分类矩阵保存为 CSV 文件"""
+        """将分类矩阵保存为 CSV 文件."""
         try:
             output_path = Path(output_path)
             output_path.mkdir(parents=True, exist_ok=True)
@@ -162,9 +162,9 @@ class CategoryManager:
         self,
         universe_file: Path | str,
         output_path: Path | str,
-        categories: List[str] | None = None,
+        categories: list[str] | None = None,
     ) -> None:
-        """为 universe 中的所有交易对下载并保存分类信息"""
+        """为 universe 中的所有交易对下载并保存分类信息."""
         try:
             # 验证路径
             universe_file_obj = self._validate_and_prepare_path(universe_file, is_file=True)
@@ -186,7 +186,7 @@ class CategoryManager:
             for snapshot in universe_def.snapshots:
                 all_symbols.update(snapshot.symbols)
 
-            all_symbols_list = sorted(list(all_symbols))
+            all_symbols_list = sorted(all_symbols)
             logger.info(f"   - 总交易对数: {len(all_symbols_list)}")
 
             # 获取当前分类信息（用于所有历史数据）
@@ -226,7 +226,7 @@ class CategoryManager:
             raise
 
     def _validate_and_prepare_path(self, path: Path | str, is_file: bool = False, file_name: str | None = None) -> Path:
-        """验证并准备路径"""
+        """验证并准备路径."""
         if not path:
             raise ValueError("路径不能为空，必须手动指定")
 
@@ -245,6 +245,6 @@ class CategoryManager:
         return path_obj
 
     def clear_cache(self):
-        """清除缓存"""
+        """清除缓存."""
         self.categories_cache.clear()
         self.cache_timestamp = None

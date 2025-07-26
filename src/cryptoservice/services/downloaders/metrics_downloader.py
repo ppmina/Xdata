@@ -1,4 +1,4 @@
-"""市场指标数据下载器。
+"""市场指标数据下载器。.
 
 专门处理资金费率、持仓量、多空比例等市场指标数据的下载。
 """
@@ -6,32 +6,38 @@
 import logging
 import time
 from datetime import datetime, timedelta
-from typing import List, Optional
 
-from cryptoservice.models import FundingRate, OpenInterest, LongShortRatio, Freq
 from cryptoservice.exceptions import MarketDataFetchError
+from cryptoservice.models import Freq, FundingRate, LongShortRatio, OpenInterest
 from cryptoservice.storage import AsyncMarketDB
+
 from .base_downloader import BaseDownloader
 
 logger = logging.getLogger(__name__)
 
 
 class MetricsDownloader(BaseDownloader):
-    """市场指标数据下载器"""
+    """市场指标数据下载器."""
 
     def __init__(self, client, request_delay: float = 0.5):
+        """初始化市场指标数据下载器.
+
+        Args:
+            client: API 客户端实例.
+            request_delay: 请求之间的基础延迟（秒）.
+        """
         super().__init__(client, request_delay)
-        self.db: Optional[AsyncMarketDB] = None
+        self.db: AsyncMarketDB | None = None
 
     async def download_funding_rate_batch(
         self,
-        symbols: List[str],
+        symbols: list[str],
         start_time: str,
         end_time: str,
         db_path: str,
         request_delay: float = 0.5,
     ) -> None:
-        """批量下载资金费率数据"""
+        """批量下载资金费率数据."""
         try:
             logger.info("💰 批量下载资金费率数据")
 
@@ -90,14 +96,14 @@ class MetricsDownloader(BaseDownloader):
 
     async def download_open_interest_batch(
         self,
-        symbols: List[str],
+        symbols: list[str],
         start_time: str,
         end_time: str,
         db_path: str,
         interval: Freq = Freq.m5,
         request_delay: float = 0.5,
     ) -> None:
-        """批量下载持仓量数据"""
+        """批量下载持仓量数据."""
         try:
             logger.info("📊 批量下载持仓量数据")
 
@@ -157,7 +163,7 @@ class MetricsDownloader(BaseDownloader):
 
     async def download_long_short_ratio_batch(
         self,
-        symbols: List[str],
+        symbols: list[str],
         start_time: str,
         end_time: str,
         db_path: str,
@@ -165,7 +171,7 @@ class MetricsDownloader(BaseDownloader):
         ratio_type: str = "account",
         request_delay: float = 0.5,
     ) -> None:
-        """批量下载多空比例数据"""
+        """批量下载多空比例数据."""
         try:
             logger.info(f"📊 批量下载多空比例数据 (类型: {ratio_type})")
 
@@ -248,8 +254,8 @@ class MetricsDownloader(BaseDownloader):
         start_time: str | None = None,
         end_time: str | None = None,
         limit: int = 100,
-    ) -> List[FundingRate]:
-        """下载单个交易对的资金费率数据"""
+    ) -> list[FundingRate]:
+        """下载单个交易对的资金费率数据."""
         try:
 
             def request_func():
@@ -278,8 +284,8 @@ class MetricsDownloader(BaseDownloader):
         start_time: str | None = None,
         end_time: str | None = None,
         limit: int = 500,
-    ) -> List[OpenInterest]:
-        """下载单个交易对的持仓量数据"""
+    ) -> list[OpenInterest]:
+        """下载单个交易对的持仓量数据."""
         try:
 
             def request_func():
@@ -309,8 +315,8 @@ class MetricsDownloader(BaseDownloader):
         start_time: str | None = None,
         end_time: str | None = None,
         limit: int = 500,
-    ) -> List[LongShortRatio]:
-        """下载单个交易对的多空比例数据"""
+    ) -> list[LongShortRatio]:
+        """下载单个交易对的多空比例数据."""
         try:
 
             def request_func():
@@ -344,17 +350,17 @@ class MetricsDownloader(BaseDownloader):
             raise MarketDataFetchError(f"获取多空比例失败: {e}") from e
 
     def _date_to_timestamp_start(self, date: str) -> str:
-        """将日期字符串转换为当天开始的时间戳"""
+        """将日期字符串转换为当天开始的时间戳."""
         timestamp = int(datetime.strptime(f"{date} 00:00:00", "%Y-%m-%d %H:%M:%S").timestamp() * 1000)
         return str(timestamp)
 
     def _date_to_timestamp_end(self, date: str) -> str:
-        """将日期字符串转换为当天结束的时间戳"""
+        """将日期字符串转换为当天结束的时间戳."""
         timestamp = int(datetime.strptime(f"{date} 23:59:59", "%Y-%m-%d %H:%M:%S").timestamp() * 1000)
         return str(timestamp)
 
     def download(self, *args, **kwargs):
-        """实现基类的抽象方法"""
+        """实现基类的抽象方法."""
         # 这里可以根据参数决定调用哪个具体的下载方法
         if "funding_rate" in kwargs:
             return self.download_funding_rate_batch(*args, **kwargs)

@@ -1,7 +1,16 @@
+"""Define crypto universe snapshots and save them as a JSON file.
+
+This demo script loads Binance API credentials from environment variables,
+builds a MarketDataService instance, and calls `define_universe` with the
+configuration below, writing the result to `data/universe.json`.
+"""
+
 import os
 from pathlib import Path
-from cryptoservice.services.market_service import MarketDataService
+
 from dotenv import load_dotenv
+
+from cryptoservice.services.market_service import MarketDataService
 
 load_dotenv()
 
@@ -31,8 +40,7 @@ BATCH_SIZE = 10  # 每批请求数量
 
 
 def main():
-    """定义Universe脚本"""
-
+    """定义Universe脚本."""
     # 检查API密钥
     api_key = os.getenv("BINANCE_API_KEY")
     api_secret = os.getenv("BINANCE_API_SECRET")

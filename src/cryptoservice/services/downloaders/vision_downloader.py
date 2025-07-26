@@ -1,46 +1,53 @@
-"""Binance Vision数据下载器。
+"""Binance Vision数据下载器。.
 
 专门处理从Binance Vision S3存储下载历史数据。
 """
 
+import csv
 import logging
 import time
-import requests
 import zipfile
-import csv
 from datetime import datetime
-from typing import List, Optional, Dict
 from io import BytesIO
-from urllib3.util.retry import Retry
-from requests.adapters import HTTPAdapter
 
-from cryptoservice.models import OpenInterest, LongShortRatio
-from cryptoservice.exceptions import MarketDataFetchError
+import requests
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
+
 from cryptoservice.config import RetryConfig
+from cryptoservice.exceptions import MarketDataFetchError
+from cryptoservice.models import LongShortRatio, OpenInterest
 from cryptoservice.storage import AsyncMarketDB
+
 from .base_downloader import BaseDownloader
 
 logger = logging.getLogger(__name__)
 
 
 class VisionDownloader(BaseDownloader):
-    """Binance Vision数据下载器"""
+    """Binance Vision数据下载器."""
 
     def __init__(self, client, request_delay: float = 1.0):
+        """初始化Binance Vision数据下载器.
+
+        Args:
+            client: API 客户端实例.
+            request_delay: 请求之间的基础延迟（秒）.
+        """
         super().__init__(client, request_delay)
-        self.db: Optional[AsyncMarketDB] = None
+        self.db: AsyncMarketDB | None = None
         self.base_url = "https://s3-ap-northeast-1.amazonaws.com/data.binance.vision/data/futures/um/daily/metrics"
 
     async def download_metrics_batch(
         self,
-        symbols: List[str],
+        symbols: list[str],
         start_date: str,
         end_date: str,
         db_path: str,
-        data_types: List[str] | None = None,
+        data_types: list[str] | None = None,
         request_delay: float = 1.0,
     ) -> None:
-        """批量下载指标数据"""
+        """批量下载指标数据."""
         if data_types is None:
             data_types = ["openInterest", "longShortRatio"]
 
@@ -74,11 +81,11 @@ class VisionDownloader(BaseDownloader):
 
     async def _download_metrics_for_date(
         self,
-        symbols: List[str],
+        symbols: list[str],
         date: str,
         request_delay: float = 1.0,
     ) -> None:
-        """下载指定日期的指标数据"""
+        """下载指定日期的指标数据."""
         try:
             date_obj = datetime.strptime(date, "%Y-%m-%d")
             date_str = date_obj.strftime("%Y-%m-%d")
@@ -134,9 +141,9 @@ class VisionDownloader(BaseDownloader):
         self,
         url: str,
         symbol: str,
-        retry_config: Optional[RetryConfig] = None,
-    ) -> Dict[str, List] | None:
-        """下载并解析指标CSV数据"""
+        retry_config: RetryConfig | None = None,
+    ) -> dict[str, list] | None:
+        """下载并解析指标CSV数据."""
         if retry_config is None:
             retry_config = RetryConfig(max_retries=3, base_delay=2.0)
 
@@ -205,8 +212,8 @@ class VisionDownloader(BaseDownloader):
             logger.error(f"下载和解析指标数据失败 {symbol}: {e}")
             return None
 
-    def _parse_oi_data(self, raw_data: List[Dict], symbol: str) -> List[OpenInterest]:
-        """解析持仓量数据"""
+    def _parse_oi_data(self, raw_data: list[dict], symbol: str) -> list[OpenInterest]:
+        """解析持仓量数据."""
         open_interests = []
 
         for row in raw_data:
@@ -234,8 +241,8 @@ class VisionDownloader(BaseDownloader):
 
         return open_interests
 
-    def _parse_lsr_data(self, raw_data: List[Dict], symbol: str, file_name: str) -> List[LongShortRatio]:
-        """解析多空比例数据"""
+    def _parse_lsr_data(self, raw_data: list[dict], symbol: str, file_name: str) -> list[LongShortRatio]:
+        """解析多空比例数据."""
         long_short_ratios = []
 
         for row in raw_data:
@@ -306,7 +313,7 @@ class VisionDownloader(BaseDownloader):
         return long_short_ratios
 
     def _create_enhanced_session(self) -> requests.Session:
-        """创建增强的网络请求会话"""
+        """创建增强的网络请求会话."""
         session = requests.Session()
 
         # 配置重试策略
@@ -345,5 +352,5 @@ class VisionDownloader(BaseDownloader):
         return session
 
     def download(self, *args, **kwargs):
-        """实现基类的抽象方法"""
+        """实现基类的抽象方法."""
         return self.download_metrics_batch(*args, **kwargs)

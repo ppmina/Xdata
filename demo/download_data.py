@@ -1,8 +1,13 @@
+"""下载 Universe 数据到数据库的脚本."""
+
+import asyncio
 import os
 from pathlib import Path
-from cryptoservice.services.market_service import MarketDataService, RetryConfig
-from cryptoservice.models.enums import Freq
+
 from dotenv import load_dotenv
+
+from cryptoservice.models.enums import Freq
+from cryptoservice.services.market_service import MarketDataService, RetryConfig
 
 load_dotenv()
 
@@ -30,17 +35,15 @@ INCLUDE_BUFFER_DAYS = 7  # 包含缓冲期天数
 # 新特征配置
 DOWNLOAD_MARKET_METRICS = True  # 是否下载市场指标数据 (资金费率、持仓量、多空比例)
 METRICS_INTERVAL = Freq.h1  # 市场指标数据时间间隔 (考虑到资金费率最小粒度是小时)
-LONG_SHORT_RATIO_PERIOD = (
-    Freq.h1
-)  # 多空比例时间周期 (原始数据为m5, 上或下采样至目标频率)
+LONG_SHORT_RATIO_PERIOD = Freq.h1  # 多空比例时间周期 (原始数据为m5, 上或下采样至目标频率)
 LONG_SHORT_RATIO_TYPES = ["account"]  # 多空比例类型: account, position, global, taker
 USE_BINANCE_VISION = True  # 是否使用 Binance Vision 下载特征数据 (推荐)
 
 # ========================================
 
 
-def main():
-    """下载数据到数据库脚本"""
+async def main():
+    """下载数据到数据库脚本."""
     # 检查API密钥
     api_key = os.getenv("BINANCE_API_KEY")
     api_secret = os.getenv("BINANCE_API_SECRET")
@@ -63,7 +66,7 @@ def main():
 
     try:
         # 下载universe数据
-        service.download_universe_data(
+        await service.download_universe_data(
             universe_file=UNIVERSE_FILE,
             db_path=DB_PATH,
             interval=INTERVAL,
@@ -92,4 +95,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    asyncio.run(main())

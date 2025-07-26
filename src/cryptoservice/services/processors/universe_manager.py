@@ -1,4 +1,4 @@
-"""Universe管理器。
+"""Universe管理器。.
 
 专门处理Universe定义、管理和相关操作。
 """
@@ -6,21 +6,23 @@
 import logging
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import List, Dict, Any, Tuple
+from typing import Any
 
 import pandas as pd
 
-from cryptoservice.models import UniverseDefinition, UniverseConfig, UniverseSnapshot, Freq
+from cryptoservice import MarketDataService
 from cryptoservice.exceptions import MarketDataFetchError
+from cryptoservice.models import Freq, UniverseConfig, UniverseDefinition, UniverseSnapshot
 from cryptoservice.utils import RateLimitManager
 
 logger = logging.getLogger(__name__)
 
 
 class UniverseManager:
-    """Universe管理器"""
+    """Universe管理器."""
 
-    def __init__(self, market_service):
+    def __init__(self, market_service: MarketDataService):
+        """初始化Universe管理器."""
         self.market_service = market_service
 
     def define_universe(
@@ -40,7 +42,7 @@ class UniverseManager:
         batch_size: int = 5,
         quote_asset: str = "USDT",
     ) -> UniverseDefinition:
-        """定义universe并保存到文件"""
+        """定义universe并保存到文件."""
         try:
             # 验证并准备输出路径
             output_path_obj = self._validate_and_prepare_path(
@@ -161,6 +163,74 @@ class UniverseManager:
             logger.error(f"定义universe失败: {e}")
             raise MarketDataFetchError(f"定义universe失败: {e}") from e
 
+    def _fetch_and_calculate_mean_amounts(
+        self,
+        symbols: list[str],
+        start_date: str,
+        end_date: str,
+        api_delay_seconds: float,
+    ) -> dict[str, float]:
+        """为给定的交易对列表获取历史数据并计算平均日交易额."""
+        mean_amounts = {}
+        logger.info(f"开始通过API获取 {len(symbols)} 个交易对的历史数据...")
+        universe_rate_manager = RateLimitManager(base_delay=api_delay_seconds)
+        start_ts = self.market_service._date_to_timestamp_start(start_date)
+        end_ts = self.market_service._date_to_timestamp_end(end_date)
+        for i, symbol in enumerate(symbols):
+            if i % 10 == 0:
+                logger.info(f"已处理 {i}/{len(symbols)} 个交易对...")
+            try:
+                original_manager = self.market_service.kline_downloader.rate_limit_manager
+                self.market_service.kline_downloader.rate_limit_manager = universe_rate_manager
+                try:
+                    klines = self.market_service.kline_downloader.download_single_symbol(
+                        symbol=symbol,
+                        start_ts=start_ts,
+                        end_ts=end_ts,
+                        interval=Freq.d1,
+                    )
+                finally:
+                    self.market_service.kline_downloader.rate_limit_manager = original_manager
+                if klines:
+                    expected_days = (pd.to_datetime(end_date) - pd.to_datetime(start_date)).days + 1
+                    actual_days = len(klines)
+                    if actual_days < expected_days * 0.8:
+                        logger.warning(f"交易对 {symbol} 数据不完整: 期望{expected_days}天，实际{actual_days}天")
+                    amounts = [
+                        float(kline.raw_data[7]) for kline in klines if kline.raw_data and len(kline.raw_data) > 7
+                    ]
+                    if amounts:
+                        mean_amounts[symbol] = sum(amounts) / len(amounts)
+                    else:
+                        logger.warning(f"交易对 {symbol} 在期间内没有有效的成交量数据")
+            except Exception as e:
+                logger.warning(f"获取 {symbol} 数据时出错，跳过: {e}")
+        return mean_amounts
+
+    def _select_top_symbols(
+        self,
+        mean_amounts: dict[str, float],
+        top_k: int | None,
+        top_ratio: float | None,
+    ) -> tuple[list[str], dict[str, float]]:
+        """根据平均交易额选择顶部交易对."""
+        sorted_symbols = sorted(mean_amounts.items(), key=lambda x: x[1], reverse=True)
+        if top_ratio is not None:
+            num_to_select = int(len(sorted_symbols) * top_ratio)
+        elif top_k is not None:
+            num_to_select = top_k
+        else:
+            num_to_select = len(sorted_symbols)
+        top_symbols_data = sorted_symbols[:num_to_select]
+        universe_symbols = [symbol for symbol, _ in top_symbols_data]
+        final_amounts = dict(top_symbols_data)
+        if len(universe_symbols) <= 10:
+            logger.info(f"选中的交易对: {universe_symbols}")
+        else:
+            logger.info(f"Top 5: {universe_symbols[:5]}")
+            logger.info("完整列表已保存到文件中")
+        return universe_symbols, final_amounts
+
     def _calculate_universe_for_date(
         self,
         calculated_t1_start: str,
@@ -172,120 +242,30 @@ class UniverseManager:
         batch_delay_seconds: float = 3.0,
         batch_size: int = 5,
         quote_asset: str = "USDT",
-    ) -> Tuple[List[str], Dict[str, float]]:
-        """计算指定日期的universe"""
+    ) -> tuple[list[str], dict[str, float]]:
+        """计算指定日期的universe."""
         try:
-            # 获取在该时间段内实际存在的永续合约交易对
             actual_symbols = self._get_available_symbols_for_period(calculated_t1_start, calculated_t1_end, quote_asset)
-
-            # 筛除新合约
             cutoff_date = self._subtract_months(calculated_t1_end, t3_months)
             eligible_symbols = [
                 symbol for symbol in actual_symbols if self._symbol_exists_before_date(symbol, cutoff_date)
             ]
-
             if not eligible_symbols:
                 logger.warning(f"日期 {calculated_t1_start} 到 {calculated_t1_end}: 没有找到符合条件的交易对")
                 return [], {}
-
-            # 通过API获取数据计算mean daily amount
-            mean_amounts = {}
-            logger.info(f"开始通过API获取 {len(eligible_symbols)} 个交易对的历史数据...")
-
-            # 初始化专门用于universe计算的频率管理器
-            universe_rate_manager = RateLimitManager(base_delay=api_delay_seconds)
-
-            for i, symbol in enumerate(eligible_symbols):
-                try:
-                    # 将日期字符串转换为时间戳
-                    start_ts = self.market_service._date_to_timestamp_start(calculated_t1_start)
-                    end_ts = self.market_service._date_to_timestamp_end(calculated_t1_end)
-
-                    # 显示进度
-                    if i % 10 == 0:
-                        logger.info(f"已处理 {i}/{len(eligible_symbols)} 个交易对...")
-
-                    # 临时使用这个频率管理器
-                    original_manager = self.market_service.rate_limit_manager
-                    self.market_service.rate_limit_manager = universe_rate_manager
-
-                    try:
-                        # 获取历史K线数据
-                        klines = self.market_service._fetch_symbol_data(
-                            symbol=symbol,
-                            start_ts=start_ts,
-                            end_ts=end_ts,
-                            interval=Freq.d1,
-                        )
-                    finally:
-                        # 恢复原来的频率管理器
-                        self.market_service.rate_limit_manager = original_manager
-
-                    if klines:
-                        # 数据完整性检查
-                        expected_days = (
-                            pd.to_datetime(calculated_t1_end) - pd.to_datetime(calculated_t1_start)
-                        ).days + 1
-                        actual_days = len(klines)
-
-                        if actual_days < expected_days * 0.8:
-                            logger.warning(f"交易对 {symbol} 数据不完整: 期望{expected_days}天，实际{actual_days}天")
-
-                        # 计算平均日成交额
-                        amounts = []
-                        for kline in klines:
-                            try:
-                                # kline.raw_data[7] 是成交额（USDT）
-                                if kline.raw_data and len(kline.raw_data) > 7:
-                                    amount = float(kline.raw_data[7])
-                                    amounts.append(amount)
-                            except (ValueError, IndexError):
-                                continue
-
-                        if amounts:
-                            mean_amount = sum(amounts) / len(amounts)
-                            mean_amounts[symbol] = mean_amount
-                        else:
-                            logger.warning(f"交易对 {symbol} 在期间内没有有效的成交量数据")
-
-                except Exception as e:
-                    logger.warning(f"获取 {symbol} 数据时出错，跳过: {e}")
-                    continue
-
-            # 按mean daily amount排序并选择top_k或top_ratio
-            if mean_amounts:
-                sorted_symbols = sorted(mean_amounts.items(), key=lambda x: x[1], reverse=True)
-
-                if top_ratio is not None:
-                    num_to_select = int(len(sorted_symbols) * top_ratio)
-                elif top_k is not None:
-                    num_to_select = top_k
-                else:
-                    num_to_select = len(sorted_symbols)
-
-                top_symbols = sorted_symbols[:num_to_select]
-                universe_symbols = [symbol for symbol, _ in top_symbols]
-                final_amounts = dict(top_symbols)
-
-                # 显示选择结果
-                if len(universe_symbols) <= 10:
-                    logger.info(f"选中的交易对: {universe_symbols}")
-                else:
-                    logger.info(f"Top 5: {universe_symbols[:5]}")
-                    logger.info("完整列表已保存到文件中")
-            else:
-                universe_symbols = []
-                final_amounts = {}
+            mean_amounts = self._fetch_and_calculate_mean_amounts(
+                eligible_symbols, calculated_t1_start, calculated_t1_end, api_delay_seconds
+            )
+            if not mean_amounts:
                 logger.warning("无法通过API获取数据，返回空的universe")
-
-            return universe_symbols, final_amounts
-
+                return [], {}
+            return self._select_top_symbols(mean_amounts, top_k, top_ratio)
         except Exception as e:
             logger.error(f"计算日期 {calculated_t1_start} 到 {calculated_t1_end} 的universe时出错: {e}")
             return [], {}
 
-    def _get_available_symbols_for_period(self, start_date: str, end_date: str, quote_asset: str = "USDT") -> List[str]:
-        """获取指定时间段内实际可用的永续合约交易对"""
+    def _get_available_symbols_for_period(self, start_date: str, end_date: str, quote_asset: str = "USDT") -> list[str]:
+        """获取指定时间段内实际可用的永续合约交易对."""
         try:
             # 先获取当前所有永续合约作为候选
             candidate_symbols = self.market_service.get_perpetual_symbols(only_trading=True, quote_asset=quote_asset)
@@ -324,7 +304,7 @@ class UniverseManager:
             return self.market_service.get_perpetual_symbols(only_trading=True, quote_asset=quote_asset)
 
     def _symbol_exists_before_date(self, symbol: str, cutoff_date: str) -> bool:
-        """检查交易对是否在指定日期之前就存在"""
+        """检查交易对是否在指定日期之前就存在."""
         try:
             # 检查在cutoff_date之前是否有数据
             check_date = (pd.to_datetime(cutoff_date) - timedelta(days=1)).strftime("%Y-%m-%d")
@@ -333,8 +313,8 @@ class UniverseManager:
             # 如果检查失败，默认认为存在
             return True
 
-    def _generate_rebalance_dates(self, start_date: str, end_date: str, t2_months: int) -> List[str]:
-        """生成重新选择universe的日期序列"""
+    def _generate_rebalance_dates(self, start_date: str, end_date: str, t2_months: int) -> list[str]:
+        """生成重新选择universe的日期序列."""
         dates = []
         start_date_obj = pd.to_datetime(start_date)
         end_date_obj = pd.to_datetime(end_date)
@@ -349,19 +329,19 @@ class UniverseManager:
         return dates
 
     def _subtract_months(self, date_str: str, months: int) -> str:
-        """从日期减去指定月数"""
+        """从日期减去指定月数."""
         date_obj = pd.to_datetime(date_str)
         result_date = date_obj - pd.DateOffset(months=months)
         return str(result_date.strftime("%Y-%m-%d"))
 
     def _standardize_date_format(self, date_str: str) -> str:
-        """标准化日期格式为 YYYY-MM-DD"""
+        """标准化日期格式为 YYYY-MM-DD."""
         if len(date_str) == 8:  # YYYYMMDD
             return f"{date_str[:4]}-{date_str[4:6]}-{date_str[6:8]}"
         return date_str
 
     def _validate_and_prepare_path(self, path: Path | str, is_file: bool = False, file_name: str | None = None) -> Path:
-        """验证并准备路径"""
+        """验证并准备路径."""
         if not path:
             raise ValueError("路径不能为空，必须手动指定")
 
@@ -384,8 +364,8 @@ class UniverseManager:
         universe_def: UniverseDefinition,
         buffer_days: int = 7,
         extend_to_present: bool = True,
-    ) -> Dict[str, Any]:
-        """分析universe数据下载需求"""
+    ) -> dict[str, Any]:
+        """分析universe数据下载需求."""
         import pandas as pd
 
         # 收集所有的交易对和实际使用时间范围

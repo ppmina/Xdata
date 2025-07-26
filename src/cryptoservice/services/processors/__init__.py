@@ -1,11 +1,11 @@
-"""数据处理器模块。
+"""数据处理器模块。.
 
 提供数据验证、解析、转换和重采样等功能。
 """
 
+from .category_manager import CategoryManager
 from .data_validator import DataValidator
 from .universe_manager import UniverseManager
-from .category_manager import CategoryManager
 
 __all__ = [
     "DataValidator",

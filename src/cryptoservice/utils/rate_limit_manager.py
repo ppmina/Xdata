@@ -1,19 +1,24 @@
-"""API频率限制管理器。
+"""API频率限制管理器。.
 
 提供智能的API请求频率控制，避免触发交易所的速率限制。
 """
 
 import logging
-import time
 import threading
+import time
 
 logger = logging.getLogger(__name__)
 
 
 class RateLimitManager:
-    """API频率限制管理器"""
+    """API频率限制管理器."""
 
     def __init__(self, base_delay: float = 0.5):
+        """初始化 API 频率限制管理器.
+
+        Args:
+            base_delay (float): 初始延迟（秒）。
+        """
         self.base_delay = base_delay
         self.current_delay = base_delay
         self.last_request_time = 0.0
@@ -24,7 +29,7 @@ class RateLimitManager:
         self.lock = threading.Lock()
 
     def wait_before_request(self):
-        """在请求前等待适当的时间"""
+        """在请求前等待适当的时间."""
         with self.lock:
             current_time = time.time()
 
@@ -59,7 +64,7 @@ class RateLimitManager:
             self.request_count += 1
 
     def handle_rate_limit_error(self):
-        """处理频率限制错误"""
+        """处理频率限制错误."""
         with self.lock:
             self.consecutive_errors += 1
 
@@ -85,7 +90,7 @@ class RateLimitManager:
             return wait_time
 
     def handle_success(self):
-        """处理成功请求"""
+        """处理成功请求."""
         with self.lock:
             if self.consecutive_errors > 0:
                 self.consecutive_errors = max(0, self.consecutive_errors - 1)

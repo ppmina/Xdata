@@ -1,11 +1,11 @@
-"""错误处理和重试机制。
+"""错误处理和重试机制。.
 
 提供统一的错误分类、重试策略和错误处理逻辑。
 """
 
 import logging
+import secrets
 import time
-import random
 
 from cryptoservice.config import RetryConfig
 from cryptoservice.models import ErrorSeverity
@@ -14,18 +14,23 @@ logger = logging.getLogger(__name__)
 
 
 class ExponentialBackoff:
-    """指数退避实现"""
+    """指数退避实现."""
 
     def __init__(self, config: RetryConfig):
+        """初始化指数退避策略.
+
+        Args:
+            config: 重试配置.
+        """
         self.config = config
         self.attempt = 0
 
     def reset(self):
-        """重置重试计数"""
+        """重置重试计数."""
         self.attempt = 0
 
     def wait(self) -> float:
-        """计算并执行等待时间"""
+        """计算并执行等待时间."""
         if self.attempt >= self.config.max_retries:
             raise Exception(f"超过最大重试次数: {self.config.max_retries}")
 
@@ -37,7 +42,7 @@ class ExponentialBackoff:
 
         # 添加抖动以避免惊群效应
         if self.config.jitter:
-            delay *= 0.5 + random.random() * 0.5
+            delay *= 0.5 + secrets.randbelow(501) / 1000.0
 
         self.attempt += 1
 
@@ -48,11 +53,11 @@ class ExponentialBackoff:
 
 
 class EnhancedErrorHandler:
-    """增强错误处理器"""
+    """增强错误处理器."""
 
     @staticmethod
     def classify_error(error: Exception) -> ErrorSeverity:
-        """错误分类"""
+        """错误分类."""
         error_str = str(error).lower()
 
         # API频率限制
@@ -155,7 +160,7 @@ class EnhancedErrorHandler:
 
     @staticmethod
     def should_retry(error: Exception, attempt: int, max_retries: int) -> bool:
-        """判断是否应该重试"""
+        """判断是否应该重试."""
         severity = EnhancedErrorHandler.classify_error(error)
 
         if severity == ErrorSeverity.CRITICAL:
@@ -168,7 +173,7 @@ class EnhancedErrorHandler:
 
     @staticmethod
     def get_recommended_action(error: Exception) -> str:
-        """获取推荐处理动作"""
+        """获取推荐处理动作."""
         severity = EnhancedErrorHandler.classify_error(error)
         error_str = str(error).lower()
 
@@ -195,6 +200,6 @@ class EnhancedErrorHandler:
 
     @staticmethod
     def is_rate_limit_error(error: Exception) -> bool:
-        """判断是否为频率限制错误"""
+        """判断是否为频率限制错误."""
         error_str = str(error).lower()
         return any(keyword in error_str for keyword in ["too many requests", "rate limit", "429", "-1003"])

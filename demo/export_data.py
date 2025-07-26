@@ -1,11 +1,15 @@
-from pathlib import Path
-from cryptoservice.models.universe import UniverseDefinition
-from cryptoservice.models.enums import Freq
-from cryptoservice.storage import AsyncMarketDB
-from cryptoservice.services.market_service import MarketDataService
+"""导出数据库数据到文件的脚本."""
+
 import asyncio
-import dotenv
 import os
+from pathlib import Path
+
+import dotenv
+
+from cryptoservice.models.enums import Freq
+from cryptoservice.models.universe import UniverseDefinition
+from cryptoservice.services.market_service import MarketDataService
+from cryptoservice.storage import AsyncMarketDB
 
 # ============== 配置参数 ==============
 # 文件路径
@@ -65,7 +69,7 @@ FEATURE_DESCRIPTIONS = {
 
 
 async def main():
-    """从数据库导出数据脚本"""
+    """从数据库导出数据脚本."""
     print("📤 开始从数据库导出数据")
     print(f"📋 Universe文件: {UNIVERSE_FILE}")
     print(f"💾 数据库路径: {DB_PATH}")

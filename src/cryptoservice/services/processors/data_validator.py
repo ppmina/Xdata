@@ -1,16 +1,15 @@
-"""数据验证器。
+"""数据验证器。.
 
 提供各种数据的质量检查和完整性验证功能。
 """
 
 import logging
 from datetime import timedelta
-from typing import List, Dict
 from pathlib import Path
 
 import pandas as pd
 
-from cryptoservice.models import IntegrityReport, Freq
+from cryptoservice.models import Freq, IntegrityReport
 from cryptoservice.storage import AsyncMarketDB
 
 logger = logging.getLogger(__name__)
@@ -18,13 +17,14 @@ logger = logging.getLogger(__name__)
 
 # TODO: 时间连续性检验
 class DataValidator:
-    """数据验证器"""
+    """数据验证器."""
 
-    def __init__(self):
-        self.validation_errors = []
+    def __init__(self) -> None:
+        """初始化数据验证器."""
+        self.validation_errors: list[str] = []
 
-    def validate_kline_data(self, data: List, symbol: str) -> List:
-        """验证K线数据质量"""
+    def validate_kline_data(self, data: list, symbol: str) -> list:
+        """验证K线数据质量."""
         if not data:
             return data
 
@@ -73,209 +73,175 @@ class DataValidator:
 
         return valid_data
 
-    def validate_metrics_data(self, data: Dict[str, List], symbol: str, url: str) -> Dict[str, List] | None:
-        """验证metrics数据的完整性和质量"""
+    def get_validation_errors(self) -> list[str]:
+        """获取验证错误列表."""
+        return self.validation_errors.copy()
+
+    def clear_validation_errors(self):
+        """清除验证错误."""
+        self.validation_errors.clear()
+
+    def _validate_open_interest_list(self, oi_data: list, issues: list[str]) -> list:
+        """验证持仓量数据列表."""
+        valid_oi = []
+        for i, oi in enumerate(oi_data):
+            try:
+                if not all(hasattr(oi, attr) for attr in ["symbol", "open_interest", "time"]):
+                    issues.append(f"持仓量记录 {i}: 缺少必要字段")
+                    continue
+                if oi.open_interest < 0:
+                    issues.append(f"持仓量记录 {i}: 持仓量为负数")
+                    continue
+                if oi.time <= 0:
+                    issues.append(f"持仓量记录 {i}: 时间戳无效")
+                    continue
+                valid_oi.append(oi)
+            except Exception as e:
+                issues.append(f"持仓量记录 {i}: 验证失败 - {e}")
+        return valid_oi
+
+    def _validate_long_short_ratio_list(self, lsr_data: list, issues: list[str]) -> list:
+        """验证多空比率数据列表."""
+        valid_lsr = []
+        for i, lsr in enumerate(lsr_data):
+            try:
+                if not all(hasattr(lsr, attr) for attr in ["symbol", "long_short_ratio", "time"]):
+                    issues.append(f"多空比例记录 {i}: 缺少必要字段")
+                    continue
+                if lsr.long_short_ratio < 0:
+                    issues.append(f"多空比例记录 {i}: 比例为负数")
+                    continue
+                if lsr.time <= 0:
+                    issues.append(f"多空比例记录 {i}: 时间戳无效")
+                    continue
+                valid_lsr.append(lsr)
+            except Exception as e:
+                issues.append(f"多空比例记录 {i}: 验证失败 - {e}")
+        return valid_lsr
+
+    def validate_metrics_data(self, data: dict[str, list], symbol: str, url: str) -> dict[str, list] | None:
+        """验证metrics数据的完整性和质量."""
         try:
-            issues = []
+            issues: list[str] = []
             validated_data: dict[str, list] = {"open_interest": [], "long_short_ratio": []}
-
-            # 验证持仓量数据
-            if data.get("open_interest"):
-                oi_data = data["open_interest"]
-                valid_oi = []
-
-                for i, oi in enumerate(oi_data):
-                    try:
-                        # 检查必要字段
-                        if not hasattr(oi, "symbol") or not hasattr(oi, "open_interest") or not hasattr(oi, "time"):
-                            issues.append(f"持仓量记录 {i}: 缺少必要字段")
-                            continue
-
-                        # 检查数据有效性
-                        if oi.open_interest < 0:
-                            issues.append(f"持仓量记录 {i}: 持仓量为负数")
-                            continue
-
-                        # 检查时间戳有效性
-                        if oi.time <= 0:
-                            issues.append(f"持仓量记录 {i}: 时间戳无效")
-                            continue
-
-                        valid_oi.append(oi)
-
-                    except Exception as e:
-                        issues.append(f"持仓量记录 {i}: 验证失败 - {e}")
-                        continue
-
+            if oi_data := data.get("open_interest"):
+                valid_oi = self._validate_open_interest_list(oi_data, issues)
                 validated_data["open_interest"] = valid_oi
-
-                # 质量检查
                 if len(valid_oi) < len(oi_data) * 0.5:
                     logger.warning(f"⚠️ {symbol}: 持仓量数据质量较低，有效记录 {len(valid_oi)}/{len(oi_data)}")
-
-            # 验证多空比例数据
-            if data.get("long_short_ratio"):
-                lsr_data = data["long_short_ratio"]
-                valid_lsr = []
-
-                for i, lsr in enumerate(lsr_data):
-                    try:
-                        # 检查必要字段
-                        if (
-                            not hasattr(lsr, "symbol")
-                            or not hasattr(lsr, "long_short_ratio")
-                            or not hasattr(lsr, "time")
-                        ):
-                            issues.append(f"多空比例记录 {i}: 缺少必要字段")
-                            continue
-
-                        # 检查数据有效性
-                        if lsr.long_short_ratio < 0:
-                            issues.append(f"多空比例记录 {i}: 比例为负数")
-                            continue
-
-                        # 检查时间戳有效性
-                        if lsr.time <= 0:
-                            issues.append(f"多空比例记录 {i}: 时间戳无效")
-                            continue
-
-                        valid_lsr.append(lsr)
-
-                    except Exception as e:
-                        issues.append(f"多空比例记录 {i}: 验证失败 - {e}")
-                        continue
-
+            if lsr_data := data.get("long_short_ratio"):
+                valid_lsr = self._validate_long_short_ratio_list(lsr_data, issues)
                 validated_data["long_short_ratio"] = valid_lsr
-
-                # 质量检查
                 if len(valid_lsr) < len(lsr_data) * 0.5:
                     logger.warning(f"⚠️ {symbol}: 多空比例数据质量较低，有效记录 {len(valid_lsr)}/{len(lsr_data)}")
-
-            # 记录验证结果
             if issues:
                 logger.debug(f"📋 {symbol}: 数据验证发现 {len(issues)} 个问题")
-                self.validation_errors.extend(issues[:3])  # 保存前3个错误
-
-            # 检查是否有有效数据
+                self.validation_errors.extend(issues[:3])
             if not validated_data["open_interest"] and not validated_data["long_short_ratio"]:
                 logger.warning(f"⚠️ {symbol}: 没有有效的metrics数据")
                 return None
-
             logger.debug(
-                f"✅ {symbol}: 数据验证通过 - "
-                f"持仓量: {len(validated_data['open_interest'])}, "
-                f"多空比例: {len(validated_data['long_short_ratio'])}"
+                f"✅ {symbol}: 数据验证通过 - 持仓量: {len(validated_data['open_interest'])}, \
+                    多空比例: {len(validated_data['long_short_ratio'])}"
             )
             return validated_data
-
         except Exception as e:
             logger.warning(f"❌ {symbol}: 数据验证失败 - {e}")
-            return data  # 验证失败时返回原始数据
+            return data
+
+    async def _check_sample_data_quality(
+        self,
+        successful_symbols: list[str],
+        start_time: str,
+        end_time: str,
+        interval: Freq,
+        db_file_path: Path,
+    ) -> tuple[int, list[str]]:
+        """对成功下载的符号样本进行数据质量检查."""
+        quality_issues = 0
+        detailed_issues = []
+        sample_symbols = successful_symbols[: min(5, len(successful_symbols))]
+
+        if start_time == end_time:
+            logger.debug("检测到单日测试数据，跳过详细完整性检查")
+            return 0, []
+
+        db = AsyncMarketDB(str(db_file_path))
+        for symbol in sample_symbols:
+            try:
+                check_start_time = pd.to_datetime(start_time).strftime("%Y-%m-%d")
+                check_end_time = pd.to_datetime(end_time).strftime("%Y-%m-%d")
+                df = await db.read_data(
+                    start_time=check_start_time,
+                    end_time=check_end_time,
+                    freq=interval,
+                    symbols=[symbol],
+                    raise_on_empty=False,
+                )
+                if df is not None and not df.empty:
+                    symbol_data = df.loc[symbol] if symbol in df.index.get_level_values("symbol") else pd.DataFrame()
+                    if not symbol_data.empty:
+                        time_diff = pd.to_datetime(check_end_time) - pd.to_datetime(check_start_time)
+                        expected_points = self._calculate_expected_data_points(time_diff, interval)
+                        actual_points = len(symbol_data)
+                        completeness = actual_points / expected_points if expected_points > 0 else 0
+                        if completeness < 0.8:
+                            quality_issues += 1
+                            detailed_issues.append(
+                                f"{symbol}: 数据完整性{completeness:.1%} ({actual_points}/{expected_points})"
+                            )
+                    else:
+                        quality_issues += 1
+                        detailed_issues.append(f"{symbol}: 无法读取已下载的数据")
+                else:
+                    quality_issues += 1
+                    detailed_issues.append(f"{symbol}: 数据库中未找到数据")
+            except Exception as e:
+                quality_issues += 1
+                detailed_issues.append(f"{symbol}: 检查失败 - {e}")
+        return quality_issues, detailed_issues
 
     async def create_integrity_report(
         self,
-        symbols: List[str],
-        successful_symbols: List[str],
-        failed_symbols: List[str],
-        missing_periods: List[Dict[str, str]],
+        symbols: list[str],
+        successful_symbols: list[str],
+        failed_symbols: list[str],
+        missing_periods: list[dict[str, str]],
         start_time: str,
         end_time: str,
         interval: Freq,
         db_file_path: Path,
     ) -> IntegrityReport:
-        """创建数据完整性报告"""
+        """创建数据完整性报告."""
         try:
             logger.info("🔍 执行数据完整性检查...")
-
-            # 计算基础指标
             total_symbols = len(symbols)
             success_count = len(successful_symbols)
             basic_quality_score = success_count / total_symbols if total_symbols > 0 else 0
-
-            recommendations = []
-            detailed_issues = []
-
-            # 检查成功下载的数据质量
-            quality_issues = 0
-            sample_symbols = successful_symbols[: min(5, len(successful_symbols))]
-
-            # 如果是单日测试数据，跳过完整性检查
-            if start_time == end_time:
-                logger.debug("检测到单日测试数据，跳过详细完整性检查")
-                sample_symbols = []
-
-            # 初始化数据库连接进行验证
-            db = AsyncMarketDB(str(db_file_path))
-
-            for symbol in sample_symbols:
-                try:
-                    # 读取数据进行质量检查
-                    check_start_time = pd.to_datetime(start_time).strftime("%Y-%m-%d")
-                    check_end_time = pd.to_datetime(end_time).strftime("%Y-%m-%d")
-
-                    df = await db.read_data(
-                        start_time=check_start_time,
-                        end_time=check_end_time,
-                        freq=interval,
-                        symbols=[symbol],
-                        raise_on_empty=False,
-                    )
-
-                    if df is not None and not df.empty:
-                        # 检查数据连续性
-                        symbol_data = (
-                            df.loc[symbol] if symbol in df.index.get_level_values("symbol") else pd.DataFrame()
-                        )
-
-                        if not symbol_data.empty:
-                            # 计算期望的数据点数量
-                            time_diff = pd.to_datetime(check_end_time) - pd.to_datetime(check_start_time)
-                            expected_points = self._calculate_expected_data_points(time_diff, interval)
-                            actual_points = len(symbol_data)
-
-                            completeness = actual_points / expected_points if expected_points > 0 else 0
-                            if completeness < 0.8:  # 少于80%认为有问题
-                                quality_issues += 1
-                                detailed_issues.append(
-                                    f"{symbol}: 数据完整性{completeness:.1%} ({actual_points}/{expected_points})"
-                                )
-                    else:
-                        quality_issues += 1
-                        detailed_issues.append(f"{symbol}: 无法读取已下载的数据")
-
-                except Exception as e:
-                    quality_issues += 1
-                    detailed_issues.append(f"{symbol}: 检查失败 - {e}")
-
-            # 调整质量分数
+            quality_issues, detailed_issues = await self._check_sample_data_quality(
+                successful_symbols, start_time, end_time, interval, db_file_path
+            )
             if successful_symbols:
-                sample_size = min(10, len(successful_symbols))
-                quality_penalty = (quality_issues / sample_size) * 0.3  # 最多减少30%分数
+                sample_size = min(5, len(successful_symbols))
+                quality_penalty = (quality_issues / sample_size) * 0.3 if sample_size > 0 else 0
                 final_quality_score = max(0, basic_quality_score - quality_penalty)
             else:
                 final_quality_score = 0
-
-            # 生成建议
+            recommendations = []
             if final_quality_score < 0.5:
                 recommendations.append("🚨 数据质量严重不足，建议重新下载")
             elif final_quality_score < 0.8:
                 recommendations.append("⚠️ 数据质量一般，建议检查失败的交易对")
             else:
                 recommendations.append("✅ 数据质量良好")
-
             if failed_symbols:
                 recommendations.append(f"📝 {len(failed_symbols)}个交易对下载失败，建议单独重试")
-
             if quality_issues > 0:
                 recommendations.append(f"⚠️ 发现{quality_issues}个数据质量问题")
                 recommendations.extend(detailed_issues[:3])
-
-            # 网络和API建议
             if len(failed_symbols) > total_symbols * 0.3:
                 recommendations.append("🌐 失败率较高，建议检查网络连接和API限制")
-
             logger.info(f"✅ 完整性检查完成: 质量分数 {final_quality_score:.1%}")
-
             return IntegrityReport(
                 total_symbols=total_symbols,
                 successful_symbols=success_count,
@@ -284,10 +250,8 @@ class DataValidator:
                 data_quality_score=final_quality_score,
                 recommendations=recommendations,
             )
-
         except Exception as e:
             logger.warning(f"⚠️ 完整性检查失败: {e}")
-            # 返回基础报告
             return IntegrityReport(
                 total_symbols=len(symbols),
                 successful_symbols=len(successful_symbols),
@@ -298,7 +262,7 @@ class DataValidator:
             )
 
     def _calculate_expected_data_points(self, time_diff: timedelta, interval: Freq) -> int:
-        """计算期望的数据点数量"""
+        """计算期望的数据点数量."""
         total_minutes = time_diff.total_seconds() / 60
 
         interval_minutes = {
@@ -314,11 +278,3 @@ class DataValidator:
 
         expected_points = int(total_minutes / interval_minutes)
         return max(1, expected_points)
-
-    def get_validation_errors(self) -> List[str]:
-        """获取验证错误列表"""
-        return self.validation_errors.copy()
-
-    def clear_validation_errors(self):
-        """清除验证错误"""
-        self.validation_errors.clear()

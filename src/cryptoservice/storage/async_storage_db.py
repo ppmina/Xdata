@@ -1,4 +1,4 @@
-"""现代化异步数据库存储。
+"""现代化异步数据库存储。.
 
 基于aiosqlitepool的高性能异步SQLite存储实现。
 """
@@ -7,11 +7,13 @@ import asyncio
 import logging
 from datetime import datetime
 from pathlib import Path
-from typing import Any, List, Optional, Union, TypeGuard
-import pandas as pd
+from typing import Any, TypeGuard
+
 import numpy as np
+import pandas as pd
 
 from cryptoservice.models import Freq, KlineIndex, PerpetualMarketTicker
+
 from .pool_manager import PoolManager
 
 logger = logging.getLogger(__name__)
@@ -21,19 +23,19 @@ logger = logging.getLogger(__name__)
 
 
 class AsyncMarketDB:
-    """异步市场数据库管理类。
+    """异步市场数据库管理类.
 
     基于异步连接池的高性能数据库操作。
     """
 
     def __init__(
         self,
-        db_path: Union[str, Path],
+        db_path: str | Path,
         max_connections: int = 10,
         enable_wal: bool = True,
         enable_optimizations: bool = True,
     ):
-        """初始化异步市场数据库。
+        """初始化异步市场数据库。.
 
         Args:
             db_path: 数据库文件路径
@@ -51,7 +53,7 @@ class AsyncMarketDB:
         self._initialized = False
 
     async def initialize(self) -> None:
-        """初始化数据库。"""
+        """初始化数据库。."""
         if self._initialized:
             return
 
@@ -61,8 +63,10 @@ class AsyncMarketDB:
         logger.info(f"异步数据库初始化完成: {self.db_path}")
 
     async def _create_tables(self) -> None:
-        """创建数据库表结构。"""
-        assert self.pool._pool is not None
+        """创建数据库表结构。."""
+        if self.pool._pool is None:
+            raise RuntimeError("Database connection pool not initialized")
+
         async with self.pool._pool.connection() as conn:
             # 市场数据表
             await conn.execute(
@@ -150,11 +154,11 @@ class AsyncMarketDB:
 
     async def store_data(
         self,
-        data: Union[List[PerpetualMarketTicker], List[List[PerpetualMarketTicker]]],
+        data: list[PerpetualMarketTicker] | list[list[PerpetualMarketTicker]],
         freq: Freq,
         batch_size: int = 1000,
     ) -> None:
-        """异步存储市场数据。
+        """异步存储市场数据。.
 
         Args:
             data: 市场数据列表
@@ -171,7 +175,7 @@ class AsyncMarketDB:
 
         # 使用类型守卫模式判断数据结构
         def is_flat_list(data_list: Any) -> TypeGuard[list[PerpetualMarketTicker]]:
-            """判断是否为单层PerpetualMarketTicker列表"""
+            """判断是否为单层PerpetualMarketTicker列表."""
             return (
                 isinstance(data_list, list)
                 and bool(data_list)
@@ -181,7 +185,7 @@ class AsyncMarketDB:
         def is_nested_list(
             data_list: Any,
         ) -> TypeGuard[list[list[PerpetualMarketTicker]]]:
-            """判断是否为嵌套的PerpetualMarketTicker列表"""
+            """判断是否为嵌套的PerpetualMarketTicker列表."""
             return (
                 isinstance(data_list, list)
                 and bool(data_list)
@@ -212,11 +216,13 @@ class AsyncMarketDB:
 
     async def _store_batch(
         self,
-        batch: List[PerpetualMarketTicker],
+        batch: list[PerpetualMarketTicker],
         freq: Freq,
     ) -> None:
-        """存储单个批次的数据。"""
-        assert self.pool._pool is not None
+        """存储单个批次的数据。."""
+        if self.pool._pool is None:
+            raise RuntimeError("Database connection pool not initialized")
+
         async with self.pool._pool.connection() as conn:
             records = []
             for ticker in batch:
@@ -261,11 +267,11 @@ class AsyncMarketDB:
         start_time: str,
         end_time: str,
         freq: Freq,
-        symbols: List[str],
-        features: Optional[List[str]] = None,
+        symbols: list[str],
+        features: list[str] | None = None,
         raise_on_empty: bool = True,
     ) -> pd.DataFrame:
-        """异步读取市场数据。
+        """异步读取市场数据。.
 
         Args:
             start_time: 开始时间 (YYYY-MM-DD)
@@ -311,11 +317,13 @@ class AsyncMarketDB:
             AND freq = ?
             AND symbol IN ({placeholders})
             ORDER BY symbol, timestamp
-        """
+        """  # noqa: S608
 
         params = [start_ts, end_ts, freq.value] + symbols
 
-        assert self.pool._pool is not None
+        if self.pool._pool is None:
+            raise RuntimeError("Database connection pool not initialized")
+
         async with self.pool._pool.connection() as conn:
             cursor = await conn.execute(query, params)
             rows = await cursor.fetchall()
@@ -333,8 +341,8 @@ class AsyncMarketDB:
             df = df.set_index(["symbol", "timestamp"])
             return df
 
-    async def store_funding_rate(self, data: List[Any]) -> None:
-        """异步存储资金费率数据。
+    async def store_funding_rate(self, data: list[Any]) -> None:
+        """异步存储资金费率数据。.
 
         Args:
             data: FundingRate对象列表
@@ -346,7 +354,9 @@ class AsyncMarketDB:
             logger.warning("No funding rate data to store")
             return
 
-        assert self.pool._pool is not None
+        if self.pool._pool is None:
+            raise RuntimeError("Database connection pool not initialized")
+
         async with self.pool._pool.connection() as conn:
             records = []
             for item in data:
@@ -372,7 +382,7 @@ class AsyncMarketDB:
             logger.info(f"异步存储资金费率数据完成: {len(records)} 条记录")
 
     async def store_open_interest(self, data: list) -> None:
-        """异步存储持仓量数据。
+        """异步存储持仓量数据。.
 
         Args:
             data: OpenInterest对象列表
@@ -384,7 +394,9 @@ class AsyncMarketDB:
             logger.warning("No open interest data to store")
             return
 
-        assert self.pool._pool is not None
+        if self.pool._pool is None:
+            raise RuntimeError("Database connection pool not initialized")
+
         async with self.pool._pool.connection() as conn:
             records = []
             for item in data:
@@ -409,7 +421,7 @@ class AsyncMarketDB:
             logger.info(f"异步存储持仓量数据完成: {len(records)} 条记录")
 
     async def store_long_short_ratio(self, data: list) -> None:
-        """异步存储多空比例数据。
+        """异步存储多空比例数据。.
 
         Args:
             data: LongShortRatio对象列表
@@ -421,7 +433,9 @@ class AsyncMarketDB:
             logger.warning("No long short ratio data to store")
             return
 
-        assert self.pool._pool is not None
+        if self.pool._pool is None:
+            raise RuntimeError("Database connection pool not initialized")
+
         async with self.pool._pool.connection() as conn:
             records = []
             for item in data:
@@ -448,7 +462,7 @@ class AsyncMarketDB:
             logger.info(f"异步存储多空比例数据完成: {len(records)} 条记录")
 
     async def get_data_summary(self) -> dict:
-        """获取数据库统计信息。
+        """获取数据库统计信息。.
 
         Returns:
             dict: 统计信息
@@ -456,7 +470,9 @@ class AsyncMarketDB:
         if not self._initialized:
             await self.initialize()
 
-        assert self.pool._pool is not None
+        if self.pool._pool is None:
+            raise RuntimeError("Database connection pool not initialized")
+
         async with self.pool._pool.connection() as conn:
             summary = {}
 
@@ -518,268 +534,182 @@ class AsyncMarketDB:
             return summary
 
     async def close(self) -> None:
-        """关闭数据库连接。"""
+        """关闭数据库连接。."""
         await self.pool.close()
         self._initialized = False
 
     async def __aenter__(self):
-        """异步上下文管理器入口。"""
+        """异步上下文管理器入口。."""
         await self.initialize()
         return self
 
     async def __aexit__(self, exc_type, exc_val, exc_tb):
-        """异步上下文管理器出口。"""
+        """异步上下文管理器出口。."""
         await self.close()
+
+    async def _export_data_chunk(
+        self,
+        start_ts: int,
+        end_ts: int,
+        freq: Freq,
+        symbols: list[str],
+        target_freq: Freq | None,
+        output_path: Path,
+        export_freq: Freq,
+    ) -> None:
+        """导出一个由时间戳范围定义的单块数据."""
+        try:
+            df = await self._read_data_by_timestamp(
+                start_ts,
+                end_ts,
+                freq,
+                symbols,
+                raise_on_empty=False,
+            )
+        except ValueError as e:
+            if "No data found" in str(e):
+                logger.warning(f"时间戳范围 {start_ts} 到 {end_ts} 未找到数据")
+                return
+            raise
+
+        if df.empty:
+            logger.warning(f"时间戳范围 {start_ts} 到 {end_ts} 未找到数据")
+            return
+
+        if target_freq is not None:
+            df = await self._resample_data(df, target_freq)
+
+        await self._process_dataframe_for_export_by_timestamp(df, output_path, export_freq, start_ts, end_ts)
+        del df
 
     async def export_to_files_by_timestamp(
         self,
-        output_path: Union[Path, str],
-        start_ts: Union[int, str],
-        end_ts: Union[int, str],
+        output_path: Path | str,
+        start_ts: int | str,
+        end_ts: int | str,
         freq: Freq,
-        symbols: List[str],
-        target_freq: Optional[Freq] = None,
-        chunk_days: int = 30,  # 每次处理的天数
+        symbols: list[str],
+        target_freq: Freq | None = None,
+        chunk_days: int = 30,
     ) -> None:
-        """异步使用时间戳将数据库数据导出为npy文件格式，支持降采样.
-
-        Args:
-            output_path: 输出目录
-            start_ts: 开始时间戳 (毫秒，int或str)
-            end_ts: 结束时间戳 (毫秒，int或str)
-            freq: 原始数据频率
-            symbols: 交易对列表
-            target_freq: 目标频率，None表示不进行降采样
-            chunk_days: 每次处理的天数，用于控制内存使用
-        """
+        """异步使用时间戳将数据库数据导出为npy文件格式，支持降采样."""
         if not self._initialized:
             await self.initialize()
 
         try:
-            # 确保时间戳为整数
             start_timestamp = int(start_ts)
             end_timestamp = int(end_ts)
-
-            # 转换时间戳为日期，用于计算处理范围
             start_datetime = datetime.fromtimestamp(start_timestamp / 1000)
             end_datetime = datetime.fromtimestamp(end_timestamp / 1000)
 
             logger.info(f"异步导出数据: 时间戳 {start_timestamp} 到 {end_timestamp}")
             logger.info(
-                f"日期范围: {start_datetime.strftime('%Y-%m-%d %H:%M:%S')} 到 "
-                f"{end_datetime.strftime('%Y-%m-%d %H:%M:%S')}"
+                f"日期范围: {start_datetime.strftime('%Y-%m-%d %H:%M:%S')} \
+                    到 {end_datetime.strftime('%Y-%m-%d %H:%M:%S')}"
             )
 
-            output_path = Path(output_path)
-
-            # 创建日期范围 - 基于时间戳计算实际的日期范围
-            start_date = start_datetime.date()
-            end_date = end_datetime.date()
-            date_range = pd.date_range(start=start_date, end=end_date, freq="D")
-            total_days = len(date_range)
-
-            # 使用有效的频率进行导出
+            resolved_output_path = Path(output_path)
+            total_days = (end_datetime.date() - start_datetime.date()).days + 1
             export_freq = target_freq if target_freq is not None else freq
 
-            # 如果总天数少于等于chunk_days，直接处理整个范围，不分块
             if total_days <= chunk_days:
                 logger.info(f"处理所有数据: 时间戳 {start_timestamp} 到 {end_timestamp} (总共: {total_days} 天)")
-
-                # 直接使用时间戳读取所有数据
-                try:
-                    df = await self._read_data_by_timestamp(
-                        start_timestamp,
-                        end_timestamp,
-                        freq,
-                        symbols,
-                        raise_on_empty=False,
-                    )
-                except ValueError as e:
-                    if "No data found" in str(e):
-                        logger.warning(f"时间戳范围 {start_timestamp} 到 {end_timestamp} 未找到数据")
-                        return
-                    else:
-                        raise
-
-                if df.empty:
-                    logger.warning(f"时间戳范围 {start_timestamp} 到 {end_timestamp} 未找到数据")
-                    return
-
-                # 如果需要降采样
-                if target_freq is not None:
-                    df = await self._resample_data(df, target_freq)
-
-                # 处理所有数据
-                await self._process_dataframe_for_export_by_timestamp(
-                    df, output_path, export_freq, start_timestamp, end_timestamp
+                await self._export_data_chunk(
+                    start_timestamp, end_timestamp, freq, symbols, target_freq, resolved_output_path, export_freq
                 )
-
             else:
-                # 按chunk_days分块处理（用于大量数据）
-                one_day_ms = 24 * 60 * 60 * 1000  # 一天的毫秒数
+                one_day_ms = 24 * 60 * 60 * 1000
                 chunk_ms = chunk_days * one_day_ms
-
                 current_ts = start_timestamp
                 while current_ts < end_timestamp:
                     chunk_end_ts = min(current_ts + chunk_ms, end_timestamp)
-
                     chunk_start_datetime = datetime.fromtimestamp(current_ts / 1000)
                     chunk_end_datetime = datetime.fromtimestamp(chunk_end_ts / 1000)
-
                     logger.info(
-                        f"处理数据块: "
-                        f"{chunk_start_datetime.strftime('%Y-%m-%d %H:%M:%S')} 到 "
-                        f"{chunk_end_datetime.strftime('%Y-%m-%d %H:%M:%S')}"
+                        f"处理数据块: {chunk_start_datetime.strftime('%Y-%m-%d %H:%M:%S')} \
+                        到 {chunk_end_datetime.strftime('%Y-%m-%d %H:%M:%S')}"
                     )
-
-                    # 使用时间戳读取数据块
-                    try:
-                        df = await self._read_data_by_timestamp(
-                            current_ts,
-                            chunk_end_ts,
-                            freq,
-                            symbols,
-                            raise_on_empty=False,
-                        )
-                    except ValueError as e:
-                        if "No data found" in str(e):
-                            logger.warning(f"时间戳范围 {current_ts} 到 {chunk_end_ts} 未找到数据")
-                            current_ts = chunk_end_ts
-                            continue
-                        else:
-                            raise
-
-                    if df.empty:
-                        logger.warning(f"时间戳范围 {current_ts} 到 {chunk_end_ts} 未找到数据")
-                        current_ts = chunk_end_ts
-                        continue
-
-                    # 如果需要降采样
-                    if target_freq is not None:
-                        df = await self._resample_data(df, target_freq)
-
-                    # 处理当前数据块
-                    await self._process_dataframe_for_export_by_timestamp(
-                        df, output_path, export_freq, current_ts, chunk_end_ts
+                    await self._export_data_chunk(
+                        current_ts, chunk_end_ts, freq, symbols, target_freq, resolved_output_path, export_freq
                     )
-
-                    # 清理内存并让出控制权
-                    del df
-                    await asyncio.sleep(0.1)  # 给其他协程机会运行
+                    await asyncio.sleep(0.1)
                     current_ts = chunk_end_ts
 
-            logger.info(f"异步导出完成: {output_path}")
+            logger.info(f"异步导出完成: {resolved_output_path}")
 
         except Exception as e:
             logger.exception(f"异步导出时间戳数据失败: {e}")
             raise
 
-    async def export_to_files(
+    async def _export_data_chunk_by_date(
         self,
-        output_path: Union[Path, str],
         start_date: str,
         end_date: str,
         freq: Freq,
-        symbols: List[str],
-        target_freq: Optional[Freq] = None,
-        chunk_days: int = 30,  # 每次处理的天数
+        symbols: list[str],
+        target_freq: Freq | None,
+        output_path: Path,
+        date_range: pd.DatetimeIndex,
     ) -> None:
-        """异步将数据库数据导出为npy文件格式，支持降采样.
+        """导出一个由日期范围定义的单块数据."""
+        try:
+            df = await self.read_data(start_date, end_date, freq, symbols, raise_on_empty=False)
+        except ValueError as e:
+            if "No data found" in str(e):
+                logger.warning(f"时间段 {start_date} 到 {end_date} 未找到数据")
+                return
+            raise
 
-        Args:
-            output_path: 输出目录
-            start_date: 开始日期 (YYYY-MM-DD)
-            end_date: 结束日期 (YYYY-MM-DD)
-            freq: 原始数据频率
-            symbols: 交易对列表
-            target_freq: 目标频率，None表示不进行降采样
-            chunk_days: 每次处理的天数，用于控制内存使用
-        """
+        if df.empty:
+            logger.warning(f"时间段 {start_date} 到 {end_date} 未找到数据")
+            return
+
+        current_freq = freq
+        if target_freq is not None:
+            df = await self._resample_data(df, target_freq)
+            current_freq = target_freq
+
+        await self._process_dataframe_for_export(df, output_path, current_freq, date_range)
+        del df
+
+    async def export_to_files(
+        self,
+        output_path: Path | str,
+        start_date: str,
+        end_date: str,
+        freq: Freq,
+        symbols: list[str],
+        target_freq: Freq | None = None,
+        chunk_days: int = 30,
+    ) -> None:
+        """异步将数据库数据导出为npy文件格式，支持降采样."""
         if not self._initialized:
             await self.initialize()
 
         try:
-            output_path = Path(output_path)
-
-            # 创建日期范围
+            resolved_output_path = Path(output_path)
             date_range = pd.date_range(start=start_date, end=end_date, freq="D")
             total_days = len(date_range)
 
-            # 如果总天数少于等于chunk_days，直接处理整个范围，不分块
             if total_days <= chunk_days:
                 logger.info(f"异步处理所有数据: {start_date} 到 {end_date} (总共: {total_days} 天)")
-
-                # 读取所有数据
-                try:
-                    df = await self.read_data(
-                        start_date,
-                        end_date,
-                        freq,
-                        symbols,
-                        raise_on_empty=False,
-                    )
-                except ValueError as e:
-                    if "No data found" in str(e):
-                        logger.warning(f"时间段 {start_date} 到 {end_date} 未找到数据")
-                        return
-                    else:
-                        raise
-
-                if df.empty:
-                    logger.warning(f"时间段 {start_date} 到 {end_date} 未找到数据")
-                    return
-
-                # 如果需要降采样
-                if target_freq is not None:
-                    df = await self._resample_data(df, target_freq)
-                    freq = target_freq
-
-                # 处理所有数据
-                await self._process_dataframe_for_export(df, output_path, freq, date_range)
-
+                await self._export_data_chunk_by_date(
+                    start_date, end_date, freq, symbols, target_freq, resolved_output_path, date_range
+                )
             else:
-                # 按chunk_days分块处理（用于大量数据）
                 for chunk_start in range(0, len(date_range), chunk_days):
                     chunk_end = min(chunk_start + chunk_days, len(date_range))
                     chunk_start_date = date_range[chunk_start].strftime("%Y-%m-%d")
                     chunk_end_date = date_range[chunk_end - 1].strftime("%Y-%m-%d")
+                    chunk_dates = pd.date_range(chunk_start_date, chunk_end_date, freq="D")
 
                     logger.info(f"异步处理数据: {chunk_start_date} 到 {chunk_end_date}")
+                    await self._export_data_chunk_by_date(
+                        chunk_start_date, chunk_end_date, freq, symbols, target_freq, resolved_output_path, chunk_dates
+                    )
+                    await asyncio.sleep(0.1)
 
-                    # 读取数据块
-                    try:
-                        df = await self.read_data(
-                            chunk_start_date,
-                            chunk_end_date,
-                            freq,
-                            symbols,
-                            raise_on_empty=False,
-                        )
-                    except ValueError as e:
-                        if "No data found" in str(e):
-                            logger.warning(f"时间段 {chunk_start_date} 到 {chunk_end_date} 未找到数据")
-                            continue
-                        else:
-                            raise
-
-                    if df.empty:
-                        logger.warning(f"时间段 {chunk_start_date} 到 {chunk_end_date} 未找到数据")
-                        continue
-
-                    # 如果需要降采样
-                    if target_freq is not None:
-                        df = await self._resample_data(df, target_freq)
-                        freq = target_freq
-
-                    # 处理当前数据块
-                    chunk_dates = pd.date_range(chunk_start_date, chunk_end_date, freq="D")
-                    await self._process_dataframe_for_export(df, output_path, freq, chunk_dates)
-
-                    # 清理内存并让出控制权
-                    del df
-                    await asyncio.sleep(0.1)  # 给其他协程机会运行
-
-            logger.info(f"异步导出完成: {output_path}")
+            logger.info(f"异步导出完成: {resolved_output_path}")
 
         except Exception as e:
             logger.exception(f"异步导出数据失败: {e}")
@@ -790,8 +720,8 @@ class AsyncMarketDB:
         start_ts: int,
         end_ts: int,
         freq: Freq,
-        symbols: List[str],
-        features: Optional[List[str]] = None,
+        symbols: list[str],
+        features: list[str] | None = None,
         raise_on_empty: bool = True,
     ) -> pd.DataFrame:
         """使用时间戳读取市场数据的内部实现.
@@ -833,11 +763,13 @@ class AsyncMarketDB:
             AND freq = ?
             AND symbol IN ({placeholders})
             ORDER BY symbol, timestamp
-        """
+        """  # noqa: S608
         params = [start_ts, end_ts, freq.value] + symbols
 
         # 执行查询
-        assert self.pool._pool is not None
+        if self.pool._pool is None:
+            raise RuntimeError("Database connection pool not initialized")
+
         async with self.pool._pool.connection() as conn:
             cursor = await conn.execute(query, params)
             rows = await cursor.fetchall()
@@ -927,10 +859,9 @@ class AsyncMarketDB:
         start_ts: int,
         end_ts: int,
     ) -> None:
-        """基于时间戳处理DataFrame并导出为文件的异步辅助方法"""
-
+        """基于时间戳处理DataFrame并导出为文件的异步辅助方法."""
         # 建立数据库字段名到短字段名的映射关系
-        FIELD_MAPPING = {
+        field_mapping = {
             # 短字段名: (数据库字段名, 是否需要计算)
             "opn": ("open_price", False),
             "hgh": ("high_price", False),
@@ -975,12 +906,12 @@ class AsyncMarketDB:
 
         # 获取时间戳范围内的所有唯一日期
         timestamps = df.index.get_level_values("timestamp")
-        unique_dates = sorted(set(pd.Timestamp(ts).date() for ts in timestamps))
+        unique_dates = sorted({pd.Timestamp(ts).date() for ts in timestamps})
 
         # 并行处理每一天
         tasks = []
         for date in unique_dates:
-            task = self._process_single_date_async(df, date, output_path, freq, features, FIELD_MAPPING)
+            task = self._process_single_date_async(df, date, output_path, freq, features, field_mapping)
             tasks.append(task)
 
         # 分批执行任务，避免过多并发
@@ -996,9 +927,9 @@ class AsyncMarketDB:
     async def _process_dataframe_for_export(
         self, df: pd.DataFrame, output_path: Path, freq: Freq, dates: pd.DatetimeIndex
     ) -> None:
-        """处理DataFrame并导出为文件的异步辅助方法"""
+        """处理DataFrame并导出为文件的异步辅助方法."""
         # 建立数据库字段名到短字段名的映射关系
-        FIELD_MAPPING = {
+        field_mapping = {
             # 短字段名: (数据库字段名, 是否需要计算)
             "opn": ("open_price", False),
             "hgh": ("high_price", False),
@@ -1044,7 +975,7 @@ class AsyncMarketDB:
         # 并行处理每一天
         tasks = []
         for date in dates:
-            task = self._process_single_date_async(df, date.date(), output_path, freq, features, FIELD_MAPPING)
+            task = self._process_single_date_async(df, date.date(), output_path, freq, features, field_mapping)
             tasks.append(task)
 
         # 分批执行任务，避免过多并发
@@ -1063,10 +994,10 @@ class AsyncMarketDB:
         date,
         output_path: Path,
         freq: Freq,
-        features: List[str],
+        features: list[str],
         field_mapping: dict,
     ) -> None:
-        """异步处理单个日期的数据"""
+        """异步处理单个日期的数据."""
         date_str = date.strftime("%Y%m%d")
 
         # 获取当天数据
@@ -1114,7 +1045,7 @@ class AsyncMarketDB:
         freq: Freq,
         date_str: str,
     ) -> None:
-        """异步处理单个特征的数据"""
+        """异步处理单个特征的数据."""
         loop = asyncio.get_event_loop()
 
         def process_and_save():

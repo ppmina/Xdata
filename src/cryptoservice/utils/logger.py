@@ -1,3 +1,8 @@
+"""日志工具模块.
+
+提供打印信息、表格和错误信息的辅助函数。
+"""
+
 from typing import Any
 
 from rich.console import Console
@@ -46,6 +51,41 @@ def print_dict(
     console.print(table)
 
 
+def _handle_dict_data(data: list[dict], headers: list[str] | None, table: Table) -> None:
+    """处理字典类型的数据."""
+    if not all(isinstance(row, dict) for row in data):
+        raise ValueError("Inconsistent row types in dictionary data")
+
+    headers = headers or list(data[0].keys())
+    for header in headers:
+        table.add_column(header, style="cyan")
+    for row in data:
+        missing_keys = set(headers) - set(row.keys())
+        if missing_keys:
+            print_error(f"Missing keys in row: {missing_keys}")
+        table.add_row(*[str(row.get(h, "N/A")) for h in headers])
+
+
+def _handle_list_data(data: list[Any], headers: list[str] | None, table: Table) -> None:
+    """处理列表类型的数据."""
+    row_lengths = {len(row) if isinstance(row, list | tuple) else 1 for row in data}
+    if len(row_lengths) > 1:
+        raise ValueError(f"Inconsistent row lengths: {row_lengths}")
+
+    row_length = row_lengths.pop()
+    headers = headers or [f"Column {i + 1}" for i in range(row_length)]
+
+    if len(headers) != row_length:
+        raise ValueError(f"Headers length ({len(headers)}) doesn't match data width ({row_length})")
+
+    for header in headers:
+        table.add_column(header, style="cyan")
+    for row in data:
+        if not isinstance(row, list | tuple):
+            row = [row]
+        table.add_row(*[str(x) for x in row])
+
+
 def print_table(
     data: list[Any],
     title: str | None = None,
@@ -62,52 +102,17 @@ def print_table(
         ValueError: 当数据为空或格式不正确时
     """
     try:
-        # 检查数据是否为空
         if not data:
             raise ValueError("Empty data provided")
-
-        # 检查数据是否为列表
         if not isinstance(data, list):
             raise ValueError(f"Expected list, got {type(data).__name__}")
 
         table = Table(show_header=True, header_style="bold magenta")
 
-        # 如果数据是字典列表
         if isinstance(data[0], dict):
-            # 验证所有行是否都是字典
-            if not all(isinstance(row, dict) for row in data):
-                raise ValueError("Inconsistent row types in dictionary data")
-
-            headers = headers or list(data[0].keys())
-            for header in headers:
-                table.add_column(header, style="cyan")
-            for row in data:
-                # 检查是否所有必需的键都存在
-                missing_keys = set(headers) - set(row.keys())
-                if missing_keys:
-                    print_error(f"Missing keys in row: {missing_keys}")
-                table.add_row(*[str(row.get(h, "N/A")) for h in headers])
-
-        # 如果数据是普通列表
+            _handle_dict_data(data, headers, table)
         else:
-            # 验证所有行的长度是否一致
-            row_lengths = {len(row) if isinstance(row, (list, tuple)) else 1 for row in data}
-            if len(row_lengths) > 1:
-                raise ValueError(f"Inconsistent row lengths: {row_lengths}")
-
-            row_length = row_lengths.pop()
-            headers = headers or [f"Column {i + 1}" for i in range(row_length)]
-
-            # 验证headers长度是否匹配数据
-            if len(headers) != row_length:
-                raise ValueError(f"Headers length ({len(headers)}) doesn't match data width ({row_length})")
-
-            for header in headers:
-                table.add_column(header, style="cyan")
-            for row in data:
-                if not isinstance(row, (list, tuple)):
-                    row = [row]  # 单个值转换为列表
-                table.add_row(*[str(x) for x in row])
+            _handle_list_data(data, headers, table)
 
         if title:
             console.print(f"\n[bold]{title}[/bold]")
