@@ -363,7 +363,6 @@ class MarketDataService:
                         period=long_short_ratio_period,
                         long_short_ratio_types=long_short_ratio_types,
                         request_delay=request_delay,
-                        use_binance_vision=use_binance_vision,
                     )
 
                 logger.info(f"   ✅ 快照 {snapshot.effective_date} 下载完成")
@@ -470,7 +469,6 @@ class MarketDataService:
         period: Freq = Freq.m5,
         long_short_ratio_types: list[str] | None = None,
         request_delay: float = 0.5,
-        use_binance_vision: bool = False,
     ) -> None:
         """为单个快照下载市场指标数据"""
         try:
@@ -486,49 +484,14 @@ class MarketDataService:
             start_time = snapshot.start_date
             end_time = snapshot.end_date
 
-            if use_binance_vision:
-                logger.info("      📊 使用 Binance Vision 下载市场指标数据...")
-                await self.vision_downloader.download_metrics_batch(
-                    symbols=symbols,
-                    start_date=start_time,
-                    end_date=end_time,
-                    db_path=str(db_path),
-                    request_delay=request_delay,
-                )
-            else:
-                logger.info("      📊 使用 API 下载市场指标数据...")
-
-                # 下载资金费率
-                await self.metrics_downloader.download_funding_rate_batch(
-                    symbols=symbols,
-                    start_time=start_time,
-                    end_time=end_time,
-                    db_path=str(db_path),
-                    request_delay=request_delay,
-                )
-
-                # 下载持仓量
-                await self.metrics_downloader.download_open_interest_batch(
-                    symbols=symbols,
-                    start_time=start_time,
-                    end_time=end_time,
-                    db_path=str(db_path),
-                    interval=interval,
-                    request_delay=request_delay,
-                )
-
-                # 下载多空比例
-                for ratio_type in long_short_ratio_types:
-                    logger.info(f"        - 类型: {ratio_type}")
-                    await self.metrics_downloader.download_long_short_ratio_batch(
-                        symbols=symbols,
-                        start_time=start_time,
-                        end_time=end_time,
-                        db_path=str(db_path),
-                        period=period.value,
-                        ratio_type=ratio_type,
-                        request_delay=request_delay,
-                    )
+            logger.info("      📊 使用 Binance Vision 下载市场指标数据...")
+            await self.vision_downloader.download_metrics_batch(
+                symbols=symbols,
+                start_date=start_time,
+                end_date=end_time,
+                db_path=str(db_path),
+                request_delay=request_delay,
+            )
 
             logger.info("      ✅ 市场指标数据下载完成")
 
@@ -598,20 +561,20 @@ class MarketDataService:
             logger.debug(f"检查交易对 {symbol} 在 {date} 是否存在时出错: {e}")
             return False
 
-    # ==================== 支持旧版本的方法 ====================
+    # # ==================== 支持旧版本的方法 ====================
 
-    def _fetch_symbol_data(self, *args, **kwargs):
-        """支持旧版本的方法，委托给K线下载器"""
-        return self.kline_downloader.download_single_symbol(*args, **kwargs)
+    # def _fetch_symbol_data(self, *args, **kwargs):
+    #     """支持旧版本的方法，委托给K线下载器"""
+    #     return self.kline_downloader.download_single_symbol(*args, **kwargs)
 
-    @property
-    def rate_limit_manager(self):
-        """提供向后兼容的rate_limit_manager属性"""
-        return self.kline_downloader.rate_limit_manager
+    # @property
+    # def rate_limit_manager(self):
+    #     """提供向后兼容的rate_limit_manager属性"""
+    #     return self.kline_downloader.rate_limit_manager
 
-    @rate_limit_manager.setter
-    def rate_limit_manager(self, value):
-        """设置rate_limit_manager"""
-        self.kline_downloader.rate_limit_manager = value
-        self.metrics_downloader.rate_limit_manager = value
-        self.vision_downloader.rate_limit_manager = value
+    # @rate_limit_manager.setter
+    # def rate_limit_manager(self, value):
+    #     """设置rate_limit_manager"""
+    #     self.kline_downloader.rate_limit_manager = value
+    #     self.metrics_downloader.rate_limit_manager = value
+    #     self.vision_downloader.rate_limit_manager = value

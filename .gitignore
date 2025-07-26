@@ -58,3 +58,6 @@ demo_data/
 
 # Ignore cursor directory
 .cursor/
+
+# Ignore claude code config directory
+.claude/
