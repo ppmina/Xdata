@@ -1,0 +1,86 @@
+"""基础下载器抽象类。
+
+定义所有下载器的通用接口和行为。
+"""
+
+import logging
+from abc import ABC, abstractmethod
+from typing import Any, Dict, List, Optional
+
+from cryptoservice.utils import RateLimitManager, EnhancedErrorHandler, ExponentialBackoff
+from cryptoservice.config import RetryConfig
+
+logger = logging.getLogger(__name__)
+
+
+class BaseDownloader(ABC):
+    """下载器基类"""
+
+    def __init__(self, client, request_delay: float = 0.5):
+        self.client = client
+        self.rate_limit_manager = RateLimitManager(base_delay=request_delay)
+        self.error_handler = EnhancedErrorHandler()
+        self.failed_downloads: Dict[str, List[Dict]] = {}
+
+    @abstractmethod
+    def download(self, *args, **kwargs) -> Any:
+        """下载数据的抽象方法"""
+        pass
+
+    def _handle_request_with_retry(self, request_func, *args, retry_config: Optional[RetryConfig] = None, **kwargs):
+        """带重试的请求处理"""
+        if retry_config is None:
+            retry_config = RetryConfig()
+
+        backoff = ExponentialBackoff(retry_config)
+
+        while True:
+            try:
+                # 频率限制控制
+                self.rate_limit_manager.wait_before_request()
+
+                # 执行请求
+                result = request_func(*args, **kwargs)
+
+                # 处理成功
+                self.rate_limit_manager.handle_success()
+                return result
+
+            except Exception as e:
+                # 特殊处理频率限制错误
+                if self.error_handler.is_rate_limit_error(e):
+                    wait_time = self.rate_limit_manager.handle_rate_limit_error()
+                    logger.warning(f"🚫 频率限制，等待 {wait_time}秒后重试")
+                    continue
+
+                # 处理不可重试的错误
+                if not self.error_handler.should_retry(e, backoff.attempt, retry_config.max_retries):
+                    logger.error(f"❌ 请求失败: {e}")
+                    raise e
+
+                # 执行重试
+                logger.warning(f"🔄 重试 {backoff.attempt + 1}/{retry_config.max_retries}: {e}")
+                backoff.wait()
+
+    def _record_failed_download(self, symbol: str, error: str, metadata: Dict[str, Any] | None = None):
+        """记录失败的下载"""
+        if symbol not in self.failed_downloads:
+            self.failed_downloads[symbol] = []
+
+        failure_record = {
+            "error": error,
+            "metadata": metadata or {},
+            "retry_count": 0,
+        }
+        self.failed_downloads[symbol].append(failure_record)
+
+    def get_failed_downloads(self) -> Dict[str, List[Dict]]:
+        """获取失败的下载记录"""
+        return self.failed_downloads.copy()
+
+    def clear_failed_downloads(self, symbol: str | None = None):
+        """清除失败的下载记录"""
+        if symbol:
+            self.failed_downloads.pop(symbol, None)
+        else:
+            self.failed_downloads.clear()

@@ -1,6 +1,7 @@
 import asyncio
 import json
 from typing import Optional
+from aiohttp.client_ws import ClientWSTimeout
 
 import aiohttp
 from rich.console import Console
@@ -20,7 +21,9 @@ class WebSocketClient:
     async def connect(self, symbol: str = "btcusdt") -> bool:
         try:
             url = f"wss://stream.binance.com:9443/ws/{symbol}@kline_1m"
-            console.print(f"[yellow]Connecting to {url} through proxy {self.proxy}...[/yellow]")
+            console.print(
+                f"[yellow]Connecting to {url} through proxy {self.proxy}...[/yellow]"
+            )
 
             connector = aiohttp.TCPConnector(ssl=False)
             async with aiohttp.ClientSession(connector=connector) as session:
@@ -29,7 +32,7 @@ class WebSocketClient:
                     proxy=self.proxy,
                     proxy_headers={"User-Agent": "Mozilla/5.0"},
                     heartbeat=20,  # Let aiohttp handle keepalive
-                    timeout=30,
+                    timeout=ClientWSTimeout(),
                 ) as ws:
                     self.ws = ws
                     self.is_connected = True
@@ -65,7 +68,9 @@ class WebSocketClient:
                     msg = await self.ws.receive()
                     if msg.type == aiohttp.WSMsgType.TEXT:
                         message = json.loads(msg.data)
-                        console.print(f"[green]Received: {json.dumps(message, indent=2)}[/green]")
+                        console.print(
+                            f"[green]Received: {json.dumps(message, indent=2)}[/green]"
+                        )
                     elif msg.type == aiohttp.WSMsgType.CLOSED:
                         console.print("[yellow]WebSocket connection closed[/yellow]")
                         await self.reconnect()

@@ -1,4 +1,4 @@
-from cryptoservice.data.storage_db import MarketDB
+from cryptoservice.storage.storage_db import MarketDB
 from cryptoservice.models.enums import Freq
 import pandas as pd
 from pathlib import Path
