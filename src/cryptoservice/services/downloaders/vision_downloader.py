@@ -3,16 +3,16 @@
 专门处理从Binance Vision S3存储下载历史数据。
 """
 
+import asyncio
 import csv
 import logging
-import time
 import zipfile
 from datetime import datetime
 from io import BytesIO
 
-import requests
-from requests.adapters import HTTPAdapter
-from urllib3.util.retry import Retry
+import aiohttp
+from aiohttp import ClientTimeout
+from binance import AsyncClient
 
 from cryptoservice.config import RetryConfig
 from cryptoservice.exceptions import MarketDataFetchError
@@ -27,7 +27,7 @@ logger = logging.getLogger(__name__)
 class VisionDownloader(BaseDownloader):
     """Binance Vision数据下载器."""
 
-    def __init__(self, client, request_delay: float = 1.0):
+    def __init__(self, client: AsyncClient, request_delay: float = 1.0):
         """初始化Binance Vision数据下载器.
 
         Args:
@@ -46,8 +46,9 @@ class VisionDownloader(BaseDownloader):
         db_path: str,
         data_types: list[str] | None = None,
         request_delay: float = 1.0,
+        max_workers: int = 5,
     ) -> None:
-        """批量下载指标数据."""
+        """批量异步下载指标数据."""
         if data_types is None:
             data_types = ["openInterest", "longShortRatio"]
 
@@ -56,109 +57,85 @@ class VisionDownloader(BaseDownloader):
 
             if self.db is None:
                 self.db = AsyncMarketDB(db_path)
+            await self.db.initialize()
 
-            # 创建日期范围
             import pandas as pd
 
             date_range = pd.date_range(start=start_date, end=end_date, freq="D")
 
+            semaphore = asyncio.Semaphore(max_workers)
+            tasks = []
+
             for date in date_range:
                 date_str = date.strftime("%Y-%m-%d")
-                logger.info(f"处理日期: {date_str}")
+                for symbol in symbols:
+                    task = asyncio.create_task(
+                        self._download_and_process_symbol_for_date(symbol, date_str, semaphore, request_delay)
+                    )
+                    tasks.append(task)
 
-                # 下载指标数据
-                await self._download_metrics_for_date(symbols, date_str, request_delay)
-
-                # 请求延迟
-                if request_delay > 0:
-                    time.sleep(request_delay)
-
+            await asyncio.gather(*tasks)
             logger.info("✅ Binance Vision 指标数据下载完成")
 
         except Exception as e:
             logger.error(f"从 Binance Vision 下载指标数据失败: {e}")
             raise MarketDataFetchError(f"从 Binance Vision 下载指标数据失败: {e}") from e
 
-    async def _download_metrics_for_date(
+    async def _download_and_process_symbol_for_date(
         self,
-        symbols: list[str],
-        date: str,
-        request_delay: float = 1.0,
+        symbol: str,
+        date_str: str,
+        semaphore: asyncio.Semaphore,
+        request_delay: float,
     ) -> None:
-        """下载指定日期的指标数据."""
-        try:
-            date_obj = datetime.strptime(date, "%Y-%m-%d")
-            date_str = date_obj.strftime("%Y-%m-%d")
+        """下载并处理单个交易对在特定日期的数据."""
+        async with semaphore:
+            try:
+                url = f"{self.base_url}/{symbol}/{symbol}-metrics-{date_str}.zip"
+                logger.debug(f"下载 {symbol} 指标数据: {url}")
 
-            for symbol in symbols:
-                try:
-                    # 构建URL
-                    url = f"{self.base_url}/{symbol}/{symbol}-metrics-{date_str}.zip"
-                    logger.debug(f"下载 {symbol} 指标数据: {url}")
+                retry_config = RetryConfig(max_retries=3, base_delay=2.0)
+                metrics_data = await self._download_and_parse_metrics_csv(url, symbol, retry_config)
 
-                    # 下载并解析数据
-                    retry_config = RetryConfig(max_retries=3, base_delay=2.0)
-                    metrics_data = self._download_and_parse_metrics_csv(url, symbol, retry_config)
+                if metrics_data and self.db:
+                    if metrics_data.get("open_interest"):
+                        await self.db.store_open_interest(metrics_data["open_interest"])
+                        logger.info(f"✅ {symbol}: 存储了 {date_str} {len(metrics_data['open_interest'])} 条持仓量记录")
+                    if metrics_data.get("long_short_ratio"):
+                        await self.db.store_long_short_ratio(metrics_data["long_short_ratio"])
+                        logger.info(
+                            f"✅ {symbol}: 存储了 {date_str} {len(metrics_data['long_short_ratio'])} 条多空比例记录"
+                        )
+                else:
+                    logger.warning(f"⚠️ {symbol} on {date_str}: 无法获取指标数据")
 
-                    if metrics_data and self.db:
-                        # 存储持仓量数据
-                        if metrics_data.get("open_interest"):
-                            await self.db.store_open_interest(metrics_data["open_interest"])
-                            logger.info(
-                                f"✅ {symbol}: 存储了 {date_str} {len(metrics_data['open_interest'])} 条持仓量记录"
-                            )
+            except Exception as e:
+                logger.warning(f"下载 {symbol} on {date_str} 指标数据失败: {e}")
+                self._record_failed_download(symbol, str(e), {"url": url, "date": date_str, "data_type": "metrics"})
 
-                        # 存储多空比例数据
-                        if metrics_data.get("long_short_ratio"):
-                            await self.db.store_long_short_ratio(metrics_data["long_short_ratio"])
-                            logger.info(
-                                f"✅ {symbol}: 存储了 {date_str} {len(metrics_data['long_short_ratio'])} 条多空比例记录"
-                            )
-                    else:
-                        logger.warning(f"⚠️ {symbol}: 无法获取指标数据")
-
-                except Exception as e:
-                    logger.warning(f"下载 {symbol} 指标数据失败: {e}")
-                    self._record_failed_download(
-                        symbol,
-                        str(e),
-                        {
-                            "url": url,
-                            "date": date_str,
-                            "data_type": "metrics",
-                        },
-                    )
-
-                # 请求延迟
+            finally:
                 if request_delay > 0:
-                    time.sleep(request_delay)
+                    await asyncio.sleep(request_delay)
 
-        except Exception as e:
-            logger.error(f"从 Binance Vision 下载指标数据失败: {e}")
-            raise
-
-    def _download_and_parse_metrics_csv(
+    async def _download_and_parse_metrics_csv(
         self,
         url: str,
         symbol: str,
         retry_config: RetryConfig | None = None,
     ) -> dict[str, list] | None:
-        """下载并解析指标CSV数据."""
+        """使用aiohttp下载并解析指标CSV数据."""
         if retry_config is None:
             retry_config = RetryConfig(max_retries=3, base_delay=2.0)
 
-        try:
-            # 使用增强的会话下载ZIP文件
-            session = self._create_enhanced_session()
-
-            def request_func():
-                response = session.get(url, timeout=30)
+        async def request_func():
+            timeout = ClientTimeout(total=30)
+            async with aiohttp.ClientSession(timeout=timeout) as session, session.get(url) as response:
                 response.raise_for_status()
-                return response.content
+                return await response.read()
 
-            zip_content = self._handle_request_with_retry(request_func, retry_config=retry_config)
+        try:
+            zip_content = await self._handle_async_request_with_retry(request_func, retry_config=retry_config)
 
-            # 解压ZIP文件
             with zipfile.ZipFile(BytesIO(zip_content)) as zip_file:
                 csv_files = [f for f in zip_file.namelist() if f.endswith(".csv")]
 
@@ -168,29 +145,18 @@ class VisionDownloader(BaseDownloader):
 
                 result: dict[str, list] = {"open_interest": [], "long_short_ratio": []}
 
-                # 处理每个CSV文件
                 for csv_file in csv_files:
                     try:
                         with zip_file.open(csv_file) as f:
                             content = f.read().decode("utf-8")
-
-                        # 解析CSV内容
                         csv_reader = csv.DictReader(content.splitlines())
                         rows = list(csv_reader)
-
                         if not rows:
-                            logger.warning(f"CSV文件 {csv_file} 为空")
                             continue
 
-                        # 检查数据结构
                         first_row = rows[0]
-
-                        # 解析持仓量数据
                         if "sum_open_interest" in first_row:
-                            oi_data = self._parse_oi_data(rows, symbol)
-                            result["open_interest"].extend(oi_data)
-
-                        # 解析多空比例数据
+                            result["open_interest"].extend(self._parse_oi_data(rows, symbol))
                         if any(
                             field in first_row
                             for field in [
@@ -199,15 +165,11 @@ class VisionDownloader(BaseDownloader):
                                 "sum_taker_long_short_vol_ratio",
                             ]
                         ):
-                            lsr_data = self._parse_lsr_data(rows, symbol, csv_file)
-                            result["long_short_ratio"].extend(lsr_data)
-
+                            result["long_short_ratio"].extend(self._parse_lsr_data(rows, symbol, csv_file))
                     except Exception as e:
                         logger.warning(f"解析CSV文件 {csv_file} 时出错: {e}")
                         continue
-
                 return result if result["open_interest"] or result["long_short_ratio"] else None
-
         except Exception as e:
             logger.error(f"下载和解析指标数据失败 {symbol}: {e}")
             return None
@@ -311,45 +273,6 @@ class VisionDownloader(BaseDownloader):
                 continue
 
         return long_short_ratios
-
-    def _create_enhanced_session(self) -> requests.Session:
-        """创建增强的网络请求会话."""
-        session = requests.Session()
-
-        # 配置重试策略
-        retry_strategy = Retry(
-            total=3,
-            backoff_factor=1,
-            status_forcelist=[429, 500, 502, 503, 504],
-            allowed_methods=["GET", "POST"],
-        )
-
-        adapter = HTTPAdapter(
-            max_retries=retry_strategy,
-            pool_connections=10,
-            pool_maxsize=20,
-            pool_block=False,
-        )
-
-        session.mount("http://", adapter)
-        session.mount("https://", adapter)
-
-        # 设置默认头部
-        session.headers.update(
-            {
-                "User-Agent": (
-                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                    "AppleWebKit/537.36 (KHTML, like Gecko) "
-                    "Chrome/91.0.4472.124 Safari/537.36"
-                ),
-                "Accept": "application/json, text/plain, */*",
-                "Accept-Language": "en-US,en;q=0.9",
-                "Accept-Encoding": "gzip, deflate, br",
-                "Connection": "keep-alive",
-            }
-        )
-
-        return session
 
     def download(self, *args, **kwargs):
         """实现基类的抽象方法."""

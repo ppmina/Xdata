@@ -3,6 +3,7 @@
 提供统一的错误分类、重试策略和错误处理逻辑。
 """
 
+import asyncio
 import logging
 import secrets
 import time
@@ -48,6 +49,45 @@ class ExponentialBackoff:
 
         logger.debug(f"指数退避: 第{self.attempt}次重试, 等待{delay:.2f}秒")
         time.sleep(delay)
+
+        return delay
+
+
+class AsyncExponentialBackoff:
+    """指数退避的异步实现."""
+
+    def __init__(self, config: RetryConfig):
+        """初始化指数退避策略.
+
+        Args:
+            config: 重试配置.
+        """
+        self.config = config
+        self.attempt = 0
+
+    def reset(self):
+        """重置重试计数."""
+        self.attempt = 0
+
+    async def wait(self) -> float:
+        """计算并执行异步等待时间."""
+        if self.attempt >= self.config.max_retries:
+            raise Exception(f"超过最大重试次数: {self.config.max_retries}")
+
+        # 计算基础延迟
+        delay = min(
+            self.config.base_delay * (self.config.backoff_multiplier**self.attempt),
+            self.config.max_delay,
+        )
+
+        # 添加抖动以避免惊群效应
+        if self.config.jitter:
+            delay *= 0.5 + secrets.randbelow(501) / 1000.0
+
+        self.attempt += 1
+
+        logger.debug(f"指数退避: 第{self.attempt}次重试, 等待{delay:.2f}秒")
+        await asyncio.sleep(delay)
 
         return delay
 

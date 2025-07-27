@@ -1,15 +1,14 @@
 #!/usr/bin/env python
-"""
-Fetch today’s Binance symbol-category matrix and save as CSV.
-"""
+"""Fetch today’s Binance symbol-category matrix and save as CSV."""
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 from cryptoservice.services.processors.category_manager import CategoryManager
 
 
 def main() -> None:
+    """Fetch today’s Binance symbol-category matrix and save as CSV."""
     manager = CategoryManager()
 
     # 拉全部 USDT 交易对的分类
@@ -17,7 +16,7 @@ def main() -> None:
 
     # 输出目录：data/categories/categories_YYYY-MM-DD.csv
     out_dir = Path("data/categories")
-    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    today = datetime.now(UTC).strftime("%Y-%m-%d")
 
     manager.save_category_matrix_csv(
         output_path=out_dir,

@@ -10,6 +10,7 @@ from pathlib import Path
 
 import requests
 
+from cryptoservice.config import settings
 from cryptoservice.models import UniverseDefinition
 
 logger = logging.getLogger(__name__)
@@ -22,6 +23,18 @@ class CategoryManager:
         """初始化分类管理器."""
         self.categories_cache: dict[str, list[str]] = {}
         self.cache_timestamp: datetime | None = None
+        self._session = self._create_session()
+
+    def _create_session(self) -> requests.Session:
+        """创建配置了代理的请求会话."""
+        session = requests.Session()
+
+        # 从配置获取代理设置
+        proxies = settings.get_proxy_config()
+        if proxies:
+            session.proxies.update(proxies)
+
+        return session
 
     def get_symbol_categories(self, use_cache: bool = True) -> dict[str, list[str]]:
         """获取当前所有交易对的分类信息."""
@@ -39,11 +52,10 @@ class CategoryManager:
 
             # 调用 Binance 分类 API
             url = "https://www.binance.com/bapi/composite/v1/public/marketing/symbol/list"
-            response = requests.get(url, timeout=30)
+            response = self._session.get(url, timeout=30)
             response.raise_for_status()
 
             data = response.json()
-
             if data.get("code") != "000000":
                 raise ValueError(f"API 返回错误: {data.get('message', 'Unknown error')}")
 
@@ -127,10 +139,6 @@ class CategoryManager:
             output_path = Path(output_path)
             output_path.mkdir(parents=True, exist_ok=True)
 
-            # 如果没有指定日期，使用当前日期
-            if date_str is None:
-                date_str = datetime.now().strftime("%Y-%m-%d")
-
             # 创建分类矩阵
             valid_symbols, sorted_categories, matrix = self.create_category_matrix(symbols, categories)
 
@@ -162,7 +170,6 @@ class CategoryManager:
         self,
         universe_file: Path | str,
         output_path: Path | str,
-        categories: list[str] | None = None,
     ) -> None:
         """为 universe 中的所有交易对下载并保存分类信息."""
         try:
@@ -205,7 +212,6 @@ class CategoryManager:
                     output_path=output_path_obj,
                     symbols=snapshot.symbols,
                     date_str=snapshot_date,
-                    categories=categories,
                 )
 
                 logger.info(f"       ✅ 保存了 {len(snapshot.symbols)} 个交易对的分类信息")
@@ -216,7 +222,6 @@ class CategoryManager:
                 output_path=output_path_obj,
                 symbols=all_symbols_list,
                 date_str=current_date,
-                categories=categories,
             )
 
             logger.info("✅ 所有分类信息下载和保存完成")

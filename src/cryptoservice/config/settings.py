@@ -3,6 +3,7 @@
 使用 Pydantic BaseSettings 加载和管理配置。
 """
 
+import os
 from pathlib import Path
 from typing import Any
 
@@ -23,6 +24,10 @@ class Settings(BaseSettings):
     BINANCE_API_KEY: str = ""
     BINANCE_API_SECRET: str = ""
 
+    # 网络代理配置
+    HTTP_PROXY: str = ""
+    HTTPS_PROXY: str = ""
+
     # 数据存储配置
     DATA_STORAGE: dict[str, Any] = {
         "ROOT_PATH": ROOT_DIR / "data",  # 数据根目录
@@ -33,6 +38,21 @@ class Settings(BaseSettings):
 
     # 缓存配置
     CACHE_TTL: int = 60  # 缓存过期时间（秒）
+
+    def get_proxy_config(self) -> dict[str, str]:
+        """获取代理配置."""
+        proxies = {}
+
+        # 优先使用配置中的值，然后使用环境变量
+        http_proxy = self.HTTP_PROXY or os.getenv("HTTP_PROXY") or os.getenv("http_proxy")
+        https_proxy = self.HTTPS_PROXY or os.getenv("HTTPS_PROXY") or os.getenv("https_proxy")
+
+        if http_proxy:
+            proxies["http"] = http_proxy
+        if https_proxy:
+            proxies["https"] = https_proxy
+
+        return proxies
 
     class Config:
         """基本配置."""

@@ -12,7 +12,7 @@ from typing import Any, TypeGuard
 import numpy as np
 import pandas as pd
 
-from cryptoservice.models import Freq, KlineIndex, PerpetualMarketTicker
+from cryptoservice.models import Freq, PerpetualMarketTicker
 
 from .pool_manager import PoolManager
 
@@ -44,7 +44,7 @@ class AsyncMarketDB:
             enable_optimizations: 是否启用SQLite优化
         """
         self.db_path = Path(db_path)
-        self.pool = PoolManager(
+        self.pool_manager = PoolManager(
             db_path=db_path,
             max_connections=max_connections,
             enable_wal=enable_wal,
@@ -57,17 +57,17 @@ class AsyncMarketDB:
         if self._initialized:
             return
 
-        await self.pool.initialize()
+        await self.pool_manager.initialize()
         await self._create_tables()
         self._initialized = True
         logger.info(f"异步数据库初始化完成: {self.db_path}")
 
     async def _create_tables(self) -> None:
         """创建数据库表结构。."""
-        if self.pool._pool is None:
+        if self.pool_manager._pool is None:
             raise RuntimeError("Database connection pool not initialized")
 
-        async with self.pool._pool.connection() as conn:
+        async with self.pool_manager._pool.connection() as conn:
             # 市场数据表
             await conn.execute(
                 """
@@ -220,36 +220,34 @@ class AsyncMarketDB:
         freq: Freq,
     ) -> None:
         """存储单个批次的数据。."""
-        if self.pool._pool is None:
+        if self.pool_manager._pool is None:
             raise RuntimeError("Database connection pool not initialized")
 
-        async with self.pool._pool.connection() as conn:
-            records = []
-            for ticker in batch:
-                volume = float(ticker.raw_data[KlineIndex.VOLUME])
-                quote_volume = float(ticker.raw_data[KlineIndex.QUOTE_VOLUME])
-                taker_buy_volume = float(ticker.raw_data[KlineIndex.TAKER_BUY_VOLUME])
-                taker_buy_quote_volume = float(ticker.raw_data[KlineIndex.TAKER_BUY_QUOTE_VOLUME])
+        records = [
+            (
+                ticker.symbol,
+                ticker.open_time,
+                freq.value,
+                ticker.open_price,
+                ticker.high_price,
+                ticker.low_price,
+                ticker.close_price,
+                ticker.volume,
+                ticker.quote_volume,
+                ticker.trades_count,
+                ticker.taker_buy_volume,
+                ticker.taker_buy_quote_volume,
+                ticker.volume - ticker.taker_buy_volume,
+                ticker.quote_volume - ticker.taker_buy_quote_volume,
+            )
+            for ticker in batch
+        ]
 
-                record = (
-                    ticker.symbol,
-                    ticker.open_time,
-                    freq.value,
-                    ticker.raw_data[KlineIndex.OPEN],
-                    ticker.raw_data[KlineIndex.HIGH],
-                    ticker.raw_data[KlineIndex.LOW],
-                    ticker.raw_data[KlineIndex.CLOSE],
-                    volume,
-                    quote_volume,
-                    ticker.raw_data[KlineIndex.TRADES_COUNT],
-                    taker_buy_volume,
-                    taker_buy_quote_volume,
-                    volume - taker_buy_volume,
-                    quote_volume - taker_buy_quote_volume,
-                )
-                records.append(record)
+        if not records:
+            return
 
-            await conn.execute(
+        async with self.pool_manager._pool.connection() as conn:
+            await conn.executemany(
                 """
                 INSERT OR REPLACE INTO market_data (
                     symbol, timestamp, freq,
@@ -321,10 +319,10 @@ class AsyncMarketDB:
 
         params = [start_ts, end_ts, freq.value] + symbols
 
-        if self.pool._pool is None:
+        if self.pool_manager._pool is None:
             raise RuntimeError("Database connection pool not initialized")
 
-        async with self.pool._pool.connection() as conn:
+        async with self.pool_manager._pool.connection() as conn:
             cursor = await conn.execute(query, params)
             rows = await cursor.fetchall()
 
@@ -354,10 +352,10 @@ class AsyncMarketDB:
             logger.warning("No funding rate data to store")
             return
 
-        if self.pool._pool is None:
+        if self.pool_manager._pool is None:
             raise RuntimeError("Database connection pool not initialized")
 
-        async with self.pool._pool.connection() as conn:
+        async with self.pool_manager._pool.connection() as conn:
             records = []
             for item in data:
                 record = (
@@ -370,7 +368,7 @@ class AsyncMarketDB:
                 )
                 records.append(record)
 
-            await conn.execute(
+            await conn.executemany(
                 """
                 INSERT OR REPLACE INTO funding_rate (
                     symbol, timestamp, funding_rate, funding_time, mark_price, index_price
@@ -394,10 +392,10 @@ class AsyncMarketDB:
             logger.warning("No open interest data to store")
             return
 
-        if self.pool._pool is None:
+        if self.pool_manager._pool is None:
             raise RuntimeError("Database connection pool not initialized")
 
-        async with self.pool._pool.connection() as conn:
+        async with self.pool_manager._pool.connection() as conn:
             records = []
             for item in data:
                 record = (
@@ -409,7 +407,7 @@ class AsyncMarketDB:
                 )
                 records.append(record)
 
-            await conn.execute(
+            await conn.executemany(
                 """
                 INSERT OR REPLACE INTO open_interest (
                     symbol, timestamp, interval, open_interest, open_interest_value
@@ -433,10 +431,10 @@ class AsyncMarketDB:
             logger.warning("No long short ratio data to store")
             return
 
-        if self.pool._pool is None:
+        if self.pool_manager._pool is None:
             raise RuntimeError("Database connection pool not initialized")
 
-        async with self.pool._pool.connection() as conn:
+        async with self.pool_manager._pool.connection() as conn:
             records = []
             for item in data:
                 record = (
@@ -450,7 +448,7 @@ class AsyncMarketDB:
                 )
                 records.append(record)
 
-            await conn.execute(
+            await conn.executemany(
                 """
                 INSERT OR REPLACE INTO long_short_ratio (
                     symbol, timestamp, period, ratio_type, long_short_ratio, long_account, short_account
@@ -470,10 +468,10 @@ class AsyncMarketDB:
         if not self._initialized:
             await self.initialize()
 
-        if self.pool._pool is None:
+        if self.pool_manager._pool is None:
             raise RuntimeError("Database connection pool not initialized")
 
-        async with self.pool._pool.connection() as conn:
+        async with self.pool_manager._pool.connection() as conn:
             summary = {}
 
             # 市场数据统计
@@ -535,7 +533,7 @@ class AsyncMarketDB:
 
     async def close(self) -> None:
         """关闭数据库连接。."""
-        await self.pool.close()
+        await self.pool_manager.close()
         self._initialized = False
 
     async def __aenter__(self):
@@ -767,10 +765,10 @@ class AsyncMarketDB:
         params = [start_ts, end_ts, freq.value] + symbols
 
         # 执行查询
-        if self.pool._pool is None:
+        if self.pool_manager._pool is None:
             raise RuntimeError("Database connection pool not initialized")
 
-        async with self.pool._pool.connection() as conn:
+        async with self.pool_manager._pool.connection() as conn:
             cursor = await conn.execute(query, params)
             rows = await cursor.fetchall()
 
@@ -825,7 +823,10 @@ class AsyncMarketDB:
         def resample_sync():
             resampled_dfs = []
             for symbol in df.index.get_level_values("symbol").unique():
-                symbol_data = df.loc[symbol]
+                symbol_data = df.loc[symbol].copy()
+
+                # 将时间戳索引转换为DatetimeIndex
+                symbol_data.index = pd.to_datetime(symbol_data.index, unit="ms")
 
                 # 定义聚合规则
                 agg_rules = {
@@ -844,6 +845,11 @@ class AsyncMarketDB:
 
                 # 执行重采样
                 resampled = symbol_data.resample(freq_map[target_freq]).agg(agg_rules)
+
+                # 将DatetimeIndex转换回时间戳
+                resampled.index = (resampled.index.astype("int64") // 10**6).astype("int64")
+
+                # 重建多级索引
                 resampled.index = pd.MultiIndex.from_product([[symbol], resampled.index], names=["symbol", "timestamp"])
                 resampled_dfs.append(resampled)
 
@@ -906,7 +912,7 @@ class AsyncMarketDB:
 
         # 获取时间戳范围内的所有唯一日期
         timestamps = df.index.get_level_values("timestamp")
-        unique_dates = sorted({pd.Timestamp(ts).date() for ts in timestamps})
+        unique_dates = sorted({pd.Timestamp(ts, unit="ms").date() for ts in timestamps})
 
         # 并行处理每一天
         tasks = []
@@ -1003,7 +1009,7 @@ class AsyncMarketDB:
         # 获取当天数据
         day_data = df[
             df.index.get_level_values("timestamp").map(
-                lambda ts, current_date=date: pd.Timestamp(ts).date() == current_date
+                lambda ts, current_date=date: pd.Timestamp(ts, unit="ms").date() == current_date
             )
         ]
 

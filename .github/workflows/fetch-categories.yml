@@ -1,4 +1,4 @@
-name: Fetch-Daily-Categories
+name: Fetch Daily Categories
 
 on:
   schedule:          # UTC 03:00 ≈ 北京时间上午 11:00

@@ -8,6 +8,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from binance import AsyncClient
+
 from cryptoservice.client import BinanceClientFactory
 from cryptoservice.config import RetryConfig, settings
 from cryptoservice.exceptions import InvalidSymbolError, MarketDataFetchError
@@ -35,11 +37,11 @@ logger = logging.getLogger(__name__)
 
 
 class MarketDataService:
-    """市场数据服务实现类（重构版）."""
+    """市场数据服务实现类."""
 
-    def __init__(self, api_key: str, api_secret: str) -> None:
-        """初始化市场数据服务."""
-        self.client = BinanceClientFactory.create_client(api_key, api_secret)
+    def __init__(self, client: AsyncClient) -> None:
+        """初始化市场数据服务 (私有构造函数)."""
+        self.client = client
         self.converter = DataConverter()
         self.db: AsyncMarketDB | None = None
 
@@ -51,12 +53,28 @@ class MarketDataService:
         self.universe_manager = UniverseManager(self)
         self.category_manager = CategoryManager()
 
+    @classmethod
+    async def create(cls, api_key: str, api_secret: str) -> "MarketDataService":
+        """异步创建MarketDataService实例."""
+        client = await BinanceClientFactory.create_async_client(api_key, api_secret)
+        return cls(client)
+
+    async def __aenter__(self) -> "MarketDataService":
+        """异步上下文管理器入口."""
+        return self
+
+    async def __aexit__(self, exc_type, exc_val, exc_tb) -> None:
+        """异步上下文管理器出口，确保客户端关闭."""
+        await BinanceClientFactory.close_client()
+        if self.db:
+            await self.db.close()
+
     # ==================== 基础市场数据API ====================
 
-    def get_symbol_ticker(self, symbol: str | None = None) -> SymbolTicker | list[SymbolTicker]:
+    async def get_symbol_ticker(self, symbol: str | None = None) -> SymbolTicker | list[SymbolTicker]:
         """获取单个或所有交易对的行情数据."""
         try:
-            ticker = self.client.get_symbol_ticker(symbol=symbol)
+            ticker = await self.client.get_symbol_ticker(symbol=symbol)
             if not ticker:
                 raise InvalidSymbolError(f"Invalid symbol: {symbol}")
 
@@ -68,11 +86,11 @@ class MarketDataService:
             logger.error(f"Error fetching ticker for {symbol}: {e}")
             raise MarketDataFetchError(f"Failed to fetch ticker: {e}") from e
 
-    def get_perpetual_symbols(self, only_trading: bool = True, quote_asset: str = "USDT") -> list[str]:
+    async def get_perpetual_symbols(self, only_trading: bool = True, quote_asset: str = "USDT") -> list[str]:
         """获取当前市场上所有永续合约交易对."""
         try:
             logger.info(f"获取当前永续合约交易对列表（筛选条件：{quote_asset}结尾）")
-            futures_info = self.client.futures_exchange_info()
+            futures_info = await self.client.futures_exchange_info()
             perpetual_symbols = [
                 symbol["symbol"]
                 for symbol in futures_info["symbols"]
@@ -88,7 +106,7 @@ class MarketDataService:
             logger.error(f"获取永续合约交易对失败: {e}")
             raise MarketDataFetchError(f"获取永续合约交易对失败: {e}") from e
 
-    def get_top_coins(
+    async def get_top_coins(
         self,
         limit: int = settings.DEFAULT_LIMIT,
         sort_by: SortBy = SortBy.QUOTE_VOLUME,
@@ -96,7 +114,7 @@ class MarketDataService:
     ) -> list[DailyMarketTicker]:
         """获取前N个交易对."""
         try:
-            tickers = self.client.get_ticker()
+            tickers = await self.client.get_ticker()
             market_tickers = [DailyMarketTicker.from_binance_ticker(t) for t in tickers]
 
             if quote_asset:
@@ -112,11 +130,11 @@ class MarketDataService:
             logger.error(f"Error getting top coins: {e}")
             raise MarketDataFetchError(f"Failed to get top coins: {e}") from e
 
-    def get_market_summary(self, interval: Freq = Freq.d1) -> dict[str, Any]:
+    async def get_market_summary(self, interval: Freq = Freq.d1) -> dict[str, Any]:
         """获取市场概览."""
         try:
             summary: dict[str, Any] = {"snapshot_time": datetime.now(), "data": {}}
-            tickers_result = self.get_symbol_ticker()
+            tickers_result = await self.get_symbol_ticker()
             if isinstance(tickers_result, list):
                 tickers = [ticker.to_dict() for ticker in tickers_result]
             else:
@@ -129,7 +147,7 @@ class MarketDataService:
             logger.error(f"Error getting market summary: {e}")
             raise MarketDataFetchError(f"Failed to get market summary: {e}") from e
 
-    def get_historical_klines(
+    async def get_historical_klines(
         self,
         symbol: str,
         start_time: str | datetime,
@@ -155,7 +173,7 @@ class MarketDataService:
 
             # 根据klines_type选择API
             if klines_type == HistoricalKlinesType.FUTURES:
-                klines = self.client.futures_klines(
+                klines = await self.client.futures_klines(
                     symbol=symbol,
                     interval=interval.value,
                     startTime=start_ts,
@@ -163,7 +181,7 @@ class MarketDataService:
                     limit=1500,
                 )
             else:  # SPOT
-                klines = self.client.get_klines(
+                klines = await self.client.get_klines(
                     symbol=symbol,
                     interval=interval.value,
                     startTime=start_ts,
@@ -198,7 +216,7 @@ class MarketDataService:
 
     # ==================== 市场指标API ====================
 
-    def get_funding_rate(
+    async def get_funding_rate(
         self,
         symbol: str,
         start_time: str | datetime | None = None,
@@ -210,14 +228,14 @@ class MarketDataService:
         start_time_str = self._convert_time_to_string(start_time) if start_time else ""
         end_time_str = self._convert_time_to_string(end_time) if end_time else ""
 
-        return self.metrics_downloader.download_funding_rate(
+        return await self.metrics_downloader.download_funding_rate(
             symbol=symbol,
             start_time=start_time_str,
             end_time=end_time_str,
             limit=limit,
         )
 
-    def get_open_interest(
+    async def get_open_interest(
         self,
         symbol: str,
         period: str = "5m",
@@ -230,7 +248,7 @@ class MarketDataService:
         start_time_str = self._convert_time_to_string(start_time) if start_time else ""
         end_time_str = self._convert_time_to_string(end_time) if end_time else ""
 
-        return self.metrics_downloader.download_open_interest(
+        return await self.metrics_downloader.download_open_interest(
             symbol=symbol,
             period=period,
             start_time=start_time_str,
@@ -238,7 +256,7 @@ class MarketDataService:
             limit=limit,
         )
 
-    def get_long_short_ratio(
+    async def get_long_short_ratio(
         self,
         symbol: str,
         period: str = "5m",
@@ -252,7 +270,7 @@ class MarketDataService:
         start_time_str = self._convert_time_to_string(start_time) if start_time else ""
         end_time_str = self._convert_time_to_string(end_time) if end_time else ""
 
-        return self.metrics_downloader.download_long_short_ratio(
+        return await self.metrics_downloader.download_long_short_ratio(
             symbol=symbol,
             period=period,
             ratio_type=ratio_type,
@@ -449,14 +467,11 @@ class MarketDataService:
         self,
         universe_file: Path | str,
         output_path: Path | str,
-        categories: list[str] | None = None,
     ) -> None:
         """为 universe 中的所有交易对下载并保存分类信息."""
-        categories_list = categories if categories is not None else []
         self.category_manager.download_and_save_categories_for_universe(
             universe_file=universe_file,
             output_path=output_path,
-            categories=categories_list,
         )
 
     # ==================== 私有辅助方法 ====================
@@ -538,7 +553,7 @@ class MarketDataService:
             return time_value.strftime("%Y-%m-%d")
         raise ValueError(f"Unsupported time type: {type(time_value)}")
 
-    def check_symbol_exists_on_date(self, symbol: str, date: str) -> bool:
+    async def check_symbol_exists_on_date(self, symbol: str, date: str) -> bool:
         """检查指定日期是否存在该交易对."""
         try:
             # 将日期转换为时间戳范围
@@ -546,7 +561,7 @@ class MarketDataService:
             end_time = self._date_to_timestamp_end(date)
 
             # 尝试获取该时间范围内的K线数据
-            klines = self.client.futures_klines(
+            klines = await self.client.futures_klines(
                 symbol=symbol,
                 interval="1d",
                 startTime=start_time,

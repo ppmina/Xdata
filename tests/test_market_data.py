@@ -4,7 +4,7 @@ from cryptoservice.models import DailyMarketTicker, KlineMarketTicker, SymbolTic
 
 
 def test_market_ticker_from_24h_ticker() -> None:
-    """测试24小时行情数据解析"""
+    """测试24小时行情数据解析."""
     ticker_24h = {
         "symbol": "BTCUSDT",
         "lastPrice": "50000.0",
@@ -36,7 +36,7 @@ def test_market_ticker_from_24h_ticker() -> None:
 
 
 def test_market_ticker_from_kline() -> None:
-    """测试K线数据解析"""
+    """测试K线数据解析."""
     kline_data = [
         "BTCUSDT",  # symbol
         "49000.0",  # open
@@ -59,7 +59,7 @@ def test_market_ticker_from_kline() -> None:
 
 
 def test_market_ticker_to_dict() -> None:
-    """测试转换为字典格式"""
+    """测试转换为字典格式."""
     ticker_data = {"symbol": "BTCUSDT", "price": "50000.0"}
     ticker = SymbolTicker.from_binance_ticker(ticker_data)
     result = ticker.to_dict()

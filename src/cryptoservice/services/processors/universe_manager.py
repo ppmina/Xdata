@@ -10,7 +10,6 @@ from typing import Any
 
 import pandas as pd
 
-from cryptoservice import MarketDataService
 from cryptoservice.exceptions import MarketDataFetchError
 from cryptoservice.models import Freq, UniverseConfig, UniverseDefinition, UniverseSnapshot
 from cryptoservice.utils import RateLimitManager
@@ -21,7 +20,7 @@ logger = logging.getLogger(__name__)
 class UniverseManager:
     """Universe管理器."""
 
-    def __init__(self, market_service: MarketDataService):
+    def __init__(self, market_service):
         """初始化Universe管理器."""
         self.market_service = market_service
 

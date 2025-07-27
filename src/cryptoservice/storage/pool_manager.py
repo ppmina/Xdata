@@ -4,9 +4,26 @@
 """
 
 import logging
+import threading
 from pathlib import Path
 
-import aiosqlitepool
+import aiosqlite
+from aiosqlitepool import SQLiteConnectionPool
+
+# --- 猴子补丁：强制aiosqlite创建的线程为守护线程 ---
+# aiosqlite在后台使用非守护线程，这可能会阻止应用程序正常退出。
+# 通过将其设置为守护线程，我们允许主程序在完成时退出，而无需等待这些线程。
+_old_init = threading.Thread.__init__
+
+
+def _new_init(self, *args, **kwargs):
+    _old_init(self, *args, **kwargs)
+    self.daemon = True
+
+
+threading.Thread.__init__ = _new_init  # type: ignore[method-assign]
+# -----------------------------------------
+
 
 logger = logging.getLogger(__name__)
 
@@ -43,7 +60,7 @@ class PoolManager:
         self.enable_wal = enable_wal
         self.enable_optimizations = enable_optimizations
 
-        self._pool: aiosqlitepool.SQLiteConnectionPool | None = None
+        self._pool: SQLiteConnectionPool | None = None
         self._initialized = False
 
         # 确保数据库目录存在
@@ -63,38 +80,29 @@ class PoolManager:
         self._initialized = True
         logger.info(f"连接池初始化完成: {self.db_path}")
 
-    async def _create_aiosqlitepool(self) -> "aiosqlitepool.SQLiteConnectionPool":
-        """创建aiosqlitepool连接池。."""
-        # 配置选项
-        config = {
-            "database": str(self.db_path),
-            "max_connections": self.max_connections,
-            "min_connections": self.min_connections,
-            "connection_timeout": self.connection_timeout,
-        }
+    async def _create_aiosqlitepool(self) -> SQLiteConnectionPool:
+        """创建aiosqlitepool连接池."""
+        try:
 
-        # 如果启用优化，设置SQLite参数
-        if self.enable_optimizations:
-            init_commands = [
-                "PRAGMA synchronous = NORMAL",
-                "PRAGMA cache_size = 10000",
-                "PRAGMA temp_store = MEMORY",
-                "PRAGMA mmap_size = 268435456",  # 256MB
-                "PRAGMA foreign_keys = ON",
-            ]
+            async def sqlite_connection() -> aiosqlite.Connection:
+                # Connect to your database
+                conn = await aiosqlite.connect(self.db_path)
+                # Apply high-performance pragmas
+                await conn.execute("PRAGMA journal_mode = WAL")
+                await conn.execute("PRAGMA synchronous = NORMAL")
+                await conn.execute("PRAGMA cache_size = 10000")
+                await conn.execute("PRAGMA temp_store = MEMORY")
+                await conn.execute("PRAGMA foreign_keys = ON")
+                await conn.execute("PRAGMA mmap_size = 268435456")
 
-            if self.enable_wal:
-                init_commands.extend(
-                    [
-                        "PRAGMA journal_mode = WAL",
-                        "PRAGMA wal_autocheckpoint = 1000",
-                    ]
-                )
+                return conn
 
-            config["init_commands"] = init_commands
-
-        pool = aiosqlitepool.SQLiteConnectionPool(**config)
-        return pool
+            pool = SQLiteConnectionPool(
+                connection_factory=sqlite_connection,
+            )
+            return pool
+        except Exception as e:
+            raise e
 
     async def close(self) -> None:
         """关闭连接池。."""

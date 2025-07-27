@@ -3,12 +3,21 @@
 定义所有下载器的通用接口和行为。
 """
 
+import asyncio
 import logging
 from abc import ABC, abstractmethod
 from typing import Any
 
+from binance import AsyncClient
+
 from cryptoservice.config import RetryConfig
-from cryptoservice.utils import EnhancedErrorHandler, ExponentialBackoff, RateLimitManager
+from cryptoservice.utils import (
+    AsyncExponentialBackoff,
+    AsyncRateLimitManager,
+    EnhancedErrorHandler,
+    ExponentialBackoff,
+    RateLimitManager,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -16,15 +25,16 @@ logger = logging.getLogger(__name__)
 class BaseDownloader(ABC):
     """下载器基类."""
 
-    def __init__(self, client, request_delay: float = 0.5):
+    def __init__(self, client: AsyncClient, request_delay: float = 0.5):
         """初始化下载器基类.
 
         Args:
-            client: API 客户端实例.
+            client: API 异步客户端实例.
             request_delay: 请求之间的基础延迟（秒）.
         """
         self.client = client
         self.rate_limit_manager = RateLimitManager(base_delay=request_delay)
+        self.async_rate_limit_manager = AsyncRateLimitManager(base_delay=request_delay)
         self.error_handler = EnhancedErrorHandler()
         self.failed_downloads: dict[str, list[dict]] = {}
 
@@ -67,6 +77,44 @@ class BaseDownloader(ABC):
                 # 执行重试
                 logger.warning(f"🔄 重试 {backoff.attempt + 1}/{retry_config.max_retries}: {e}")
                 backoff.wait()
+
+    async def _handle_async_request_with_retry(
+        self, request_func, *args, retry_config: RetryConfig | None = None, **kwargs
+    ):
+        """带重试的异步请求处理."""
+        if retry_config is None:
+            retry_config = RetryConfig()
+
+        backoff = AsyncExponentialBackoff(retry_config)
+
+        while True:
+            try:
+                # 频率限制控制
+                await self.async_rate_limit_manager.wait_before_request()
+
+                # 直接 await 原生异步请求函数
+                result = await request_func(*args, **kwargs)
+
+                # 处理成功
+                await self.async_rate_limit_manager.handle_success()
+                return result
+
+            except Exception as e:
+                # 特殊处理频率限制错误
+                if self.error_handler.is_rate_limit_error(e):
+                    wait_time = await self.async_rate_limit_manager.handle_rate_limit_error()
+                    logger.warning(f"🚫 频率限制，等待 {wait_time}秒后重试")
+                    await asyncio.sleep(wait_time)  # 额外等待
+                    continue
+
+                # 处理不可重试的错误
+                if not self.error_handler.should_retry(e, backoff.attempt, retry_config.max_retries):
+                    logger.error(f"❌ 请求失败: {e}")
+                    raise e
+
+                # 执行重试
+                logger.warning(f"🔄 重试 {backoff.attempt + 1}/{retry_config.max_retries}: {e}")
+                await backoff.wait()
 
     def _record_failed_download(self, symbol: str, error: str, metadata: dict[str, Any] | None = None):
         """记录失败的下载."""

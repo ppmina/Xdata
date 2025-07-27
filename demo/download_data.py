@@ -61,33 +61,26 @@ async def main():
     # 确保数据库存在
     Path(DB_PATH).parent.mkdir(parents=True, exist_ok=True)
 
-    # 创建服务
-    service = MarketDataService(api_key=api_key, api_secret=api_secret)
-
+    # 创建服务并作为上下文管理器使用
     try:
-        # 下载universe数据
-        await service.download_universe_data(
-            universe_file=UNIVERSE_FILE,
-            db_path=DB_PATH,
-            interval=INTERVAL,
-            max_workers=MAX_WORKERS,
-            max_retries=MAX_RETRIES,
-            include_buffer_days=INCLUDE_BUFFER_DAYS,
-            request_delay=REQUEST_DELAY,
-            download_market_metrics=DOWNLOAD_MARKET_METRICS,
-            metrics_interval=METRICS_INTERVAL,
-            long_short_ratio_period=LONG_SHORT_RATIO_PERIOD,
-            long_short_ratio_types=LONG_SHORT_RATIO_TYPES,
-            use_binance_vision=USE_BINANCE_VISION,
-        )
+        async with await MarketDataService.create(api_key=api_key, api_secret=api_secret) as service:
+            # 下载universe数据
+            await service.download_universe_data(
+                universe_file=UNIVERSE_FILE,
+                db_path=DB_PATH,
+                interval=INTERVAL,
+                max_workers=MAX_WORKERS,
+                max_retries=MAX_RETRIES,
+                include_buffer_days=INCLUDE_BUFFER_DAYS,
+                request_delay=REQUEST_DELAY,
+                download_market_metrics=DOWNLOAD_MARKET_METRICS,
+                metrics_interval=METRICS_INTERVAL,
+                long_short_ratio_period=LONG_SHORT_RATIO_PERIOD,
+                long_short_ratio_types=LONG_SHORT_RATIO_TYPES,
+                use_binance_vision=USE_BINANCE_VISION,
+            )
 
         print("✅ 数据下载完成!")
-
-        # 验证数据库文件
-        db_file = Path(DB_PATH)
-        if db_file.exists():
-            file_size = db_file.stat().st_size / (1024 * 1024)  # MB
-            print(f"   💾 数据库文件: {db_file.name} ({file_size:.1f} MB)")
 
     except Exception as e:
         print(f"❌ 数据下载失败: {e}")

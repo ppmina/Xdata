@@ -1,23 +1,22 @@
-"""
-基本功能测试
+"""基本功能测试.
 
-验证核心模块的基本功能是否正常工作
+验证核心模块的基本功能是否正常工作.
 """
 
-import pytest
-from pathlib import Path
 from datetime import datetime
 
+import pytest
+
+from cryptoservice.models.enums import Freq
 from cryptoservice.models.universe import (
     UniverseConfig,
-    UniverseSnapshot,
     UniverseDefinition,
+    UniverseSnapshot,
 )
-from cryptoservice.models.enums import Freq
 
 
 def test_universe_config():
-    """测试UniverseConfig基本功能"""
+    """测试UniverseConfig基本功能."""
     config = UniverseConfig(
         start_date="2024-01-01",
         end_date="2024-01-31",
@@ -40,7 +39,7 @@ def test_universe_config():
 
 
 def test_universe_snapshot():
-    """测试UniverseSnapshot基本功能"""
+    """测试UniverseSnapshot基本功能."""
     snapshot = UniverseSnapshot.create_with_inferred_periods(
         effective_date="2024-01-31",
         t1_months=1,
@@ -64,7 +63,7 @@ def test_universe_snapshot():
 
 
 def test_universe_definition():
-    """测试UniverseDefinition基本功能"""
+    """测试UniverseDefinition基本功能."""
     config = UniverseConfig(
         start_date="2024-01-01",
         end_date="2024-01-31",
@@ -108,7 +107,7 @@ def test_universe_definition():
 
 
 def test_universe_schema():
-    """测试Universe schema功能"""
+    """测试Universe schema功能."""
     schema = UniverseDefinition.get_schema()
 
     assert isinstance(schema, dict)
@@ -125,14 +124,14 @@ def test_universe_schema():
 
 
 def test_freq_enum():
-    """测试Freq枚举"""
+    """测试Freq枚举."""
     assert Freq.h1.value == "1h"
     assert Freq.d1.value == "1d"
     assert Freq.m1.value == "1m"
 
 
 def test_file_operations(tmp_path):
-    """测试文件操作"""
+    """测试文件操作."""
     config = UniverseConfig(
         start_date="2024-01-01",
         end_date="2024-01-31",

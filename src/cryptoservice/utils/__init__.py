@@ -2,15 +2,17 @@
 
 from .cache_manager import CacheManager
 from .data_converter import DataConverter
-from .error_handler import EnhancedErrorHandler, ExponentialBackoff
+from .error_handler import AsyncExponentialBackoff, EnhancedErrorHandler, ExponentialBackoff
 from .logger import print_table
-from .rate_limit_manager import RateLimitManager
+from .rate_limit_manager import AsyncRateLimitManager, RateLimitManager
 
 __all__ = [
     "CacheManager",
     "DataConverter",
     "print_table",
     "RateLimitManager",
+    "AsyncRateLimitManager",
     "EnhancedErrorHandler",
     "ExponentialBackoff",
+    "AsyncExponentialBackoff",
 ]

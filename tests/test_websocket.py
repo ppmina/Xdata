@@ -1,9 +1,9 @@
 import asyncio
+import contextlib
 import json
-from typing import Optional
-from aiohttp.client_ws import ClientWSTimeout
 
 import aiohttp
+from aiohttp.client_ws import ClientWSTimeout
 from rich.console import Console
 
 console = Console()
@@ -11,9 +11,10 @@ console = Console()
 
 class WebSocketClient:
     def __init__(self) -> None:
-        self.ws: Optional[aiohttp.ClientWebSocketResponse] = None
-        self.heartbeat_task: Optional[asyncio.Task] = None
-        self.receive_task: Optional[asyncio.Task] = None
+        """初始化WebSocket客户端."""
+        self.ws: aiohttp.ClientWebSocketResponse | None = None
+        self.heartbeat_task: asyncio.Task | None = None
+        self.receive_task: asyncio.Task | None = None
         self.is_connected = False
         self.proxy = "http://127.0.0.1:6152"
         self.receive_lock = asyncio.Lock()
@@ -24,28 +25,30 @@ class WebSocketClient:
             console.print(f"[yellow]Connecting to {url} through proxy {self.proxy}...[/yellow]")
 
             connector = aiohttp.TCPConnector(ssl=False)
-            async with aiohttp.ClientSession(connector=connector) as session:
-                async with session.ws_connect(
+            async with (
+                aiohttp.ClientSession(connector=connector) as session,
+                session.ws_connect(
                     url,
                     proxy=self.proxy,
                     proxy_headers={"User-Agent": "Mozilla/5.0"},
                     heartbeat=20,  # Let aiohttp handle keepalive
                     timeout=ClientWSTimeout(),
-                ) as ws:
-                    self.ws = ws
-                    self.is_connected = True
+                ) as ws,
+            ):
+                self.ws = ws
+                self.is_connected = True
 
-                    console.print(
-                        f"[green]WebSocket Details:\n"
-                        f"- URL: {url}\n"
-                        f"- State: {'Connected' if not ws.closed else 'Disconnected'}\n"
-                        f"- Proxy: {self.proxy}\n"
-                        f"- Protocol: {ws.protocol}\n"
-                    )
+                console.print(
+                    f"[green]WebSocket Details:\n"
+                    f"- URL: {url}\n"
+                    f"- State: {'Connected' if not ws.closed else 'Disconnected'}\n"
+                    f"- Proxy: {self.proxy}\n"
+                    f"- Protocol: {ws.protocol}\n"
+                )
 
-                    # 只启动接收消息任务
-                    self.receive_task = asyncio.create_task(self.receive_messages())
-                    await self.receive_task  # 等待接收任务完成
+                # 只启动接收消息任务
+                self.receive_task = asyncio.create_task(self.receive_messages())
+                await self.receive_task  # 等待接收任务完成
 
             return True
 
@@ -91,10 +94,8 @@ class WebSocketClient:
 
         if self.receive_task and not self.receive_task.done():
             self.receive_task.cancel()
-            try:
+            with contextlib.suppress(asyncio.CancelledError):
                 await self.receive_task
-            except asyncio.CancelledError:
-                pass
 
         if self.ws and not self.ws.closed:
             await self.ws.close()

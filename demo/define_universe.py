@@ -5,12 +5,13 @@ builds a MarketDataService instance, and calls `define_universe` with the
 configuration below, writing the result to `data/universe.json`.
 """
 
+import asyncio
 import os
 from pathlib import Path
 
 from dotenv import load_dotenv
 
-from cryptoservice.services.market_service import MarketDataService
+from cryptoservice import MarketDataService
 
 load_dotenv()
 
@@ -27,7 +28,7 @@ T1_MONTHS = 1  # 1个月回看期
 T2_MONTHS = 1  # 1个月重平衡频率
 T3_MONTHS = 1  # 1个月最小合约存在时间
 # TOP_K = 160  # Top 160合约 (与 TOP_RATIO 二选一)
-TOP_RATIO = 0.8  # 选择Top 80%的合约
+TOP_RATIO = 0.1  # 选择Top 80%的合约
 DELAY_DAYS = 7  # 延迟7天
 QUOTE_ASSET = "USDT"  # 只使用USDT永续合约
 
@@ -39,7 +40,7 @@ BATCH_SIZE = 10  # 每批请求数量
 # ========================================
 
 
-def main():
+async def main():
     """定义Universe脚本."""
     # 检查API密钥
     api_key = os.getenv("BINANCE_API_KEY")
@@ -53,7 +54,7 @@ def main():
     Path(OUTPUT_PATH).parent.mkdir(parents=True, exist_ok=True)
 
     # 创建服务
-    service = MarketDataService(api_key=api_key, api_secret=api_secret)
+    service = await MarketDataService.create(api_key=api_key, api_secret=api_secret)
 
     try:
         universe_def = service.define_universe(
@@ -89,4 +90,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    asyncio.run(main())
