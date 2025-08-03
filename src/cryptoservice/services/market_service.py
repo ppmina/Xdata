@@ -26,7 +26,7 @@ from cryptoservice.models import (
     SymbolTicker,
     UniverseDefinition,
 )
-from cryptoservice.storage import AsyncMarketDB
+from cryptoservice.storage.database import Database as AsyncMarketDB
 from cryptoservice.utils import DataConverter
 
 # 导入新的模块
@@ -294,6 +294,7 @@ class MarketDataService:
         request_delay: float = 0.5,
         retry_config: RetryConfig | None = None,
         enable_integrity_check: bool = True,
+        incremental: bool = True,
     ) -> IntegrityReport:
         """获取永续合约数据并存储."""
         # 验证并准备数据库文件路径
@@ -309,6 +310,7 @@ class MarketDataService:
             db_path=db_file_path,
             max_workers=max_workers,
             retry_config=retry_config or RetryConfig(max_retries=max_retries),
+            incremental=incremental,
         )
 
     async def download_universe_data(
@@ -327,6 +329,7 @@ class MarketDataService:
         long_short_ratio_period: Freq = Freq.m5,
         long_short_ratio_types: list[str] | None = None,
         use_binance_vision: bool = False,
+        incremental: bool = True,
     ) -> None:
         """按周期分别下载universe数据."""
         try:
@@ -369,6 +372,7 @@ class MarketDataService:
                     retry_config=retry_config,
                     enable_integrity_check=True,
                     request_delay=request_delay,
+                    incremental=incremental,
                 )
 
                 # 下载市场指标数据
@@ -394,7 +398,7 @@ class MarketDataService:
 
     # ==================== Universe管理 ====================
 
-    def define_universe(
+    async def define_universe(
         self,
         start_date: str,
         end_date: str,
@@ -412,7 +416,7 @@ class MarketDataService:
         quote_asset: str = "USDT",
     ) -> UniverseDefinition:
         """定义universe并保存到文件."""
-        return self.universe_manager.define_universe(
+        return await self.universe_manager.define_universe(
             start_date=start_date,
             end_date=end_date,
             t1_months=t1_months,
@@ -499,6 +503,7 @@ class MarketDataService:
             start_time = snapshot.start_date
             end_time = snapshot.end_date
 
+            # 下载Vision数据（持仓量、多空比例）
             logger.info("      📊 使用 Binance Vision 下载市场指标数据...")
             await self.vision_downloader.download_metrics_batch(
                 symbols=symbols,
@@ -506,6 +511,17 @@ class MarketDataService:
                 end_date=end_time,
                 db_path=str(db_path),
                 request_delay=request_delay,
+            )
+
+            # 下载Metrics API数据（资金费率）
+            logger.info("      💰 使用 Binance API 下载资金费率数据...")
+            await self.metrics_downloader.download_funding_rate_batch(
+                symbols=symbols,
+                start_time=start_time,
+                end_time=end_time,
+                db_path=str(db_path),
+                request_delay=request_delay,
+                max_workers=2,  # 限制并发以避免API限制
             )
 
             logger.info("      ✅ 市场指标数据下载完成")

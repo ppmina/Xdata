@@ -1,4 +1,4 @@
-"""K线数据下载器。.
+"""K线数据下载器.
 
 专门处理K线数据的下载，包括现货和期货K线数据。
 """
@@ -19,7 +19,7 @@ from cryptoservice.models import (
     IntegrityReport,
     PerpetualMarketTicker,
 )
-from cryptoservice.storage import AsyncMarketDB
+from cryptoservice.storage.database import Database as AsyncMarketDB
 
 from .base_downloader import BaseDownloader
 
@@ -103,6 +103,7 @@ class KlineDownloader(BaseDownloader):
         db_path: Path,
         max_workers: int = 5,
         retry_config: RetryConfig | None = None,
+        incremental: bool = True,
     ) -> IntegrityReport:
         """批量异步下载多个交易对的K线数据."""
         # 初始化数据库
@@ -110,69 +111,61 @@ class KlineDownloader(BaseDownloader):
             self.db = AsyncMarketDB(str(db_path))
         await self.db.initialize()
 
+        # 如果启用增量下载模式，生成下载计划
+        if incremental:
+            logger.info("🔄 增量下载模式已启用，分析现有数据...")
+            missing_plan = await self.db.plan_kline_download(
+                symbols=symbols,
+                start_date=start_time,
+                end_date=end_time,
+                freq=interval,
+            )
+
+            # 过滤出需要下载的交易对
+            symbols_to_download = list(missing_plan.keys())
+            if not symbols_to_download:
+                logger.info("✅ 所有数据已存在，无需下载")
+                return IntegrityReport(
+                    total_symbols=len(symbols),
+                    successful_symbols=len(symbols),
+                    failed_symbols=[],
+                    missing_periods=[],
+                    data_quality_score=1.0,
+                    recommendations=["所有数据已是最新状态"],
+                )
+            else:
+                logger.info(f"📋 需要下载数据的交易对: {len(symbols_to_download)}/{len(symbols)}")
+                # 使用需要下载的交易对列表替换原始列表
+                symbols = symbols_to_download
+
         # 转换时间格式
         start_ts = self._date_to_timestamp_start(start_time)
         end_ts = self._date_to_timestamp_end(end_time)
 
-        successful_symbols = []
-        failed_symbols = []
-        missing_periods = []
+        successful_symbols: list[str] = []
+        failed_symbols: list[str] = []
+        missing_periods: list[dict] = []
         semaphore = asyncio.Semaphore(max_workers)
 
         logger.info(f"🚀 开始批量下载 {len(symbols)} 个交易对的K线数据 (并发数: {max_workers})")
 
-        async def process_symbol(symbol: str):
-            """处理单个交易对."""
-            async with semaphore:
-                try:
-                    data_generator = self.download_single_symbol(
-                        symbol=symbol,
-                        start_ts=start_ts,
-                        end_ts=end_ts,
-                        interval=interval,
-                        retry_config=retry_config,
-                    )
-
-                    chunk = []
-                    processed_count = 0
-                    async for item in data_generator:
-                        chunk.append(item)
-                        if len(chunk) >= 1000:  # 每1000条数据存一次
-                            if self.db:
-                                await self.db.store_data(chunk, interval)
-                            processed_count += len(chunk)
-                            chunk = []
-
-                    if chunk and self.db:  # 存储剩余的数据
-                        await self.db.store_data(chunk, interval)
-                        processed_count += len(chunk)
-
-                    if processed_count > 0:
-                        successful_symbols.append(symbol)
-                        logger.debug(f"✅ {symbol}: {processed_count} 条记录")
-                    else:
-                        logger.debug(f"⚠️ {symbol}: 无数据")
-                        missing_periods.append(
-                            {
-                                "symbol": symbol,
-                                "period": f"{start_time} - {end_time}",
-                                "reason": "no_data",
-                            }
-                        )
-
-                except Exception as e:
-                    logger.error(f"❌ {symbol} 失败: {e}")
-                    failed_symbols.append(symbol)
-                    missing_periods.append(
-                        {
-                            "symbol": symbol,
-                            "period": f"{start_time} - {end_time}",
-                            "reason": str(e),
-                        }
-                    )
-
         # 创建并执行所有任务
-        tasks = [process_symbol(symbol) for symbol in symbols]
+        tasks = [
+            self._process_symbol(
+                symbol=symbol,
+                start_ts=start_ts,
+                end_ts=end_ts,
+                interval=interval,
+                start_time=start_time,
+                end_time=end_time,
+                retry_config=retry_config,
+                semaphore=semaphore,
+                successful_symbols=successful_symbols,
+                failed_symbols=failed_symbols,
+                missing_periods=missing_periods,
+            )
+            for symbol in symbols
+        ]
         await asyncio.gather(*tasks)
 
         # 生成报告
@@ -186,6 +179,70 @@ class KlineDownloader(BaseDownloader):
             data_quality_score=len(successful_symbols) / len(symbols) if symbols else 0,
             recommendations=self._generate_recommendations(successful_symbols, failed_symbols),
         )
+
+    async def _process_symbol(
+        self,
+        *,
+        symbol: str,
+        start_ts: str,
+        end_ts: str,
+        interval: Freq,
+        start_time: str,
+        end_time: str,
+        retry_config: RetryConfig | None,
+        semaphore: asyncio.Semaphore,
+        successful_symbols: list[str],
+        failed_symbols: list[str],
+        missing_periods: list[dict],
+    ) -> None:
+        """下载并存储单个交易对数据，并更新结果列表."""
+        async with semaphore:
+            try:
+                data_generator = self.download_single_symbol(
+                    symbol=symbol,
+                    start_ts=start_ts,
+                    end_ts=end_ts,
+                    interval=interval,
+                    retry_config=retry_config,
+                )
+
+                chunk: list[PerpetualMarketTicker] = []
+                processed_count = 0
+                async for item in data_generator:
+                    chunk.append(item)
+                    if len(chunk) >= 1000:  # 每1000条数据存一次
+                        if self.db:
+                            await self.db.insert_klines(chunk, interval)
+                        processed_count += len(chunk)
+                        chunk = []
+
+                if chunk and self.db:  # 存储剩余的数据
+                    await self.db.insert_klines(chunk, interval)
+                    processed_count += len(chunk)
+
+                if processed_count > 0:
+                    successful_symbols.append(symbol)
+                    logger.debug(f"✅ {symbol}: {processed_count} 条记录")
+                else:
+                    logger.debug(f"⚠️ {symbol}: 无数据")
+                    missing_periods.append(
+                        {
+                            "symbol": symbol,
+                            "period": f"{start_time} - {end_time}",
+                            "reason": "no_data",
+                        }
+                    )
+
+            except Exception as e:
+                logger.error(f"❌ {symbol} 失败: {e}")
+                failed_symbols.append(symbol)
+                missing_periods.append(
+                    {
+                        "symbol": symbol,
+                        "period": f"{start_time} - {end_time}",
+                        "reason": str(e),
+                    }
+                )
 
     def _validate_single_kline(self, kline: list, symbol: str) -> list | None:
         """验证单条K线数据质量."""

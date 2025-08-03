@@ -1,4 +1,4 @@
-"""Binance Vision数据下载器。.
+"""Binance Vision数据下载器.
 
 专门处理从Binance Vision S3存储下载历史数据。
 """
@@ -17,7 +17,7 @@ from binance import AsyncClient
 from cryptoservice.config import RetryConfig
 from cryptoservice.exceptions import MarketDataFetchError
 from cryptoservice.models import LongShortRatio, OpenInterest
-from cryptoservice.storage import AsyncMarketDB
+from cryptoservice.storage.database import Database as AsyncMarketDB
 
 from .base_downloader import BaseDownloader
 
@@ -99,10 +99,10 @@ class VisionDownloader(BaseDownloader):
 
                 if metrics_data and self.db:
                     if metrics_data.get("open_interest"):
-                        await self.db.store_open_interest(metrics_data["open_interest"])
+                        await self.db.insert_open_interests(metrics_data["open_interest"])
                         logger.info(f"✅ {symbol}: 存储了 {date_str} {len(metrics_data['open_interest'])} 条持仓量记录")
                     if metrics_data.get("long_short_ratio"):
-                        await self.db.store_long_short_ratio(metrics_data["long_short_ratio"])
+                        await self.db.insert_long_short_ratios(metrics_data["long_short_ratio"])
                         logger.info(
                             f"✅ {symbol}: 存储了 {date_str} {len(metrics_data['long_short_ratio'])} 条多空比例记录"
                         )

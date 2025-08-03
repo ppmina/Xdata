@@ -30,7 +30,7 @@ classifiers = [
 authors = [{ name = "Minnn", email = "minzzzai.s@gmail.com" }]
 
 [project.optional-dependencies]
-test = ["pytest>=6.0.0", "pytest-cov>=2.10.0"]
+test = ["pytest>=6.0.0", "pytest-cov>=2.10.0", "pytest-asyncio>=0.21.0"]
 dev = ["pre-commit>=2.0.0", "python-dotenv>=0.15.0", "ruff>=0.4.0"]
 dev-all = ["cryptoservice[test,dev]"]
 docs = [
@@ -172,6 +172,7 @@ dev = [
     "mkdocstrings[python]>=0.29.1",
     "mypy>=1.16.0",
     "pandas-stubs>=2.2.3.250527",
+    "pytest-asyncio>=1.1.0",
     "python-semantic-release>=10.1.0",
     "ruff>=0.11.12",
     "types-requests>=2.32.4.20250611",

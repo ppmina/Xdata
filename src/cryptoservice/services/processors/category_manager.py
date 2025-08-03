@@ -216,12 +216,12 @@ class CategoryManager:
 
                 logger.info(f"       ✅ 保存了 {len(snapshot.symbols)} 个交易对的分类信息")
 
-            # 也保存一个当前日期的完整矩阵（包含所有交易对）
-            logger.info(f"   📅 保存当前日期 ({current_date}) 的完整分类矩阵")
+            # 也保存一个当前分类的完整矩阵（包含所有交易对，用作参考）
+            logger.info(f"   📅 保存当前分类参考矩阵 (获取于 {current_date})")
             self.save_category_matrix_csv(
                 output_path=output_path_obj,
                 symbols=all_symbols_list,
-                date_str=current_date,
+                date_str=f"reference_{current_date}",
             )
 
             logger.info("✅ 所有分类信息下载和保存完成")

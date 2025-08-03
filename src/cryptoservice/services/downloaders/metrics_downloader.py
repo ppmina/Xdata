@@ -1,6 +1,6 @@
-"""市场指标数据下载器。.
+"""市场指标数据下载器.
 
-专门处理资金费率、持仓量、多空比例等市场指标数据的下载。
+专门处理资金费率、持仓量(当日)、多空比例（当日）等市场指标数据的下载。
 """
 
 import asyncio
@@ -11,7 +11,7 @@ from binance import AsyncClient
 
 from cryptoservice.exceptions import MarketDataFetchError
 from cryptoservice.models import Freq, FundingRate, LongShortRatio, OpenInterest
-from cryptoservice.storage import AsyncMarketDB
+from cryptoservice.storage.database import Database as AsyncMarketDB
 
 from .base_downloader import BaseDownloader
 
@@ -77,7 +77,7 @@ class MetricsDownloader(BaseDownloader):
 
             # 批量存储
             if all_funding_rates and self.db:
-                await self.db.store_funding_rate(all_funding_rates)
+                await self.db.insert_funding_rates(all_funding_rates)
                 logger.info(f"✅ 存储了 {len(all_funding_rates)} 条资金费率记录")
 
             logger.info(f"💰 资金费率数据下载完成: {len(all_funding_rates)} 条记录")
@@ -134,7 +134,7 @@ class MetricsDownloader(BaseDownloader):
 
             # 批量存储
             if all_open_interests and self.db:
-                await self.db.store_open_interest(all_open_interests)
+                await self.db.insert_open_interests(all_open_interests)
                 logger.info(f"✅ 存储了 {len(all_open_interests)} 条持仓量记录")
 
             logger.info(f"📊 持仓量数据下载完成: {len(all_open_interests)} 条记录")
@@ -198,7 +198,7 @@ class MetricsDownloader(BaseDownloader):
 
             # 批量存储
             if all_long_short_ratios and self.db:
-                await self.db.store_long_short_ratio(all_long_short_ratios)
+                await self.db.insert_long_short_ratios(all_long_short_ratios)
                 logger.info(f"✅ 存储了 {len(all_long_short_ratios)} 条多空比例记录")
 
             logger.info(f"📊 多空比例数据下载完成: {len(all_long_short_ratios)} 条记录")

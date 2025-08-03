@@ -1,10 +1,12 @@
-"""基于aiosqlitepool的连接池管理器。.
+"""数据库连接池管理器。.
 
 高性能的异步SQLite连接池实现。
 """
 
 import logging
 import threading
+from collections.abc import AsyncGenerator
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 import aiosqlite
@@ -24,14 +26,13 @@ def _new_init(self, *args, **kwargs):
 threading.Thread.__init__ = _new_init  # type: ignore[method-assign]
 # -----------------------------------------
 
-
 logger = logging.getLogger(__name__)
 
 
-class PoolManager:
-    """统一的连接池管理器。.
+class ConnectionPool:
+    """数据库连接池管理器。.
 
-    根据可用库自动选择最优的连接池实现。
+    基于aiosqlitepool的高性能异步SQLite连接池实现。
     """
 
     def __init__(
@@ -43,7 +44,7 @@ class PoolManager:
         enable_wal: bool = True,
         enable_optimizations: bool = True,
     ):
-        """初始化连接池管理器。.
+        """初始化连接池。.
 
         Args:
             db_path: 数据库文件路径
@@ -71,38 +72,52 @@ class PoolManager:
         if self._initialized:
             return
 
-        logger.info("使用aiosqlitepool高性能连接池")
+        logger.info("初始化aiosqlitepool高性能连接池")
         try:
-            self._pool = await self._create_aiosqlitepool()
+            self._pool = await self._create_connection_pool()
+            self._initialized = True
+            logger.info(f"连接池初始化完成: {self.db_path}")
         except Exception as e:
-            raise e
+            logger.error(f"连接池初始化失败: {e}")
+            raise
 
-        self._initialized = True
-        logger.info(f"连接池初始化完成: {self.db_path}")
+    async def _create_connection_pool(self) -> SQLiteConnectionPool:
+        """创建连接池实例。."""
 
-    async def _create_aiosqlitepool(self) -> SQLiteConnectionPool:
-        """创建aiosqlitepool连接池."""
-        try:
+        async def connection_factory() -> aiosqlite.Connection:
+            """连接工厂函数。."""
+            conn = await aiosqlite.connect(self.db_path)
 
-            async def sqlite_connection() -> aiosqlite.Connection:
-                # Connect to your database
-                conn = await aiosqlite.connect(self.db_path)
-                # Apply high-performance pragmas
-                await conn.execute("PRAGMA journal_mode = WAL")
+            if self.enable_optimizations:
+                # 应用高性能SQLite配置
+                if self.enable_wal:
+                    await conn.execute("PRAGMA journal_mode = WAL")
                 await conn.execute("PRAGMA synchronous = NORMAL")
                 await conn.execute("PRAGMA cache_size = 10000")
                 await conn.execute("PRAGMA temp_store = MEMORY")
                 await conn.execute("PRAGMA foreign_keys = ON")
-                await conn.execute("PRAGMA mmap_size = 268435456")
+                await conn.execute("PRAGMA mmap_size = 268435456")  # 256MB
 
-                return conn
+            return conn
 
-            pool = SQLiteConnectionPool(
-                connection_factory=sqlite_connection,
-            )
-            return pool
-        except Exception as e:
-            raise e
+        pool = SQLiteConnectionPool(connection_factory=connection_factory)
+        return pool
+
+    @asynccontextmanager
+    async def get_connection(self) -> AsyncGenerator[aiosqlite.Connection, None]:
+        """获取数据库连接的上下文管理器。.
+
+        Returns:
+            异步上下文管理器，提供数据库连接。
+
+        Raises:
+            RuntimeError: 连接池未初始化
+        """
+        if not self._initialized or self._pool is None:
+            raise RuntimeError("连接池未初始化，请先调用 initialize()")
+
+        async with self._pool.connection() as conn:
+            yield conn
 
     async def close(self) -> None:
         """关闭连接池。."""
@@ -111,6 +126,11 @@ class PoolManager:
             self._pool = None
         self._initialized = False
         logger.info("连接池已关闭")
+
+    @property
+    def is_initialized(self) -> bool:
+        """检查连接池是否已初始化。."""
+        return self._initialized
 
     async def __aenter__(self):
         """异步上下文管理器入口。."""

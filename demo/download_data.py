@@ -32,6 +32,9 @@ RETRY_CONFIG = (
 REQUEST_DELAY = 2  # 请求间隔（秒）
 INCLUDE_BUFFER_DAYS = 7  # 包含缓冲期天数
 
+# 增量下载配置
+INCREMENTAL = True  # 是否启用增量下载模式（只下载缺失的数据）
+
 # 新特征配置
 DOWNLOAD_MARKET_METRICS = True  # 是否下载市场指标数据 (资金费率、持仓量、多空比例)
 METRICS_INTERVAL = Freq.h1  # 市场指标数据时间间隔 (考虑到资金费率最小粒度是小时)
@@ -64,6 +67,13 @@ async def main():
     # 创建服务并作为上下文管理器使用
     try:
         async with await MarketDataService.create(api_key=api_key, api_secret=api_secret) as service:
+            print(f"🔄 增量下载模式: {'启用' if INCREMENTAL else '禁用'}")
+            if INCREMENTAL:
+                print("   - 系统将分析现有数据，只下载缺失的部分")
+                print("   - 这可以大大加快重复运行的速度")
+            else:
+                print("   - 将下载所有数据，可能会覆盖现有数据")
+
             # 下载universe数据
             await service.download_universe_data(
                 universe_file=UNIVERSE_FILE,
@@ -78,6 +88,7 @@ async def main():
                 long_short_ratio_period=LONG_SHORT_RATIO_PERIOD,
                 long_short_ratio_types=LONG_SHORT_RATIO_TYPES,
                 use_binance_vision=USE_BINANCE_VISION,
+                incremental=INCREMENTAL,  # 启用增量下载模式
             )
 
         print("✅ 数据下载完成!")

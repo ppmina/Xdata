@@ -6,9 +6,12 @@
 import logging
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import pandas as pd
+
+if TYPE_CHECKING:
+    from cryptoservice.services.market_service import MarketDataService
 
 from cryptoservice.exceptions import MarketDataFetchError
 from cryptoservice.models import Freq, UniverseConfig, UniverseDefinition, UniverseSnapshot
@@ -20,11 +23,11 @@ logger = logging.getLogger(__name__)
 class UniverseManager:
     """Universe管理器."""
 
-    def __init__(self, market_service):
+    def __init__(self, market_service: "MarketDataService"):
         """初始化Universe管理器."""
         self.market_service = market_service
 
-    def define_universe(
+    async def define_universe(
         self,
         start_date: str,
         end_date: str,
@@ -106,7 +109,7 @@ class UniverseManager:
                 )
 
                 # 获取符合条件的交易对和它们的mean daily amount
-                universe_symbols, mean_amounts = self._calculate_universe_for_date(
+                universe_symbols, mean_amounts = await self._calculate_universe_for_date(
                     calculated_t1_start,
                     calculated_t1_end,
                     t3_months=t3_months,
@@ -162,7 +165,7 @@ class UniverseManager:
             logger.error(f"定义universe失败: {e}")
             raise MarketDataFetchError(f"定义universe失败: {e}") from e
 
-    def _fetch_and_calculate_mean_amounts(
+    async def _fetch_and_calculate_mean_amounts(
         self,
         symbols: list[str],
         start_date: str,
@@ -182,12 +185,14 @@ class UniverseManager:
                 original_manager = self.market_service.kline_downloader.rate_limit_manager
                 self.market_service.kline_downloader.rate_limit_manager = universe_rate_manager
                 try:
-                    klines = self.market_service.kline_downloader.download_single_symbol(
+                    klines_gen = self.market_service.kline_downloader.download_single_symbol(
                         symbol=symbol,
                         start_ts=start_ts,
                         end_ts=end_ts,
                         interval=Freq.d1,
                     )
+                    # 将异步生成器转换为列表
+                    klines = [kline async for kline in klines_gen]
                 finally:
                     self.market_service.kline_downloader.rate_limit_manager = original_manager
                 if klines:
@@ -195,9 +200,7 @@ class UniverseManager:
                     actual_days = len(klines)
                     if actual_days < expected_days * 0.8:
                         logger.warning(f"交易对 {symbol} 数据不完整: 期望{expected_days}天，实际{actual_days}天")
-                    amounts = [
-                        float(kline.raw_data[7]) for kline in klines if kline.raw_data and len(kline.raw_data) > 7
-                    ]
+                    amounts = [float(kline.quote_volume) for kline in klines if kline.quote_volume]
                     if amounts:
                         mean_amounts[symbol] = sum(amounts) / len(amounts)
                     else:
@@ -230,7 +233,7 @@ class UniverseManager:
             logger.info("完整列表已保存到文件中")
         return universe_symbols, final_amounts
 
-    def _calculate_universe_for_date(
+    async def _calculate_universe_for_date(
         self,
         calculated_t1_start: str,
         calculated_t1_end: str,
@@ -244,15 +247,17 @@ class UniverseManager:
     ) -> tuple[list[str], dict[str, float]]:
         """计算指定日期的universe."""
         try:
-            actual_symbols = self._get_available_symbols_for_period(calculated_t1_start, calculated_t1_end, quote_asset)
+            actual_symbols = await self._get_available_symbols_for_period(
+                calculated_t1_start, calculated_t1_end, quote_asset
+            )
             cutoff_date = self._subtract_months(calculated_t1_end, t3_months)
             eligible_symbols = [
-                symbol for symbol in actual_symbols if self._symbol_exists_before_date(symbol, cutoff_date)
+                symbol for symbol in actual_symbols if await self._symbol_exists_before_date(symbol, cutoff_date)
             ]
             if not eligible_symbols:
                 logger.warning(f"日期 {calculated_t1_start} 到 {calculated_t1_end}: 没有找到符合条件的交易对")
                 return [], {}
-            mean_amounts = self._fetch_and_calculate_mean_amounts(
+            mean_amounts = await self._fetch_and_calculate_mean_amounts(
                 eligible_symbols, calculated_t1_start, calculated_t1_end, api_delay_seconds
             )
             if not mean_amounts:
@@ -263,11 +268,15 @@ class UniverseManager:
             logger.error(f"计算日期 {calculated_t1_start} 到 {calculated_t1_end} 的universe时出错: {e}")
             return [], {}
 
-    def _get_available_symbols_for_period(self, start_date: str, end_date: str, quote_asset: str = "USDT") -> list[str]:
+    async def _get_available_symbols_for_period(
+        self, start_date: str, end_date: str, quote_asset: str = "USDT"
+    ) -> list[str]:
         """获取指定时间段内实际可用的永续合约交易对."""
         try:
             # 先获取当前所有永续合约作为候选
-            candidate_symbols = self.market_service.get_perpetual_symbols(only_trading=True, quote_asset=quote_asset)
+            candidate_symbols = await self.market_service.get_perpetual_symbols(
+                only_trading=True, quote_asset=quote_asset
+            )
             logger.info(
                 f"检查 {len(candidate_symbols)} 个{quote_asset}候选交易对在 {start_date} 到 {end_date} 期间的可用性..."
             )
@@ -278,7 +287,7 @@ class UniverseManager:
                 batch = candidate_symbols[i : i + batch_size]
                 for symbol in batch:
                     # 检查在起始日期是否有数据
-                    if self.market_service.check_symbol_exists_on_date(symbol, start_date):
+                    if await self.market_service.check_symbol_exists_on_date(symbol, start_date):
                         available_symbols.append(symbol)
 
                 # 显示进度
@@ -300,14 +309,14 @@ class UniverseManager:
         except Exception as e:
             logger.warning(f"获取可用交易对时出错: {e}")
             # 如果API检查失败，返回当前所有永续合约
-            return self.market_service.get_perpetual_symbols(only_trading=True, quote_asset=quote_asset)
+            return await self.market_service.get_perpetual_symbols(only_trading=True, quote_asset=quote_asset)
 
-    def _symbol_exists_before_date(self, symbol: str, cutoff_date: str) -> bool:
+    async def _symbol_exists_before_date(self, symbol: str, cutoff_date: str) -> bool:
         """检查交易对是否在指定日期之前就存在."""
         try:
             # 检查在cutoff_date之前是否有数据
             check_date = (pd.to_datetime(cutoff_date) - timedelta(days=1)).strftime("%Y-%m-%d")
-            return self.market_service.check_symbol_exists_on_date(symbol, check_date)
+            return await self.market_service.check_symbol_exists_on_date(symbol, check_date)
         except Exception:
             # 如果检查失败，默认认为存在
             return True

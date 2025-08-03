@@ -10,7 +10,7 @@ from pathlib import Path
 import pandas as pd
 
 from cryptoservice.models import Freq, IntegrityReport
-from cryptoservice.storage import AsyncMarketDB
+from cryptoservice.storage.database import Database as AsyncMarketDB
 
 logger = logging.getLogger(__name__)
 
@@ -171,12 +171,12 @@ class DataValidator:
             try:
                 check_start_time = pd.to_datetime(start_time).strftime("%Y-%m-%d")
                 check_end_time = pd.to_datetime(end_time).strftime("%Y-%m-%d")
-                df = await db.read_data(
+                df = await db.select_klines(
+                    symbols=[symbol],
                     start_time=check_start_time,
                     end_time=check_end_time,
                     freq=interval,
-                    symbols=[symbol],
-                    raise_on_empty=False,
+                    columns=None,
                 )
                 if df is not None and not df.empty:
                     symbol_data = df.loc[symbol] if symbol in df.index.get_level_values("symbol") else pd.DataFrame()

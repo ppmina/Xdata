@@ -138,3 +138,17 @@ class BaseDownloader(ABC):
             self.failed_downloads.pop(symbol, None)
         else:
             self.failed_downloads.clear()
+
+    def _date_to_timestamp_start(self, date: str) -> str:
+        """将日期字符串转换为当天开始的时间戳."""
+        from datetime import datetime
+
+        timestamp = int(datetime.strptime(f"{date} 00:00:00", "%Y-%m-%d %H:%M:%S").timestamp() * 1000)
+        return str(timestamp)
+
+    def _date_to_timestamp_end(self, date: str) -> str:
+        """将日期字符串转换为当天结束的时间戳."""
+        from datetime import datetime
+
+        timestamp = int(datetime.strptime(f"{date} 23:59:59", "%Y-%m-%d %H:%M:%S").timestamp() * 1000)
+        return str(timestamp)
