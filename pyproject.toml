@@ -18,6 +18,9 @@ dependencies = [
     "rich>=13.9.4",
     "requests>=2.32.3",
     "setuptools>=80.9.0",
+    "sqlalchemy>=2.0.39",
+    "aiosqlite>=0.21.0",
+    "aiosqlitepool>=1.0.0",
 ]
 classifiers = [
     "Programming Language :: Python :: 3",
@@ -27,7 +30,7 @@ classifiers = [
 authors = [{ name = "Minnn", email = "minzzzai.s@gmail.com" }]
 
 [project.optional-dependencies]
-test = ["pytest>=6.0.0", "pytest-cov>=2.10.0"]
+test = ["pytest>=6.0.0", "pytest-cov>=2.10.0", "pytest-asyncio>=0.21.0"]
 dev = ["pre-commit>=2.0.0", "python-dotenv>=0.15.0", "ruff>=0.4.0"]
 dev-all = ["cryptoservice[test,dev]"]
 docs = [
@@ -78,6 +81,7 @@ allowed_tags = [
     "style",
     "refactor",
     "perf",
+    "revert",
     "test",
     "chore",
     "ci",
@@ -100,8 +104,8 @@ target-version = "py312"
 # S - flake8-bandit 安全问题
 # C - flake8-comprehensions 列表推导式优化
 # SIM - flake8-simplify 代码简化
-# lint.select = ["E", "F", "B", "I", "N", "D", "UP", "S", "C", "SIM"]
-lint.select = ["E", "F", "B"]
+lint.select = ["E", "F", "B", "I", "N", "D", "UP", "S", "C", "SIM"]
+# lint.select = ["E", "F", "B"]
 # 忽略某些不需要的规则
 lint.ignore = ["D203", "D213"]
 
@@ -110,6 +114,8 @@ quote-style = "double"
 indent-style = "space"
 line-ending = "auto"
 skip-magic-trailing-comma = false
+docstring-code-format = true
+docstring-code-line-length = 20
 
 [tool.ruff.lint.isort]
 known-first-party = ["cryptoservice"]
@@ -166,7 +172,9 @@ dev = [
     "mkdocstrings[python]>=0.29.1",
     "mypy>=1.16.0",
     "pandas-stubs>=2.2.3.250527",
+    "pytest-asyncio>=1.1.0",
     "python-semantic-release>=10.1.0",
+    "ruff>=0.11.12",
     "types-requests>=2.32.4.20250611",
 ]
 test = ["pytest>=8.3.5", "pytest-cov>=6.1.1"]

@@ -1,4 +1,12 @@
-from .enums import Freq, HistoricalKlinesType, SortBy, Univ, ErrorSeverity
+"""数据模型包，定义所有数据结构和枚举类型."""
+
+from .enums import ErrorSeverity, Freq, HistoricalKlinesType, SortBy, Univ
+from .integrity_report import IntegrityReport
+from .market_data import (
+    FundingRate,
+    LongShortRatio,
+    OpenInterest,
+)
 from .market_ticker import (
     DailyMarketTicker,
     KlineIndex,
@@ -6,13 +14,7 @@ from .market_ticker import (
     PerpetualMarketTicker,
     SymbolTicker,
 )
-from .market_data import (
-    FundingRate,
-    OpenInterest,
-    LongShortRatio,
-)
 from .universe import UniverseConfig, UniverseDefinition, UniverseSnapshot
-from .integrity_report import IntegrityReport
 
 __all__ = [
     "SymbolTicker",

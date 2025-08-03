@@ -1,4 +1,4 @@
-from typing import Optional
+"""市场数据相关的自定义异常类."""
 
 
 class MarketDataError(Exception):
@@ -10,7 +10,13 @@ class MarketDataError(Exception):
 class MarketDataFetchError(MarketDataError):
     """获取市场数据时的错误."""
 
-    def __init__(self, message: str, cause: Optional[Exception] = None):
+    def __init__(self, message: str, cause: Exception | None = None):
+        """初始化MarketDataFetchError.
+
+        Args:
+            message: 错误消息
+            cause: 导致错误的异常
+        """
         super().__init__(message)
         self.cause = cause
 

@@ -1,4 +1,4 @@
-# -*- coding: utf-8 -*-
+"""枚举类型定义."""
 
 from enum import Enum, IntEnum, auto
 
@@ -6,7 +6,7 @@ from binance import enums as binance_enums
 
 
 class SortBy(Enum):
-    """排序方式枚举"""
+    """排序方式枚举."""
 
     VOLUME = "volume"
     PRICE_CHANGE = "price_change"
@@ -15,7 +15,7 @@ class SortBy(Enum):
 
 
 class InstType(IntEnum):
-    """产品类型枚举"""
+    """产品类型枚举."""
 
     UM = auto()
     Margin = auto()
@@ -24,26 +24,26 @@ class InstType(IntEnum):
 
 
 class Market(IntEnum):
-    """市场枚举"""
+    """市场枚举."""
 
     CN = auto()
     CRYPTO = auto()
 
 
 class Vendor(IntEnum):
-    """供应商枚举"""
+    """供应商枚举."""
 
     RQ = auto()
 
 
 class IndustrySrc(IntEnum):
-    """行业来源枚举"""
+    """行业来源枚举."""
 
     CITICS = auto()
 
 
 class OrderStatus(str, Enum):
-    """订单状态枚举，与 Binance SDK 保持一致"""
+    """订单状态枚举，与 Binance SDK 保持一致."""
 
     NEW = binance_enums.ORDER_STATUS_NEW
     PARTIALLY_FILLED = binance_enums.ORDER_STATUS_PARTIALLY_FILLED
@@ -55,7 +55,7 @@ class OrderStatus(str, Enum):
 
 
 class OrderType(str, Enum):
-    """订单类型枚举"""
+    """订单类型枚举."""
 
     LIMIT = binance_enums.ORDER_TYPE_LIMIT
     MARKET = binance_enums.ORDER_TYPE_MARKET
@@ -67,14 +67,14 @@ class OrderType(str, Enum):
 
 
 class OrderSide(str, Enum):
-    """订单方向枚举"""
+    """订单方向枚举."""
 
     BUY = binance_enums.SIDE_BUY
     SELL = binance_enums.SIDE_SELL
 
 
 class TimeInForce(str, Enum):
-    """订单有效期枚举"""
+    """订单有效期枚举."""
 
     GTC = binance_enums.TIME_IN_FORCE_GTC
     IOC = binance_enums.TIME_IN_FORCE_IOC
@@ -83,7 +83,7 @@ class TimeInForce(str, Enum):
 
 
 class OrderResponseType(str, Enum):
-    """订单响应类型枚举"""
+    """订单响应类型枚举."""
 
     ACK = binance_enums.ORDER_RESP_TYPE_ACK
     RESULT = binance_enums.ORDER_RESP_TYPE_RESULT
@@ -91,7 +91,8 @@ class OrderResponseType(str, Enum):
 
 
 class Freq(str, Enum):
-    """频率枚举
+    """频率枚举.
+
     s1: 1秒
     m1: 1分钟
     m3: 3分钟
@@ -107,7 +108,7 @@ class Freq(str, Enum):
     d1: 1天
     d3: 3天
     w1: 1周
-    M1: 1个月
+    M1: 1个月.
     """
 
     s1 = binance_enums.KLINE_INTERVAL_1SECOND
@@ -128,11 +129,12 @@ class Freq(str, Enum):
     M1 = binance_enums.KLINE_INTERVAL_1MONTH
 
     def __str__(self) -> str:
+        """返回枚举值的字符串表示形式."""
         return str(self.value)
 
     @classmethod
     def from_binance(cls, binance_interval: str) -> "Freq":
-        """从 Binance 间隔转换为 Freq 枚举"""
+        """从 Binance 间隔转换为 Freq 枚举."""
         for freq in cls:
             if freq.value == binance_interval:
                 return freq
@@ -140,7 +142,7 @@ class Freq(str, Enum):
 
     @classmethod
     def from_string(cls, interval_str: str) -> "Freq":
-        """从字符串间隔转换为 Freq 枚举
+        """从字符串间隔转换为 Freq 枚举.
 
         Args:
             interval_str: 间隔字符串，如 "1m", "5m", "1h", "1d" 等
@@ -187,14 +189,14 @@ class Freq(str, Enum):
 
 
 class Univ(str, Enum):
-    """数据集枚举"""
+    """数据集枚举."""
 
     CL60 = "CL60"
     CALL = "CALL"
 
 
 class Status(IntEnum):
-    """状态枚举"""
+    """状态枚举."""
 
     NORMAL = auto()
     SUSPEND = auto()
@@ -202,7 +204,7 @@ class Status(IntEnum):
 
 
 class ReturnType(IntEnum):
-    """回报类型枚举"""
+    """回报类型枚举."""
 
     C2C = auto()
     V2V = auto()
@@ -210,7 +212,7 @@ class ReturnType(IntEnum):
 
 
 class HistoricalKlinesType(IntEnum):
-    """K线历史数据类型枚举"""
+    """K线历史数据类型枚举."""
 
     SPOT = binance_enums.HistoricalKlinesType.SPOT.value
     FUTURES = binance_enums.HistoricalKlinesType.FUTURES.value
@@ -218,12 +220,12 @@ class HistoricalKlinesType(IntEnum):
 
     @classmethod
     def to_binance(cls, kline_type: "HistoricalKlinesType") -> binance_enums.HistoricalKlinesType:
-        """转换为 Binance SDK 的 HistoricalKlinesType"""
+        """转换为 Binance SDK 的 HistoricalKlinesType."""
         return binance_enums.HistoricalKlinesType(kline_type.value)
 
 
 class ErrorSeverity(Enum):
-    """错误严重程度枚举"""
+    """错误严重程度枚举."""
 
     LOW = "low"  # 可忽略的错误
     MEDIUM = "medium"  # 需要重试的错误

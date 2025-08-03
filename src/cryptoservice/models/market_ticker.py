@@ -1,6 +1,8 @@
+"""市场行情数据模型."""
+
 from dataclasses import dataclass
 from decimal import Decimal
-from typing import Any, Dict, List
+from typing import Any
 
 
 @dataclass
@@ -15,13 +17,16 @@ class BaseMarketTicker:
     symbol: str
     last_price: Decimal
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
+        """将数据类实例转换为字典."""
         return {key: str(value) for key, value in self.__dict__.items() if not key.startswith("_")}
 
-    def keys(self) -> List[str]:
-        return [key for key in self.__dict__.keys() if not key.startswith("_")]
+    def keys(self) -> list[str]:
+        """获取属性列表."""
+        return [key for key in self.__dict__ if not key.startswith("_")]
 
     def get(self, key: str) -> Any:
+        """获取属性值."""
         return getattr(self, key)
 
 
@@ -35,7 +40,8 @@ class SymbolTicker(BaseMarketTicker):
     """
 
     @classmethod
-    def from_binance_ticker(cls, ticker: Dict[str, Any]) -> "SymbolTicker":
+    def from_binance_ticker(cls, ticker: dict[str, Any]) -> "SymbolTicker":
+        """从Binance API响应创建SymbolTicker实例."""
         return cls(
             symbol=ticker["symbol"],
             last_price=Decimal(str(ticker["price"])),
@@ -89,7 +95,8 @@ class DailyMarketTicker(BaseMarketTicker):
     count: int
 
     @classmethod
-    def from_binance_ticker(cls, ticker: Dict[str, Any]) -> "DailyMarketTicker":
+    def from_binance_ticker(cls, ticker: dict[str, Any]) -> "DailyMarketTicker":
+        """从Binance API响应创建DailyMarketTicker实例."""
         return cls(
             symbol=ticker["symbol"],
             last_price=Decimal(str(ticker["lastPrice"])),
@@ -136,6 +143,7 @@ class KlineMarketTicker(BaseMarketTicker):
 
     @classmethod
     def from_binance_kline(cls, kline_data: list) -> "KlineMarketTicker":
+        """从Binance API响应创建KlineMarketTicker实例."""
         return cls(
             symbol=kline_data[0],
             last_price=Decimal(str(kline_data[4])),
@@ -148,7 +156,7 @@ class KlineMarketTicker(BaseMarketTicker):
 
 
 class KlineIndex:
-    """K线数据索引定义
+    """K线数据索引定义.
 
     Attributes:
         OPEN_TIME: 开盘时间
@@ -180,42 +188,66 @@ class KlineIndex:
 
 
 class PerpetualMarketTicker:
-    """永续合约市场数据模型.
+    """永续合约行情数据."""
 
-    轻量级实现，使用 __slots__ 来优化内存使用.
+    __slots__ = (
+        "symbol",
+        "open_time",
+        "open_price",
+        "high_price",
+        "low_price",
+        "close_price",
+        "volume",
+        "close_time",
+        "quote_volume",
+        "trades_count",
+        "taker_buy_volume",
+        "taker_buy_quote_volume",
+    )
 
-    Attributes:
-        symbol: str  # 交易对名称
-        open_time: int  # K线开始时间戳（毫秒）
-        raw_data: List[Any]  # 原始K线数据
-    """
-
-    __slots__ = ["symbol", "open_time", "raw_data"]
-
-    def __init__(self, symbol: str, open_time: int, raw_data: List[Any]):
+    def __init__(
+        self,
+        symbol: str,
+        open_time: int,
+        open_price: Decimal,
+        high_price: Decimal,
+        low_price: Decimal,
+        close_price: Decimal,
+        volume: Decimal,
+        close_time: int,
+        quote_volume: Decimal,
+        trades_count: int,
+        taker_buy_volume: Decimal,
+        taker_buy_quote_volume: Decimal,
+    ):
+        """Initialize the PerpetualMarketTicker."""
         self.symbol = symbol
         self.open_time = open_time
-        self.raw_data = raw_data
+        self.open_price = open_price
+        self.high_price = high_price
+        self.low_price = low_price
+        self.close_price = close_price
+        self.volume = volume
+        self.close_time = close_time
+        self.quote_volume = quote_volume
+        self.trades_count = trades_count
+        self.taker_buy_volume = taker_buy_volume
+        self.taker_buy_quote_volume = taker_buy_quote_volume
 
     @classmethod
-    def from_binance_futures(cls, symbol: str, kline: List[Any]) -> "PerpetualMarketTicker":
-        """从 Binance 永续合约K线数据创建实例.
-
-        Args:
-            symbol: 交易对名称
-            kline: Binance K线数据列表 [
-                Open time,
-                Open,
-                High,
-                Low,
-                Close,
-                Volume,
-                Close time,
-                Quote asset volume,
-                Number of trades,
-                Taker buy base asset volume,
-                Taker buy quote asset volume,
-                Ignore
-            ]
-        """
-        return cls(symbol=symbol, open_time=kline[KlineIndex.OPEN_TIME], raw_data=kline)
+    def from_binance_kline(cls, symbol: str, kline: list[Any]) -> "PerpetualMarketTicker":
+        """从 Binance K线数据创建实例."""
+        return cls(
+            symbol=symbol,
+            open_time=int(kline[0]),
+            open_price=Decimal(str(kline[1])),
+            high_price=Decimal(str(kline[2])),
+            low_price=Decimal(str(kline[3])),
+            close_price=Decimal(str(kline[4])),
+            volume=Decimal(str(kline[5])),
+            close_time=int(kline[6]),
+            quote_volume=Decimal(str(kline[7])),
+            trades_count=int(kline[8]),
+            taker_buy_volume=Decimal(str(kline[9])),
+            taker_buy_quote_volume=Decimal(str(kline[10])),
+        )

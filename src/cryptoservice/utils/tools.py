@@ -1,3 +1,5 @@
+"""工具模块，用于提供时间函数、样例时间生成和日志设置等工具."""
+
 import logging
 import time
 from datetime import datetime, timedelta
@@ -8,14 +10,19 @@ from cryptoservice.models.enums import Freq
 
 
 class Tool:
+    """工具类，提供常用辅助方法，如获取时间戳、生成样例时间等."""
+
     @staticmethod
     def get_timestamp() -> int:
+        """返回当前时间戳（秒为单位）."""
         return int(time.time())
 
     @staticmethod
     def gen_sample_time(freq: Freq) -> list[str]:
-        """For CN: start time 9:15 end time 15:00
-        for CRYPTO: start time 9:15 end time 15:00
+        """生成样例时间.
+
+        - For CN: start time 9:15 end time 15:00
+        - For CRYPTO: start time 9:15 end time 15:00.
         """
         mapping = {
             Freq.s1: 1,
@@ -37,7 +44,7 @@ class Tool:
 
     @staticmethod
     def get_sample_time(freq: Freq = Freq.M1) -> list[str]:
-        """Get sample time"""
+        """Get sample time."""
         match freq:
             case Freq.s1:
                 return Tool.gen_sample_time(Freq.s1)
