@@ -177,7 +177,7 @@ class DatabaseSchema:
         """
         async with connection_pool.get_connection() as conn:
             cursor = await conn.execute(f"PRAGMA table_info({table_name})")
-            return await cursor.fetchall()
+            return list(await cursor.fetchall())
 
     @classmethod
     async def get_all_table_names(cls, connection_pool: "ConnectionPool") -> list[str]:
