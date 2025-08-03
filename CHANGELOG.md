@@ -2,6 +2,27 @@
 
 <!-- next-version -->
 
+## v1.10.0 (2025-08-03)
+
+### Bug Fixes
+
+- Fix a lots of problems ([#15](https://github.com/ppmina/Xdata/pull/15),
+  [`d0c0905`](https://github.com/ppmina/Xdata/commit/d0c09052c1b575405b576585278269ebd15c4b0c))
+
+- Fix syntax errors ([#15](https://github.com/ppmina/Xdata/pull/15),
+  [`d0c0905`](https://github.com/ppmina/Xdata/commit/d0c09052c1b575405b576585278269ebd15c4b0c))
+
+### Features
+
+- Add four market features(oi, lsratio, funding rate, category)
+  ([#15](https://github.com/ppmina/Xdata/pull/15),
+  [`d0c0905`](https://github.com/ppmina/Xdata/commit/d0c09052c1b575405b576585278269ebd15c4b0c))
+
+- Improve proxy handling and logging in Binance client
+  ([#15](https://github.com/ppmina/Xdata/pull/15),
+  [`d0c0905`](https://github.com/ppmina/Xdata/commit/d0c09052c1b575405b576585278269ebd15c4b0c))
+
+
 ## v1.9.0 (2025-07-15)
 
 ### Features
