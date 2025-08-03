@@ -1,149 +1,93 @@
-# Crypto Service
+# CryptoService
 
-一个基于 Python 的加密货币数据处理工具包，专注于数据获取、处理和分析。
+一个高性能的Python加密货币数据处理包，专注于币安市场数据的获取、存储和分析。
 
-## 功能特点
+## ✨ 核心功能
 
-- 支持币安的现货和永续合约数据获取
-- 高效的数据缓存和存储机制
-- 完整的类型提示和错误处理
-- 支持自定义数据格式和存储方式
-- 持续集成和自动发布
+- 🚀 **高性能异步**：全面支持async/await，高效处理大量数据
+- 📊 **全面数据覆盖**：现货、永续合约、历史K线、实时WebSocket
+- 💾 **智能存储**：SQLite数据库 + 文件导出，支持增量更新
+- 🔧 **开箱即用**：完整的类型提示、错误处理和重试机制
+- 📈 **数据处理**：内置数据转换、验证和分析工具
 
-## 文档
-
-详细的使用说明和 API 文档请访问我们的文档站点：[Crypto Service 文档](https://ppmina.github.io/Xdata/)
-
-## 安装
+## 📦 安装
 
 ```bash
 pip install cryptoservice
 ```
 
-## 快速开始
+## 🚀 快速开始
 
-1. 设置环境变量：
-
+### 1. 环境配置
 ```bash
-# 在 .env 文件中设置
+# .env 文件
 BINANCE_API_KEY=your_api_key
 BINANCE_API_SECRET=your_api_secret
 ```
 
-2. 基本使用：
-
+### 2. 基本使用
 ```python
-from dotenv import load_dotenv
-import os
+import asyncio
 from cryptoservice import MarketDataService
 
-# 加载环境变量
-load_dotenv()
-api_key = os.getenv("BINANCE_API_KEY")
-api_secret = os.getenv("BINANCE_API_SECRET")
+async def main():
+    # 创建服务实例
+    service = MarketDataService()
 
-# 创建服务实例
-market_service = MarketDataService(api_key, api_secret)
+    # 获取实时行情
+    ticker = await service.get_ticker("BTCUSDT")
+    print(f"BTC价格: {ticker.price}")
 
-# 获取 BTCUSDT 的实时行情
-btc_ticker = market_service.get_symbol_ticker("BTCUSDT")
-print(f"BTCUSDT 实时行情: {btc_ticker}")
+    # 下载历史数据
+    await service.download_klines("BTCUSDT", "1d", "2024-01-01", "2024-12-31")
+
+asyncio.run(main())
 ```
 
-更多使用示例请参考[文档站点](https://ppmina.github.io/Xdata/examples/basic/)。
+## 🛠️ 开发环境
 
-## 开发环境设置
-
-1. 克隆仓库：
 ```bash
+# 克隆项目
 git clone https://github.com/ppmina/xdata.git
 cd xdata
-```
 
-2. 安装 uv（推荐）：
-```bash
-# macOS/Linux
-./scripts/setup_uv.sh
+# 安装uv（推荐）
+./scripts/setup_uv.sh  # macOS/Linux
+# 或 .\scripts\setup_uv.ps1  # Windows
 
-# Windows
-.\scripts\setup_uv.ps1
-```
-
-或者手动安装依赖：
-```bash
-pip install -e ".[dev-all]"  # 安装所有开发依赖
-```
-通过uv安装
-```bash
+# 安装依赖
 uv pip install -e ".[dev-all]"
+
+# 激活环境
+source .venv/bin/activate
 ```
-激活uv环境
+
+### 常用命令
 ```bash
-source .venv/bin/activate  # if fish shell use activate.fish
+pytest                    # 运行测试
+ruff format              # 格式化代码
+ruff check --fix         # 检查并修复
+mypy src/cryptoservice   # 类型检查
+mkdocs serve            # 本地文档
 ```
 
-3. 安装 pre-commit hooks：
-```bash
-pre-commit install
-```
+## 📚 文档
 
-## 贡献指南
+完整文档：[https://ppmina.github.io/Xdata/](https://ppmina.github.io/Xdata/)
 
-1. Fork 项目
-2. 创建功能分支：`git checkout -b feature/new-feature`
-3. 提交更改：`git commit -m 'feat: add new feature'`
-4. 推送分支：`git push origin feature/new-feature`
-5. 提交 Pull Request
+## 🤝 贡献
 
-提交信息必须遵循 [Conventional Commits](https://www.conventionalcommits.org/) 规范：
+1. Fork项目并创建分支：`git checkout -b feature/your-feature`
+2. 遵循[Conventional Commits](https://www.conventionalcommits.org/)规范
+3. 提交Pull Request
 
-- `feat`: 新功能
-- `fix`: 修复问题
-- `docs`: 文档更新
-- `style`: 代码格式调整
-- `refactor`: 代码重构
-- `perf`: 性能优化
-- `test`: 测试相关
-- `chore`: 构建过程或辅助工具的变动
+提交类型：`feat` | `fix` | `docs` | `style` | `refactor` | `perf` | `test` | `chore`
 
-
-## 提交规范
-
-提交信息必须遵循以下格式：
-```
-<type>(<scope>): <subject>
-
-<body>
-
-<footer>
-```
-
-例如：
-```bash
-# 新功能
-feat(market): add historical data support
-
-Added support for fetching historical market data
-with customizable time ranges and intervals.
-
-# 修复bug
-fix(cache): resolve memory leak issue
-
-Fixed memory leak in cache manager when handling
-large datasets.
-
-# 文档更新
-docs(readme): update installation guide
-
-Updated installation instructions to include
-new development dependencies.
-```
-
-## 许可证
+## 📄 许可证
 
 MIT License
 
-## 联系方式
+## 📞 联系
 
-- GitHub Issues: [https://github.com/ppmina/xdata/issues](https://github.com/ppmina/xdata/issues)
+- Issues: [GitHub Issues](https://github.com/ppmina/xdata/issues)
 - Email: minzzzai.s@gmail.com
