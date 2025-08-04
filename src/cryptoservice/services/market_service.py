@@ -323,9 +323,6 @@ class MarketDataService:
         retry_config: RetryConfig | None = None,
         request_delay: float = 0.5,
         download_market_metrics: bool = True,
-        metrics_interval: Freq = Freq.m5,
-        long_short_ratio_period: Freq = Freq.m5,
-        long_short_ratio_types: list[str] | None = None,
         incremental: bool = True,
         custom_start_date: str | None = None,
         custom_end_date: str | None = None,
@@ -341,9 +338,6 @@ class MarketDataService:
             retry_config: Custom retry configuration, overrides max_retries
             request_delay: Delay in seconds between API requests
             download_market_metrics: Whether to download market metrics data
-            metrics_interval: Time interval for metrics data (default: 5m)
-            long_short_ratio_period: Period for long/short ratio data (default: 5m)
-            long_short_ratio_types: Types of long/short ratios to download
             incremental: Whether to download incremental data,
              if True, only download new data, if False, re-download all data
             custom_start_date: Custom global start date, will override the start date
@@ -369,10 +363,6 @@ class MarketDataService:
                 universe_def = TimeRangeProcessor.apply_custom_time_range(
                     universe_def, custom_start_date, custom_end_date
                 )
-
-            # 设置多空比例类型默认值
-            if long_short_ratio_types is None:
-                long_short_ratio_types = ["account", "position"]
 
             logger.info("📊 按周期下载数据:")
             logger.info(f"   - 总快照数: {len(universe_def.snapshots)}")
@@ -407,9 +397,6 @@ class MarketDataService:
                     await self._download_market_metrics_for_snapshot(
                         snapshot=snapshot,
                         db_path=db_file_path,
-                        interval=metrics_interval,
-                        period=long_short_ratio_period,
-                        long_short_ratio_types=long_short_ratio_types,
                         request_delay=request_delay,
                     )
 
@@ -533,8 +520,6 @@ class MarketDataService:
         self,
         snapshot,
         db_path: Path,
-        interval: Freq = Freq.m5,
-        period: Freq = Freq.m5,
         long_short_ratio_types: list[str] | None = None,
         request_delay: float = 0.5,
     ) -> None:

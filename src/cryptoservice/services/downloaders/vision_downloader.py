@@ -8,6 +8,7 @@ import csv
 import logging
 import zipfile
 from datetime import datetime
+from decimal import Decimal
 from io import BytesIO
 
 import aiohttp
@@ -184,18 +185,19 @@ class VisionDownloader(BaseDownloader):
                 create_time = row["create_time"]
                 timestamp = int(datetime.strptime(create_time, "%Y-%m-%d %H:%M:%S").timestamp() * 1000)
 
-                # 创建OpenInterest对象
-                from decimal import Decimal
+                # 安全获取持仓量值
+                oi_value = self._safe_decimal_convert(row.get("sum_open_interest"))
+                oi_value_usd = self._safe_decimal_convert(row.get("sum_open_interest_value"))
 
-                open_interest = OpenInterest(
-                    symbol=symbol,
-                    open_interest=Decimal(str(row["sum_open_interest"])),
-                    time=timestamp,
-                    open_interest_value=(
-                        Decimal(str(row["sum_open_interest_value"])) if row.get("sum_open_interest_value") else None
-                    ),
-                )
-                open_interests.append(open_interest)
+                # 只有当主要字段有效时才创建记录
+                if oi_value is not None:
+                    open_interest = OpenInterest(
+                        symbol=symbol,
+                        open_interest=oi_value,
+                        time=timestamp,
+                        open_interest_value=oi_value_usd,
+                    )
+                    open_interests.append(open_interest)
 
             except (ValueError, KeyError) as e:
                 logger.warning(f"解析持仓量数据行时出错: {e}, 行数据: {row}")
@@ -203,7 +205,7 @@ class VisionDownloader(BaseDownloader):
 
         return open_interests
 
-    def _parse_lsr_data(self, raw_data: list[dict], symbol: str, file_name: str) -> list[LongShortRatio]:
+    def _parse_lsr_data(self, raw_data: list[dict], symbol: str, file_name: str) -> list[LongShortRatio]:  # noqa: C901
         """解析多空比例数据."""
         long_short_ratios = []
 
@@ -213,66 +215,92 @@ class VisionDownloader(BaseDownloader):
                 create_time = row["create_time"]
                 timestamp = int(datetime.strptime(create_time, "%Y-%m-%d %H:%M:%S").timestamp() * 1000)
 
-                from decimal import Decimal
+                # 处理顶级交易者数据 - 分别处理，确保无损
+                try:
+                    if "sum_toptrader_long_short_ratio" in row:
+                        ratio_sum_str = row["sum_toptrader_long_short_ratio"]
+                        count_str = row.get("count_toptrader_long_short_ratio", "")
 
-                # 处理顶级交易者数据
-                if "sum_toptrader_long_short_ratio" in row:
-                    ratio_value = Decimal(str(row["sum_toptrader_long_short_ratio"]))
+                        # 安全转换数值，处理空值
+                        ratio_sum = self._safe_decimal_convert(ratio_sum_str)
+                        count = self._safe_decimal_convert(count_str)
 
-                    # 计算平均比例
-                    if "count_toptrader_long_short_ratio" in row:
-                        count = Decimal(str(row["count_toptrader_long_short_ratio"]))
-                        if count > 0:
-                            ratio_value = ratio_value / count
+                        if ratio_sum is not None:
+                            # 计算平均比例
+                            ratio_value = ratio_sum / count if count is not None and count > 0 else ratio_sum
 
-                    # 计算多空账户比例
-                    if ratio_value > 0:
-                        total = ratio_value + 1
-                        long_account = ratio_value / total
-                        short_account = Decimal("1") / total
-                    else:
-                        long_account = Decimal("0.5")
-                        short_account = Decimal("0.5")
+                            # 计算多空账户比例
+                            if ratio_value > 0:
+                                total = ratio_value + 1
+                                long_account = ratio_value / total
+                                short_account = Decimal("1") / total
+                            else:
+                                long_account = Decimal("0.5")
+                                short_account = Decimal("0.5")
 
-                    long_short_ratios.append(
-                        LongShortRatio(
-                            symbol=symbol,
-                            long_short_ratio=ratio_value,
-                            long_account=long_account,
-                            short_account=short_account,
-                            timestamp=timestamp,
-                            ratio_type="account",
-                        )
-                    )
+                            long_short_ratios.append(
+                                LongShortRatio(
+                                    symbol=symbol,
+                                    long_short_ratio=ratio_value,
+                                    long_account=long_account,
+                                    short_account=short_account,
+                                    timestamp=timestamp,
+                                    ratio_type="account",
+                                )
+                            )
+                except Exception as e:
+                    logger.debug(f"跳过顶级交易者数据处理 {symbol} at {create_time}: {e}")
 
-                # 处理Taker数据
-                if "sum_taker_long_short_vol_ratio" in row:
-                    taker_ratio = Decimal(str(row["sum_taker_long_short_vol_ratio"]))
+                # 处理Taker数据 - 独立处理，确保无损
+                try:
+                    if "sum_taker_long_short_vol_ratio" in row:
+                        taker_ratio_str = row["sum_taker_long_short_vol_ratio"]
+                        taker_ratio = self._safe_decimal_convert(taker_ratio_str)
 
-                    if taker_ratio > 0:
-                        total = taker_ratio + 1
-                        long_vol = taker_ratio / total
-                        short_vol = Decimal("1") / total
-                    else:
-                        long_vol = Decimal("0.5")
-                        short_vol = Decimal("0.5")
+                        if taker_ratio is not None:
+                            if taker_ratio > 0:
+                                total = taker_ratio + 1
+                                long_vol = taker_ratio / total
+                                short_vol = Decimal("1") / total
+                            else:
+                                long_vol = Decimal("0.5")
+                                short_vol = Decimal("0.5")
 
-                    long_short_ratios.append(
-                        LongShortRatio(
-                            symbol=symbol,
-                            long_short_ratio=taker_ratio,
-                            long_account=long_vol,
-                            short_account=short_vol,
-                            timestamp=timestamp,
-                            ratio_type="taker",
-                        )
-                    )
+                            long_short_ratios.append(
+                                LongShortRatio(
+                                    symbol=symbol,
+                                    long_short_ratio=taker_ratio,
+                                    long_account=long_vol,
+                                    short_account=short_vol,
+                                    timestamp=timestamp,
+                                    ratio_type="taker",
+                                )
+                            )
+                except Exception as e:
+                    logger.debug(f"跳过Taker数据处理 {symbol} at {create_time}: {e}")
 
             except (ValueError, KeyError) as e:
                 logger.warning(f"解析多空比例数据行时出错: {e}, 行数据: {row}")
                 continue
 
         return long_short_ratios
+
+    def _safe_decimal_convert(self, value_str: str | None) -> Decimal | None:
+        """安全转换字符串为Decimal，处理空值和无效值.
+
+        Args:
+            value_str: 要转换的字符串值
+
+        Returns:
+            转换后的Decimal值，如果无法转换则返回None
+        """
+        if not value_str or value_str.strip() == "":
+            return None
+
+        try:
+            return Decimal(str(value_str).strip())
+        except (ValueError, TypeError):
+            return None
 
     def download(self, *args, **kwargs):
         """实现基类的抽象方法."""

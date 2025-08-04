@@ -47,6 +47,7 @@ FIELD_MAPPING = {
     # Metrics数据字段（已经是缩写）
     "funding_rate": "fr",
     "open_interest": "oi",
+    # 多空比例只导出taker类型（Vision数据最完整的类型）
     "long_short_ratio": "lsr",
 }
 
@@ -150,9 +151,10 @@ def resample_to_daily(df: pd.DataFrame, feature_name: str) -> pd.DataFrame:
     # 按symbol和date分组，取每日最后一个值（代表该日的收盘值）
     daily_df = df_copy.groupby(["symbol", "date"]).last()
 
-    # 重构索引：将date转换回timestamp（每日0点的时间戳）
+    # 重构索引：将date转换回timestamp（每日0点的时间戳，毫秒级）
     daily_df = daily_df.reset_index()
-    daily_df["timestamp"] = pd.to_datetime(daily_df["date"]).astype(int) // 10**6
+    # 修复：正确转换为毫秒时间戳
+    daily_df["timestamp"] = pd.to_datetime(daily_df["date"]).astype("int64") // 10**6
     daily_df = daily_df.set_index(["symbol", "timestamp"])
     daily_df = daily_df.drop("date", axis=1)
 
@@ -177,7 +179,7 @@ async def merge_metrics_data(
             fr_df = resample_to_daily(fr_df, "资金费率")
             # 重命名字段为缩写形式
             fr_df = rename_fields_to_abbreviations(fr_df)
-            combined_df = fr_df if combined_df.empty else combined_df.join(fr_df, how="outer")
+            combined_df = fr_df if combined_df.empty else pd.concat([combined_df, fr_df], axis=1, join="outer")
             metrics_added += 1
             print(f"      ✅ 合并资金费率数据: {len(fr_df)} 条记录")
     except Exception as e:
@@ -191,23 +193,23 @@ async def merge_metrics_data(
             oi_df = resample_to_daily(oi_df, "持仓量")
             # 重命名字段为缩写形式
             oi_df = rename_fields_to_abbreviations(oi_df)
-            combined_df = oi_df if combined_df.empty else combined_df.join(oi_df, how="outer")
+            combined_df = oi_df if combined_df.empty else pd.concat([combined_df, oi_df], axis=1, join="outer")
             metrics_added += 1
             print(f"      ✅ 合并持仓量数据: {len(oi_df)} 条记录")
     except Exception as e:
         print(f"      ⚠️ 持仓量数据获取失败: {e}")
 
-    # 多空比例数据 -> lsr (Vision高频数据，取每日最后一个值)
+    # 多空比例数据 -> 只导出taker类型 (Vision数据最完整的类型)
     try:
         lsr_df = await db.metrics_query.select_long_short_ratios(
-            symbols, start_date, end_date, columns=["long_short_ratio"]
+            symbols, start_date, end_date, ratio_type="taker", columns=["long_short_ratio"]
         )
         if not lsr_df.empty:
             # 重采样到日级别
             lsr_df = resample_to_daily(lsr_df, "多空比例")
             # 重命名字段为缩写形式
             lsr_df = rename_fields_to_abbreviations(lsr_df)
-            combined_df = lsr_df if combined_df.empty else combined_df.join(lsr_df, how="outer")
+            combined_df = lsr_df if combined_df.empty else pd.concat([combined_df, lsr_df], axis=1, join="outer")
             metrics_added += 1
             print(f"      ✅ 合并多空比例数据: {len(lsr_df)} 条记录")
     except Exception as e:
@@ -233,12 +235,8 @@ async def export_combined_data(db: Database, symbols: list[str], start_date: str
             print("      ⚠️ 没有数据可导出")
             return False
 
-        # 重采样（如果需要）
+        # 注意：数据已经在各自的处理函数中重采样到日级别，这里不再进行二次重采样
         export_freq = DATA_FREQ
-        if EXPORT_FREQ != DATA_FREQ and db.resampler:
-            print(f"      🔄 重采样数据从 {DATA_FREQ.value} 到 {EXPORT_FREQ.value}")
-            combined_df = await db.resampler.resample(combined_df, EXPORT_FREQ)
-            export_freq = EXPORT_FREQ
 
         # 使用numpy_exporter的内部方法直接导出
         await db.numpy_exporter._export_by_dates(combined_df, output_path, export_freq)
