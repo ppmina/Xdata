@@ -1,4 +1,4 @@
-"""CSV格式导出器。.
+"""CSV格式导出器.
 
 专门处理CSV格式的数据导出。
 """
@@ -19,10 +19,10 @@ logger = logging.getLogger(__name__)
 
 
 class CsvExporter:
-    """CSV格式导出器。."""
+    """CSV格式导出器."""
 
     def __init__(self, kline_query: "KlineQuery"):
-        """初始化CSV导出器。.
+        """初始化CSV导出器.
 
         Args:
             kline_query: K线数据查询器
@@ -38,7 +38,7 @@ class CsvExporter:
         output_path: Path,
         chunk_size: int = 100000,
     ) -> None:
-        """导出K线数据为CSV格式。.
+        """导出K线数据为CSV格式.
 
         Args:
             symbols: 交易对列表
@@ -68,7 +68,7 @@ class CsvExporter:
         logger.info(f"CSV数据导出完成: {output_path}")
 
     def _process_csv_export(self, df: pd.DataFrame, output_path: Path, chunk_size: int) -> None:
-        """处理CSV导出（同步）。.
+        """处理CSV导出（同步）.
 
         Args:
             df: 数据DataFrame

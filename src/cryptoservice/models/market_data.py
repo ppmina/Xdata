@@ -10,7 +10,7 @@ from typing import Any
 
 @dataclass
 class FundingRate:
-    """资金费率数据模型。.
+    """资金费率数据模型.
 
     Attributes:
         symbol: 交易对符号
@@ -36,7 +36,7 @@ class FundingRate:
 
     @classmethod
     def from_binance_response(cls, data: dict[str, Any]) -> "FundingRate":
-        """从Binance API响应创建FundingRate实例。.
+        """从Binance API响应创建FundingRate实例.
 
         Args:
             data: Binance API响应数据
@@ -59,7 +59,7 @@ class FundingRate:
         )
 
     def to_dict(self) -> dict[str, Any]:
-        """转换为字典格式。.
+        """转换为字典格式.
 
         Returns:
             Dict: 字典格式的数据
@@ -88,7 +88,7 @@ class FundingRate:
 
 @dataclass
 class OpenInterest:
-    """持仓量数据模型。.
+    """持仓量数据模型.
 
     Attributes:
         symbol: 交易对符号
@@ -104,7 +104,7 @@ class OpenInterest:
 
     @classmethod
     def from_binance_response(cls, data: dict[str, Any]) -> "OpenInterest":
-        """从Binance API响应创建OpenInterest实例。.
+        """从Binance API响应创建OpenInterest实例.
 
         Args:
             data: Binance API响应数据
@@ -122,7 +122,7 @@ class OpenInterest:
         )
 
     def to_dict(self) -> dict[str, Any]:
-        """转换为字典格式。.
+        """转换为字典格式.
 
         Returns:
             Dict: 字典格式的数据
@@ -141,7 +141,7 @@ class OpenInterest:
 
 @dataclass
 class LongShortRatio:
-    """多空比例数据模型。.
+    """多空比例数据模型.
 
     Attributes:
         symbol: 交易对符号
@@ -161,7 +161,7 @@ class LongShortRatio:
 
     @classmethod
     def from_binance_response(cls, data: dict[str, Any], ratio_type: str = "account") -> "LongShortRatio":
-        """从Binance API响应创建LongShortRatio实例。.
+        """从Binance API响应创建LongShortRatio实例.
 
         Args:
             data: Binance API响应数据
@@ -180,7 +180,7 @@ class LongShortRatio:
         )
 
     def to_dict(self) -> dict[str, Any]:
-        """转换为字典格式。.
+        """转换为字典格式.
 
         Returns:
             Dict: 字典格式的数据

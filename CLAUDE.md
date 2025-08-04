@@ -11,6 +11,8 @@ This is a Python cryptocurrency data processing package called `cryptoservice` t
 - Historical data processing and analysis
 - Database storage with SQLite
 
+The project is currently at version 1.10.0 and supports Python >=3.10,<3.13.
+
 ## Architecture
 
 The codebase follows a clean architecture pattern with clear separation of concerns:
@@ -46,16 +48,21 @@ The codebase follows a clean architecture pattern with clear separation of conce
 
 ### Environment Setup
 ```bash
-# Install uv package manager
+# Install uv package manager (automated setup)
 ./scripts/setup_uv.sh  # macOS/Linux
 # or
 .\scripts\setup_uv.ps1  # Windows
 
-# Install dependencies
+# Manual setup if scripts fail:
+# Install uv: curl -LsSf https://astral.sh/uv/install.sh | sh
+# Create venv: uv venv .venv
+# Activate: source .venv/bin/activate (or .venv/bin/activate.fish for fish shell)
+
+# Install dependencies with development tools
 uv pip install -e ".[dev-all]"
 
-# Activate virtual environment
-source .venv/bin/activate
+# Install pre-commit hooks (automatically done by setup script)
+pre-commit install
 ```
 
 ### Testing
@@ -66,8 +73,14 @@ pytest
 # Run specific test file
 pytest tests/test_market_data.py
 
+# Run specific test files by pattern
+pytest tests/test_basic.py tests/test_storage.py
+
 # Run tests with verbose output
 pytest -v
+
+# Run async tests (many tests require async support)
+pytest -v tests/test_websocket.py
 ```
 
 ### Code Quality
@@ -117,10 +130,15 @@ The system follows this data flow pattern:
 
 ## Testing Structure
 
-Tests are organized in the `tests/` directory:
+Tests are organized in the `tests/` directory with pytest-asyncio support:
 - `test_basic.py`: Basic functionality tests
 - `test_market_data.py`: Market data service tests
+- `test_services.py`: Service layer tests
+- `test_storage.py`: Database and storage tests
+- `test_utils.py`: Utility function tests
 - `test_websocket.py`: WebSocket functionality tests
+
+Most tests are async and require the pytest-asyncio plugin (included in dev dependencies).
 
 ## Important Development Notes
 
@@ -139,6 +157,24 @@ Tests are organized in the `tests/` directory:
 
 This project uses **uv** for fast Python package management:
 - Dependencies are locked in `uv.lock` file
-- Virtual environment activation: `source .venv/bin/activate`
+- Virtual environment activation: `source .venv/bin/activate` (or `.venv/bin/activate.fish` for fish shell)
 - Install with development dependencies: `uv pip install -e ".[dev-all]"`
 - The project requires Python >=3.10,<3.13 as specified in pyproject.toml
+- Use `uv pip sync -e ".[dev,test]"` to sync exact dependencies from lock file
+
+## Demo and Examples
+
+The `demo/` directory contains practical examples:
+- `define_universe.py`: Symbol universe management
+- `download_data.py`: Historical data download examples
+- `export_data.py`: Data export functionality
+- `query_database.py`: Database query examples
+- `websocket.py`: Real-time data streaming
+
+## Data Storage Structure
+
+The project organizes data in structured directories:
+- `data/database/`: SQLite database files (market.db, market_vision.db)
+- `data/exports/`: Exported numpy arrays organized by universe, timeframe, and data type
+- `data/categories/`: Symbol category CSV files with timestamps
+- Export format: `univ_{params}/1d/{metric_type}/YYYYMMDD.npy` and `.pkl` files for symbols

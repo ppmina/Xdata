@@ -1,4 +1,4 @@
-"""数据重采样器。.
+"""数据重采样器.
 
 提供K线数据重采样功能，支持将高频数据转换为低频数据。
 """
@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 
 
 class DataResampler:
-    """数据重采样器。.
+    """数据重采样器.
 
     专注于K线数据的重采样操作。
     """
@@ -55,7 +55,7 @@ class DataResampler:
 
     @classmethod
     async def resample(cls, df: pd.DataFrame, target_freq: Freq) -> pd.DataFrame:
-        """重采样K线数据到目标频率。.
+        """重采样K线数据到目标频率.
 
         Args:
             df: 原始K线数据DataFrame，使用(symbol, timestamp)作为多级索引
@@ -83,7 +83,7 @@ class DataResampler:
 
     @staticmethod
     def _resample_sync(df: pd.DataFrame, pandas_freq: str, agg_rules: dict[str, str]) -> pd.DataFrame:
-        """同步重采样实现。.
+        """同步重采样实现.
 
         Args:
             df: 原始数据
@@ -151,7 +151,7 @@ class DataResampler:
 
     @classmethod
     async def resample_with_validation(cls, df: pd.DataFrame, source_freq: Freq, target_freq: Freq) -> pd.DataFrame:
-        """带验证的重采样操作。.
+        """带验证的重采样操作.
 
         Args:
             df: 原始数据
@@ -172,7 +172,7 @@ class DataResampler:
 
     @classmethod
     def _is_valid_frequency_conversion(cls, source_freq: Freq, target_freq: Freq) -> bool:
-        """验证频率转换是否合理。.
+        """验证频率转换是否合理.
 
         Args:
             source_freq: 源频率
@@ -207,7 +207,7 @@ class DataResampler:
 
     @classmethod
     async def batch_resample(cls, df: pd.DataFrame, target_frequencies: list[Freq]) -> dict[Freq, pd.DataFrame]:
-        """批量重采样到多个目标频率。.
+        """批量重采样到多个目标频率.
 
         Args:
             df: 原始数据
@@ -244,7 +244,7 @@ class DataResampler:
 
     @classmethod
     def get_supported_conversions(cls, source_freq: Freq) -> list[Freq]:
-        """获取支持的转换目标频率。.
+        """获取支持的转换目标频率.
 
         Args:
             source_freq: 源频率
@@ -261,7 +261,7 @@ class DataResampler:
 
     @classmethod
     async def validate_data_for_resampling(cls, df: pd.DataFrame) -> dict[str, Any]:
-        """验证数据是否适合重采样。.
+        """验证数据是否适合重采样.
 
         Args:
             df: 要验证的数据

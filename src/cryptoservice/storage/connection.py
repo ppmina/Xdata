@@ -1,4 +1,4 @@
-"""数据库连接池管理器。.
+"""数据库连接池管理器.
 
 高性能的异步SQLite连接池实现。
 """
@@ -30,7 +30,7 @@ logger = logging.getLogger(__name__)
 
 
 class ConnectionPool:
-    """数据库连接池管理器。.
+    """数据库连接池管理器.
 
     基于aiosqlitepool的高性能异步SQLite连接池实现。
     """
@@ -44,7 +44,7 @@ class ConnectionPool:
         enable_wal: bool = True,
         enable_optimizations: bool = True,
     ):
-        """初始化连接池。.
+        """初始化连接池.
 
         Args:
             db_path: 数据库文件路径
@@ -68,7 +68,7 @@ class ConnectionPool:
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
 
     async def initialize(self) -> None:
-        """初始化连接池。."""
+        """初始化连接池."""
         if self._initialized:
             return
 
@@ -82,10 +82,10 @@ class ConnectionPool:
             raise
 
     async def _create_connection_pool(self) -> SQLiteConnectionPool:
-        """创建连接池实例。."""
+        """创建连接池实例."""
 
         async def connection_factory() -> aiosqlite.Connection:
-            """连接工厂函数。."""
+            """连接工厂函数."""
             conn = await aiosqlite.connect(self.db_path)
 
             if self.enable_optimizations:
@@ -105,7 +105,7 @@ class ConnectionPool:
 
     @asynccontextmanager
     async def get_connection(self) -> AsyncGenerator[aiosqlite.Connection, None]:
-        """获取数据库连接的上下文管理器。.
+        """获取数据库连接的上下文管理器.
 
         Returns:
             异步上下文管理器，提供数据库连接。
@@ -120,7 +120,7 @@ class ConnectionPool:
             yield conn
 
     async def close(self) -> None:
-        """关闭连接池。."""
+        """关闭连接池."""
         if self._pool:
             await self._pool.close()
             self._pool = None
@@ -129,14 +129,14 @@ class ConnectionPool:
 
     @property
     def is_initialized(self) -> bool:
-        """检查连接池是否已初始化。."""
+        """检查连接池是否已初始化."""
         return self._initialized
 
     async def __aenter__(self):
-        """异步上下文管理器入口。."""
+        """异步上下文管理器入口."""
         await self.initialize()
         return self
 
     async def __aexit__(self, exc_type, exc_val, exc_tb):
-        """异步上下文管理器出口。."""
+        """异步上下文管理器出口."""
         await self.close()

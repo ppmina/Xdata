@@ -1,4 +1,4 @@
-"""Universe管理器。.
+"""Universe管理器.
 
 专门处理Universe定义、管理和相关操作。
 """

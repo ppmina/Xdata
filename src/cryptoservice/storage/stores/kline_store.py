@@ -1,4 +1,4 @@
-"""K线数据存储器。.
+"""K线数据存储器.
 
 专门处理K线数据的存储操作。
 """
@@ -15,13 +15,13 @@ logger = logging.getLogger(__name__)
 
 
 class KlineStore:
-    """K线数据存储器。.
+    """K线数据存储器.
 
     专注于K线数据的CRUD操作。
     """
 
     def __init__(self, connection_pool: "ConnectionPool"):
-        """初始化K线数据存储器。.
+        """初始化K线数据存储器.
 
         Args:
             connection_pool: 数据库连接池
@@ -29,7 +29,7 @@ class KlineStore:
         self.pool = connection_pool
 
     async def insert(self, klines: list[PerpetualMarketTicker], freq: Freq, batch_size: int = 1000) -> int:
-        """插入K线数据。.
+        """插入K线数据.
 
         Args:
             klines: K线数据列表
@@ -67,7 +67,7 @@ class KlineStore:
         return await self.insert_batch(records, batch_size)
 
     async def insert_batch(self, records: list[tuple], batch_size: int = 1000) -> int:
-        """批量插入记录。.
+        """批量插入记录.
 
         Args:
             records: 记录元组列表
@@ -110,7 +110,7 @@ class KlineStore:
         return total_inserted
 
     async def upsert(self, klines: list[PerpetualMarketTicker], freq: Freq) -> int:
-        """插入或更新K线数据。.
+        """插入或更新K线数据.
 
         使用INSERT OR REPLACE语义，与insert方法相同。
 
@@ -124,7 +124,7 @@ class KlineStore:
         return await self.insert(klines, freq)
 
     async def delete_by_time_range(self, symbols: list[str], start_time: str, end_time: str, freq: Freq) -> int:
-        """按时间范围删除数据。.
+        """按时间范围删除数据.
 
         Args:
             symbols: 交易对列表
@@ -167,7 +167,7 @@ class KlineStore:
         return deleted_count
 
     async def delete_by_symbol(self, symbol: str, freq: Freq | None = None) -> int:
-        """按交易对删除数据。.
+        """按交易对删除数据.
 
         Args:
             symbol: 交易对
@@ -192,7 +192,7 @@ class KlineStore:
         return deleted_count
 
     async def count(self, symbol: str | None = None, freq: Freq | None = None) -> int:
-        """统计记录数量。.
+        """统计记录数量.
 
         Args:
             symbol: 交易对，None表示所有交易对
@@ -221,7 +221,7 @@ class KlineStore:
             return result[0] if result else 0
 
     async def exists(self, symbol: str, timestamp: int, freq: Freq) -> bool:
-        """检查记录是否存在。.
+        """检查记录是否存在.
 
         Args:
             symbol: 交易对
@@ -243,7 +243,7 @@ class KlineStore:
             return result is not None
 
     async def get_latest_timestamp(self, symbol: str, freq: Freq) -> int | None:
-        """获取最新时间戳。.
+        """获取最新时间戳.
 
         Args:
             symbol: 交易对
@@ -263,7 +263,7 @@ class KlineStore:
             return result[0] if result and result[0] else None
 
     async def get_earliest_timestamp(self, symbol: str, freq: Freq) -> int | None:
-        """获取最早时间戳。.
+        """获取最早时间戳.
 
         Args:
             symbol: 交易对

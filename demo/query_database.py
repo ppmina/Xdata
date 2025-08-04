@@ -7,7 +7,7 @@ import asyncio
 import sys
 from pathlib import Path
 
-from cryptoservice.storage import AsyncMarketDB
+from cryptoservice.storage import Database
 
 # 配置参数
 DB_PATH = "./data/database/market.db"
@@ -22,7 +22,7 @@ async def validate_database():
     return True
 
 
-async def query_symbols_info(db: AsyncMarketDB, symbols: list[str]):
+async def query_symbols_info(db: Database, symbols: list[str]):
     """查询指定交易对的详细信息."""
     print(f"🔍 查询交易对信息: {', '.join(symbols)}")
     print("=" * 50)
@@ -36,13 +36,13 @@ async def query_symbols_info(db: AsyncMarketDB, symbols: list[str]):
             symbol_data = await db.get_symbols(symbol)
 
             if not symbol_data:
-                print(f"   ❌ 未找到数据")
+                print("   ❌ 未找到数据")
                 continue
 
             # 显示市场数据信息
             if symbol_data.get("market_data"):
                 market_info = symbol_data["market_data"]
-                print(f"   📊 市场数据:")
+                print("   📊 市场数据:")
                 for freq_info in market_info:
                     freq = freq_info.get("freq", "unknown")
                     count = freq_info.get("record_count", 0)
@@ -70,7 +70,7 @@ async def query_symbols_info(db: AsyncMarketDB, symbols: list[str]):
         print(f"❌ 查询交易对信息失败: {e}")
 
 
-async def query_all_symbols(db: AsyncMarketDB):
+async def query_all_symbols(db: Database):
     """查询数据库中所有可用的交易对."""
     print("📊 数据库中所有可用交易对")
     print("=" * 50)
@@ -118,7 +118,7 @@ async def main():
         # 解析命令行参数
         symbols = parse_arguments()
 
-        async with AsyncMarketDB(DB_PATH) as db:
+        async with Database(DB_PATH) as db:
             if symbols:
                 # 查询指定交易对信息
                 await query_symbols_info(db, symbols)

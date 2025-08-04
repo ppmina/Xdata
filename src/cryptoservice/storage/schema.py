@@ -1,4 +1,4 @@
-"""数据库表结构定义。.
+"""数据库表结构定义.
 
 定义所有表的DDL语句和索引创建。
 """
@@ -13,7 +13,7 @@ logger = logging.getLogger(__name__)
 
 
 class DatabaseSchema:
-    """数据库表结构定义和管理。."""
+    """数据库表结构定义和管理."""
 
     # K线数据表配置
     KLINE_TABLE = {
@@ -119,7 +119,7 @@ class DatabaseSchema:
 
     @classmethod
     async def create_all_tables(cls, connection_pool: "ConnectionPool") -> None:
-        """创建所有表和索引。.
+        """创建所有表和索引.
 
         Args:
             connection_pool: 数据库连接池
@@ -147,7 +147,7 @@ class DatabaseSchema:
 
     @classmethod
     async def drop_all_tables(cls, connection_pool: "ConnectionPool") -> None:
-        """删除所有表（谨慎使用）。.
+        """删除所有表（谨慎使用）.
 
         Args:
             connection_pool: 数据库连接池
@@ -166,7 +166,7 @@ class DatabaseSchema:
 
     @classmethod
     async def get_table_info(cls, connection_pool: "ConnectionPool", table_name: str) -> list:
-        """获取表结构信息。.
+        """获取表结构信息.
 
         Args:
             connection_pool: 数据库连接池
@@ -181,7 +181,7 @@ class DatabaseSchema:
 
     @classmethod
     async def get_all_table_names(cls, connection_pool: "ConnectionPool") -> list[str]:
-        """获取数据库中所有表名。.
+        """获取数据库中所有表名.
 
         Args:
             connection_pool: 数据库连接池
@@ -196,7 +196,7 @@ class DatabaseSchema:
 
     @classmethod
     def get_table_config(cls, table_name: str) -> dict | None:
-        """获取指定表的配置。.
+        """获取指定表的配置.
 
         Args:
             table_name: 表名
@@ -211,7 +211,7 @@ class DatabaseSchema:
 
     @classmethod
     def get_primary_key_columns(cls, table_name: str) -> list[str]:
-        """获取表的主键列。.
+        """获取表的主键列.
 
         Args:
             table_name: 表名
@@ -229,7 +229,7 @@ class DatabaseSchema:
 
     @classmethod
     def get_table_columns(cls, table_name: str) -> list[str]:
-        """获取表的所有列名。.
+        """获取表的所有列名.
 
         Args:
             table_name: 表名

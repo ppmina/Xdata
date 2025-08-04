@@ -20,7 +20,7 @@ class CategoryUtils:
     def read_category_csv(
         file_path: Path | str,
     ) -> tuple[list[str], list[str], np.ndarray]:
-        """从 CSV 文件读取分类矩阵。.
+        """从 CSV 文件读取分类矩阵.
 
         Args:
             file_path: CSV 文件路径
@@ -65,7 +65,7 @@ class CategoryUtils:
         target_categories: list[str],
         require_all: bool = False,
     ) -> list[str]:
-        """根据分类筛选交易对。.
+        """根据分类筛选交易对.
 
         Args:
             symbols: 交易对列表
@@ -115,7 +115,7 @@ class CategoryUtils:
     def get_category_statistics(
         symbols: list[str], categories: list[str], matrix: np.ndarray
     ) -> dict[str, dict[str, Any]]:
-        """获取分类统计信息。.
+        """获取分类统计信息.
 
         Args:
             symbols: 交易对列表
@@ -190,7 +190,7 @@ class CategoryUtils:
         target_symbols: list[str] | None = None,
         target_categories: list[str] | None = None,
     ) -> tuple[list[str], list[str], np.ndarray]:
-        """创建分类矩阵的子集。.
+        """创建分类矩阵的子集.
 
         Args:
             symbols: 原始交易对列表
@@ -252,7 +252,7 @@ class CategoryUtils:
         output_path: Path | str,
         analysis_name: str = "category_analysis",
     ) -> None:
-        """导出分类分析报告。.
+        """导出分类分析报告.
 
         Args:
             file_path: 输入的分类CSV文件路径
