@@ -1,4 +1,4 @@
-"""市场数据服务。.
+"""市场数据服务.
 
 专注于核心API功能，使用组合模式整合各个专业模块。
 """
@@ -26,12 +26,12 @@ from cryptoservice.models import (
     SymbolTicker,
     UniverseDefinition,
 )
-from cryptoservice.storage.database import Database as AsyncMarketDB
+from cryptoservice.storage.database import Database
 from cryptoservice.utils import DataConverter
 
 # 导入新的模块
 from .downloaders import KlineDownloader, MetricsDownloader, VisionDownloader
-from .processors import CategoryManager, DataValidator, UniverseManager
+from .processors import CategoryManager, DataValidator, TimeRangeProcessor, UniverseManager
 
 logger = logging.getLogger(__name__)
 
@@ -43,7 +43,7 @@ class MarketDataService:
         """初始化市场数据服务 (私有构造函数)."""
         self.client = client
         self.converter = DataConverter()
-        self.db: AsyncMarketDB | None = None
+        self.db: Database | None = None
 
         # 初始化各种专业模块
         self.kline_downloader = KlineDownloader(self.client)
@@ -317,21 +317,41 @@ class MarketDataService:
         self,
         universe_file: Path | str,
         db_path: Path | str,
-        data_path: Path | str | None = None,
         interval: Freq = Freq.m1,
         max_workers: int = 4,
         max_retries: int = 3,
-        include_buffer_days: int = 7,
         retry_config: RetryConfig | None = None,
         request_delay: float = 0.5,
         download_market_metrics: bool = True,
         metrics_interval: Freq = Freq.m5,
         long_short_ratio_period: Freq = Freq.m5,
         long_short_ratio_types: list[str] | None = None,
-        use_binance_vision: bool = False,
         incremental: bool = True,
+        custom_start_date: str | None = None,
+        custom_end_date: str | None = None,
     ) -> None:
-        """按周期分别下载universe数据."""
+        """按周期分别下载universe数据.
+
+        Args:
+            universe_file: Path to the universe definition file
+            db_path: Path to the database file where data will be stored
+            interval: Time interval for K-line data (default: 1m)
+            max_workers: Maximum number of concurrent workers
+            max_retries: Maximum number of retry attempts for failed requests
+            retry_config: Custom retry configuration, overrides max_retries
+            request_delay: Delay in seconds between API requests
+            download_market_metrics: Whether to download market metrics data
+            metrics_interval: Time interval for metrics data (default: 5m)
+            long_short_ratio_period: Period for long/short ratio data (default: 5m)
+            long_short_ratio_types: Types of long/short ratios to download
+            incremental: Whether to download incremental data,
+             if True, only download new data, if False, re-download all data
+            custom_start_date: Custom global start date, will override the start date
+             in the universe but must be within the universe time range
+            custom_end_date: Custom global end date, will override the end date
+             in the universe but must be within the universe time range
+
+        """
         try:
             # 验证路径
             universe_file_obj = self._validate_and_prepare_path(universe_file, is_file=True)
@@ -343,6 +363,12 @@ class MarketDataService:
 
             # 加载universe定义
             universe_def = UniverseDefinition.load_from_file(universe_file_obj)
+
+            # 验证和处理自定义时间范围
+            if custom_start_date or custom_end_date:
+                universe_def = TimeRangeProcessor.apply_custom_time_range(
+                    universe_def, custom_start_date, custom_end_date
+                )
 
             # 设置多空比例类型默认值
             if long_short_ratio_types is None:
@@ -478,6 +504,29 @@ class MarketDataService:
             output_path=output_path,
         )
 
+    async def check_symbol_exists_on_date(self, symbol: str, date: str) -> bool:
+        """检查指定日期是否存在该交易对."""
+        try:
+            # 将日期转换为时间戳范围
+            start_time = self._date_to_timestamp_start(date)
+            end_time = self._date_to_timestamp_end(date)
+
+            # 尝试获取该时间范围内的K线数据
+            klines = await self.client.futures_klines(
+                symbol=symbol,
+                interval="1d",
+                startTime=start_time,
+                endTime=end_time,
+                limit=1,
+            )
+
+            # 如果有数据，说明该日期存在该交易对
+            return bool(klines and len(klines) > 0)
+
+        except Exception as e:
+            logger.debug(f"检查交易对 {symbol} 在 {date} 是否存在时出错: {e}")
+            return False
+
     # ==================== 私有辅助方法 ====================
 
     async def _download_market_metrics_for_snapshot(
@@ -493,7 +542,7 @@ class MarketDataService:
         try:
             # 初始化数据库连接
             if self.db is None:
-                self.db = AsyncMarketDB(str(db_path))
+                self.db = Database(db_path)
 
             # 设置默认值
             if long_short_ratio_types is None:
@@ -567,45 +616,3 @@ class MarketDataService:
             return time_value
         if isinstance(time_value, datetime):
             return time_value.strftime("%Y-%m-%d")
-        raise ValueError(f"Unsupported time type: {type(time_value)}")
-
-    async def check_symbol_exists_on_date(self, symbol: str, date: str) -> bool:
-        """检查指定日期是否存在该交易对."""
-        try:
-            # 将日期转换为时间戳范围
-            start_time = self._date_to_timestamp_start(date)
-            end_time = self._date_to_timestamp_end(date)
-
-            # 尝试获取该时间范围内的K线数据
-            klines = await self.client.futures_klines(
-                symbol=symbol,
-                interval="1d",
-                startTime=start_time,
-                endTime=end_time,
-                limit=1,
-            )
-
-            # 如果有数据，说明该日期存在该交易对
-            return bool(klines and len(klines) > 0)
-
-        except Exception as e:
-            logger.debug(f"检查交易对 {symbol} 在 {date} 是否存在时出错: {e}")
-            return False
-
-    # # ==================== 支持旧版本的方法 ====================
-
-    # def _fetch_symbol_data(self, *args, **kwargs):
-    #     """支持旧版本的方法，委托给K线下载器"""
-    #     return self.kline_downloader.download_single_symbol(*args, **kwargs)
-
-    # @property
-    # def rate_limit_manager(self):
-    #     """提供向后兼容的rate_limit_manager属性"""
-    #     return self.kline_downloader.rate_limit_manager
-
-    # @rate_limit_manager.setter
-    # def rate_limit_manager(self, value):
-    #     """设置rate_limit_manager"""
-    #     self.kline_downloader.rate_limit_manager = value
-    #     self.metrics_downloader.rate_limit_manager = value
-    #     self.vision_downloader.rate_limit_manager = value

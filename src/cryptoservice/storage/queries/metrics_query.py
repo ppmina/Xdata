@@ -1,4 +1,4 @@
-"""指标数据查询器。.
+"""指标数据查询器.
 
 专门处理指标数据（资金费率、持仓量、多空比例）的查询操作。
 """
@@ -17,13 +17,13 @@ logger = logging.getLogger(__name__)
 
 
 class MetricsQuery:
-    """指标数据查询器。.
+    """指标数据查询器.
 
     专注于指标数据的查询操作。
     """
 
     def __init__(self, connection_pool: "ConnectionPool"):
-        """初始化指标数据查询器。.
+        """初始化指标数据查询器.
 
         Args:
             connection_pool: 数据库连接池
@@ -33,7 +33,7 @@ class MetricsQuery:
     async def select_funding_rates(
         self, symbols: list[str], start_time: str, end_time: str, columns: list[str] | None = None
     ) -> pd.DataFrame:
-        """查询资金费率数据。.
+        """查询资金费率数据.
 
         Args:
             symbols: 交易对列表
@@ -92,7 +92,7 @@ class MetricsQuery:
         interval: str | None = None,
         columns: list[str] | None = None,
     ) -> pd.DataFrame:
-        """查询持仓量数据。.
+        """查询持仓量数据.
 
         Args:
             symbols: 交易对列表
@@ -156,7 +156,7 @@ class MetricsQuery:
         ratio_type: str | None = None,
         columns: list[str] | None = None,
     ) -> pd.DataFrame:
-        """查询多空比例数据。.
+        """查询多空比例数据.
 
         Args:
             symbols: 交易对列表
@@ -216,7 +216,7 @@ class MetricsQuery:
         return df
 
     async def get_metrics_symbols(self, data_type: str) -> list[str]:
-        """获取指标数据的所有交易对。.
+        """获取指标数据的所有交易对.
 
         Args:
             data_type: 数据类型 ('funding_rate', 'open_interest', 'long_short_ratio')
@@ -243,7 +243,7 @@ class MetricsQuery:
         return [row[0] for row in rows]
 
     async def get_metrics_time_range(self, data_type: str, symbol: str) -> dict:
-        """获取指标数据的时间范围。.
+        """获取指标数据的时间范围.
 
         Args:
             data_type: 数据类型
@@ -295,7 +295,7 @@ class MetricsQuery:
     async def get_missing_timestamps(
         self, data_type: str, symbol: str, start_ts: int, end_ts: int, interval_hours: int = 8
     ) -> list[int]:
-        """获取指标数据缺失的时间戳。.
+        """获取指标数据缺失的时间戳.
 
         Args:
             data_type: 数据类型
@@ -343,7 +343,7 @@ class MetricsQuery:
         return sorted(missing_timestamps)
 
     async def get_metrics_summary(self, data_type: str, symbol: str | None = None) -> dict:
-        """获取指标数据概要统计。.
+        """获取指标数据概要统计.
 
         Args:
             data_type: 数据类型

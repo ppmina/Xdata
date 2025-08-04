@@ -7,9 +7,8 @@ from pathlib import Path
 import dotenv
 import pandas as pd
 
-from cryptoservice.models.enums import Freq
-from cryptoservice.models.universe import UniverseDefinition
-from cryptoservice.services.market_service import MarketDataService
+from cryptoservice.models import Freq, UniverseDefinition
+from cryptoservice.services import MarketDataService
 from cryptoservice.storage import Database
 
 # ============== 配置参数 ==============
@@ -28,8 +27,8 @@ EXPORT_METRICS = True  # 导出指标数据（fr, oi, lsr）
 DOWNLOAD_CATEGORIES = True  # 下载分类数据
 
 # 自定义时间范围（可选）
-CUSTOM_START_DATE = None
-CUSTOM_END_DATE = None
+CUSTOM_START_DATE = "2024-10-01"
+CUSTOM_END_DATE = "2024-10-02"
 
 # 字段名映射：长字段名 -> 缩写形式
 FIELD_MAPPING = {
@@ -89,8 +88,8 @@ async def create_market_service():
 
 def calculate_time_range(snapshot):
     """计算实际导出的时间范围."""
-    universe_start_ts = snapshot.start_date_ts
-    universe_end_ts = snapshot.end_date_ts
+    universe_start_ts = int(snapshot.start_date_ts)
+    universe_end_ts = int(snapshot.end_date_ts)
 
     if CUSTOM_START_DATE:
         custom_start_ts = int(pd.Timestamp(CUSTOM_START_DATE).timestamp() * 1000)

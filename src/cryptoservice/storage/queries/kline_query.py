@@ -1,4 +1,4 @@
-"""K线数据查询器。.
+"""K线数据查询器.
 
 专门处理K线数据的查询操作。
 """
@@ -19,13 +19,13 @@ logger = logging.getLogger(__name__)
 
 
 class KlineQuery:
-    """K线数据查询器。.
+    """K线数据查询器.
 
     专注于K线数据的查询操作。
     """
 
     def __init__(self, connection_pool: "ConnectionPool"):
-        """初始化K线数据查询器。.
+        """初始化K线数据查询器.
 
         Args:
             connection_pool: 数据库连接池
@@ -35,7 +35,7 @@ class KlineQuery:
     async def select_by_time_range(
         self, symbols: list[str], start_time: str, end_time: str, freq: Freq, columns: list[str] | None = None
     ) -> pd.DataFrame:
-        """按时间范围查询K线数据。.
+        """按时间范围查询K线数据.
 
         Args:
             symbols: 交易对列表
@@ -104,7 +104,7 @@ class KlineQuery:
     async def select_by_timestamp_range(
         self, symbols: list[str], start_ts: int, end_ts: int, freq: Freq, columns: list[str] | None = None
     ) -> pd.DataFrame:
-        """按时间戳范围查询K线数据。.
+        """按时间戳范围查询K线数据.
 
         Args:
             symbols: 交易对列表
@@ -122,7 +122,7 @@ class KlineQuery:
         return await self.select_by_time_range(symbols, start_time, end_time, freq, columns)
 
     async def select_latest(self, symbols: list[str], freq: Freq, limit: int = 1) -> pd.DataFrame:
-        """查询最新的K线数据。.
+        """查询最新的K线数据.
 
         Args:
             symbols: 交易对列表
@@ -183,7 +183,7 @@ class KlineQuery:
         return df
 
     async def get_symbols(self, freq: Freq | None = None) -> list[str]:
-        """获取所有交易对。.
+        """获取所有交易对.
 
         Args:
             freq: 数据频率，None表示查询所有频率
@@ -208,7 +208,7 @@ class KlineQuery:
         return [row[0] for row in rows]
 
     async def get_frequencies(self, symbol: str | None = None) -> list[str]:
-        """获取所有频率。.
+        """获取所有频率.
 
         Args:
             symbol: 交易对，None表示查询所有交易对
@@ -230,7 +230,7 @@ class KlineQuery:
         return [row[0] for row in rows]
 
     async def get_time_range(self, symbol: str, freq: Freq) -> dict:
-        """获取指定交易对和频率的时间范围。.
+        """获取指定交易对和频率的时间范围.
 
         Args:
             symbol: 交易对
@@ -271,7 +271,7 @@ class KlineQuery:
         }
 
     async def get_missing_timestamps(self, symbol: str, start_ts: int, end_ts: int, freq: Freq) -> list[int]:
-        """获取缺失的时间戳。.
+        """获取缺失的时间戳.
 
         Args:
             symbol: 交易对
@@ -331,7 +331,7 @@ class KlineQuery:
         return sorted(missing_timestamps)
 
     async def get_data_summary(self, symbol: str | None = None, freq: Freq | None = None) -> dict:
-        """获取数据概要统计。.
+        """获取数据概要统计.
 
         Args:
             symbol: 交易对，None表示所有交易对

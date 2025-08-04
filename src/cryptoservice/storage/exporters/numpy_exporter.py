@@ -1,4 +1,4 @@
-"""NumPy格式导出器。.
+"""NumPy格式导出器.
 
 专门处理NumPy格式的数据导出。
 """
@@ -20,13 +20,13 @@ logger = logging.getLogger(__name__)
 
 
 class NumpyExporter:
-    """NumPy格式导出器。.
+    """NumPy格式导出器.
 
     将K线数据导出为NumPy .npy文件格式，支持按日期分组和特征分离。
     """
 
     def __init__(self, kline_query: KlineQuery, resampler: DataResampler | None = None):
-        """初始化NumPy导出器。.
+        """初始化NumPy导出器.
 
         Args:
             kline_query: K线数据查询器
@@ -45,7 +45,7 @@ class NumpyExporter:
         target_freq: Freq | None = None,
         chunk_days: int = 30,
     ) -> None:
-        """导出K线数据为NumPy格式。.
+        """导出K线数据为NumPy格式.
 
         Args:
             symbols: 交易对列表
@@ -85,7 +85,7 @@ class NumpyExporter:
         logger.info(f"NumPy数据导出完成: {output_path}")
 
     async def _export_by_dates(self, df: pd.DataFrame, output_path: Path, freq: Freq) -> None:
-        """按日期分组导出数据。.
+        """按日期分组导出数据.
 
         Args:
             df: 数据DataFrame
@@ -115,7 +115,7 @@ class NumpyExporter:
                 await asyncio.sleep(0.1)
 
     async def _export_single_date(self, df: pd.DataFrame, date, output_path: Path, freq: Freq) -> None:
-        """导出单个日期的数据。.
+        """导出单个日期的数据.
 
         Args:
             df: 数据DataFrame
@@ -151,7 +151,7 @@ class NumpyExporter:
             await asyncio.gather(*batch)
 
     async def _save_symbols(self, day_data: pd.DataFrame, output_path: Path, freq: Freq, date_str: str) -> None:
-        """保存交易对顺序信息。.
+        """保存交易对顺序信息.
 
         Args:
             day_data: 当天数据
@@ -173,7 +173,7 @@ class NumpyExporter:
     async def _export_single_feature(
         self, day_data: pd.DataFrame, feature: str, output_path: Path, freq: Freq, date_str: str
     ) -> None:
-        """导出单个特征的数据。.
+        """导出单个特征的数据.
 
         Args:
             day_data: 当天数据
@@ -225,7 +225,7 @@ class NumpyExporter:
         output_path: Path,
         feature_mapping: dict[str, str] | None = None,
     ) -> None:
-        """使用自定义特征映射导出数据。.
+        """使用自定义特征映射导出数据.
 
         Args:
             symbols: 交易对列表
@@ -279,7 +279,7 @@ class NumpyExporter:
     async def export_summary_info(
         self, symbols: list[str], start_time: str, end_time: str, freq: Freq, output_path: Path
     ) -> dict[str, Any]:
-        """导出数据概要信息。.
+        """导出数据概要信息.
 
         Args:
             symbols: 交易对列表

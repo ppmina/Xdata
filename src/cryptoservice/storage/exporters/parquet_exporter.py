@@ -1,4 +1,4 @@
-"""Parquet格式导出器。.
+"""Parquet格式导出器.
 
 专门处理Parquet格式的数据导出。
 """
@@ -19,10 +19,10 @@ logger = logging.getLogger(__name__)
 
 
 class ParquetExporter:
-    """Parquet格式导出器。."""
+    """Parquet格式导出器."""
 
     def __init__(self, kline_query: "KlineQuery"):
-        """初始化Parquet导出器。.
+        """初始化Parquet导出器.
 
         Args:
             kline_query: K线数据查询器
@@ -38,7 +38,7 @@ class ParquetExporter:
         output_path: Path,
         compression: Literal["snappy", "gzip", "brotli", "lz4", "zstd"] = "snappy",
     ) -> None:
-        """导出K线数据为Parquet格式。.
+        """导出K线数据为Parquet格式.
 
         Args:
             symbols: 交易对列表
@@ -70,7 +70,7 @@ class ParquetExporter:
     def _process_parquet_export(
         self, df: pd.DataFrame, output_path: Path, compression: Literal["snappy", "gzip", "brotli", "lz4", "zstd"]
     ) -> None:
-        """处理Parquet导出（同步）。.
+        """处理Parquet导出（同步）.
 
         Args:
             df: 数据DataFrame

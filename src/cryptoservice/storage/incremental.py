@@ -1,4 +1,4 @@
-"""增量下载管理器。.
+"""增量下载管理器.
 
 提供增量下载计划和缺失数据分析功能。
 """
@@ -17,13 +17,13 @@ logger = logging.getLogger(__name__)
 
 
 class IncrementalManager:
-    """增量下载管理器。.
+    """增量下载管理器.
 
     专注于增量下载计划制定和缺失数据分析。
     """
 
     def __init__(self, kline_query: "KlineQuery", metrics_query: "MetricsQuery"):
-        """初始化增量下载管理器。.
+        """初始化增量下载管理器.
 
         Args:
             kline_query: K线数据查询器
@@ -35,7 +35,7 @@ class IncrementalManager:
     async def plan_kline_download(
         self, symbols: list[str], start_date: str, end_date: str, freq: Freq
     ) -> dict[str, list[int]]:
-        """制定K线数据增量下载计划。.
+        """制定K线数据增量下载计划.
 
         Args:
             symbols: 交易对列表
@@ -84,7 +84,7 @@ class IncrementalManager:
     async def plan_metrics_download(
         self, symbols: list[str], start_date: str, end_date: str, data_type: str, interval_hours: int = 8
     ) -> dict[str, list[int]]:
-        """制定指标数据增量下载计划。.
+        """制定指标数据增量下载计划.
 
         Args:
             symbols: 交易对列表
@@ -130,7 +130,7 @@ class IncrementalManager:
         return plan
 
     async def get_kline_coverage_report(self, symbols: list[str], start_date: str, end_date: str, freq: Freq) -> dict:
-        """获取K线数据覆盖率报告。.
+        """获取K线数据覆盖率报告.
 
         Args:
             symbols: 交易对列表
@@ -207,7 +207,7 @@ class IncrementalManager:
     async def get_data_gaps(
         self, symbol: str, start_date: str, end_date: str, freq: Freq, max_gap_hours: int = 24
     ) -> list[dict]:
-        """获取数据间隙信息。.
+        """获取数据间隙信息.
 
         Args:
             symbol: 交易对
@@ -256,7 +256,7 @@ class IncrementalManager:
         return gaps
 
     def _generate_timestamp_range(self, start_date: str, end_date: str, freq: Freq) -> list[int]:
-        """生成完整的时间戳范围。.
+        """生成完整的时间戳范围.
 
         Args:
             start_date: 开始日期 (YYYY-MM-DD)
@@ -313,7 +313,7 @@ class IncrementalManager:
             return []
 
     def _get_freq_milliseconds(self, freq: Freq) -> int:
-        """获取频率对应的毫秒数。.
+        """获取频率对应的毫秒数.
 
         Args:
             freq: 数据频率
@@ -341,7 +341,7 @@ class IncrementalManager:
         return freq_ms_map.get(freq, 60 * 60 * 1000)  # 默认1小时
 
     async def get_download_priority(self, symbols: list[str], start_date: str, end_date: str, freq: Freq) -> list[dict]:
-        """获取下载优先级建议。.
+        """获取下载优先级建议.
 
         Args:
             symbols: 交易对列表

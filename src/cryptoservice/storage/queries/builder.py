@@ -1,4 +1,4 @@
-"""SQL查询构建器。.
+"""SQL查询构建器.
 
 提供链式调用的SQL查询构建功能。
 """
@@ -7,10 +7,10 @@ from typing import Any
 
 
 class SelectBuilder:
-    """SELECT查询构建器。."""
+    """SELECT查询构建器."""
 
     def __init__(self, table: str, columns: list[str] | None = None):
-        """初始化SELECT构建器。.
+        """初始化SELECT构建器.
 
         Args:
             table: 表名
@@ -25,7 +25,7 @@ class SelectBuilder:
         self.group_clause: str | None = None
 
     def where(self, condition: str, *params) -> "SelectBuilder":
-        """添加WHERE条件。.
+        """添加WHERE条件.
 
         Args:
             condition: 条件字符串
@@ -39,7 +39,7 @@ class SelectBuilder:
         return self
 
     def where_in(self, column: str, values: list) -> "SelectBuilder":
-        """添加IN条件。.
+        """添加IN条件.
 
         Args:
             column: 列名
@@ -58,7 +58,7 @@ class SelectBuilder:
         return self
 
     def where_between(self, column: str, start: Any, end: Any) -> "SelectBuilder":
-        """添加BETWEEN条件。.
+        """添加BETWEEN条件.
 
         Args:
             column: 列名
@@ -73,7 +73,7 @@ class SelectBuilder:
         return self
 
     def where_like(self, column: str, pattern: str) -> "SelectBuilder":
-        """添加LIKE条件。.
+        """添加LIKE条件.
 
         Args:
             column: 列名
@@ -87,7 +87,7 @@ class SelectBuilder:
         return self
 
     def order_by(self, columns: str) -> "SelectBuilder":
-        """添加ORDER BY子句。.
+        """添加ORDER BY子句.
 
         Args:
             columns: 排序列，如 "column1 ASC, column2 DESC"
@@ -99,7 +99,7 @@ class SelectBuilder:
         return self
 
     def group_by(self, columns: str) -> "SelectBuilder":
-        """添加GROUP BY子句。.
+        """添加GROUP BY子句.
 
         Args:
             columns: 分组列
@@ -111,7 +111,7 @@ class SelectBuilder:
         return self
 
     def limit(self, count: int, offset: int | None = None) -> "SelectBuilder":
-        """添加LIMIT子句。.
+        """添加LIMIT子句.
 
         Args:
             count: 限制数量
@@ -127,7 +127,7 @@ class SelectBuilder:
         return self
 
     def build(self) -> tuple[str, list]:
-        """构建最终SQL和参数。.
+        """构建最终SQL和参数.
 
         Returns:
             (SQL字符串, 参数列表)
@@ -151,10 +151,10 @@ class SelectBuilder:
 
 
 class InsertBuilder:
-    """INSERT查询构建器。."""
+    """INSERT查询构建器."""
 
     def __init__(self, table: str, columns: list[str]):
-        """初始化INSERT构建器。.
+        """初始化INSERT构建器.
 
         Args:
             table: 表名
@@ -165,7 +165,7 @@ class InsertBuilder:
         self.on_conflict: str | None = None
 
     def or_replace(self) -> "InsertBuilder":
-        """设置OR REPLACE选项。.
+        """设置OR REPLACE选项.
 
         Returns:
             自身，支持链式调用
@@ -174,7 +174,7 @@ class InsertBuilder:
         return self
 
     def or_ignore(self) -> "InsertBuilder":
-        """设置OR IGNORE选项。.
+        """设置OR IGNORE选项.
 
         Returns:
             自身，支持链式调用
@@ -183,7 +183,7 @@ class InsertBuilder:
         return self
 
     def build(self, batch_size: int = 1) -> str:
-        """构建INSERT SQL。.
+        """构建INSERT SQL.
 
         Args:
             batch_size: 批量大小
@@ -205,10 +205,10 @@ class InsertBuilder:
 
 
 class DeleteBuilder:
-    """DELETE查询构建器。."""
+    """DELETE查询构建器."""
 
     def __init__(self, table: str):
-        """初始化DELETE构建器。.
+        """初始化DELETE构建器.
 
         Args:
             table: 表名
@@ -218,7 +218,7 @@ class DeleteBuilder:
         self.params: list[Any] = []
 
     def where(self, condition: str, *params) -> "DeleteBuilder":
-        """添加WHERE条件。.
+        """添加WHERE条件.
 
         Args:
             condition: 条件字符串
@@ -232,7 +232,7 @@ class DeleteBuilder:
         return self
 
     def where_in(self, column: str, values: list) -> "DeleteBuilder":
-        """添加IN条件。.
+        """添加IN条件.
 
         Args:
             column: 列名
@@ -251,7 +251,7 @@ class DeleteBuilder:
         return self
 
     def where_between(self, column: str, start: Any, end: Any) -> "DeleteBuilder":
-        """添加BETWEEN条件。.
+        """添加BETWEEN条件.
 
         Args:
             column: 列名
@@ -266,7 +266,7 @@ class DeleteBuilder:
         return self
 
     def build(self) -> tuple[str, list]:
-        """构建DELETE SQL和参数。.
+        """构建DELETE SQL和参数.
 
         Returns:
             (SQL字符串, 参数列表)
@@ -280,11 +280,11 @@ class DeleteBuilder:
 
 
 class QueryBuilder:
-    """SQL查询构建器主类。."""
+    """SQL查询构建器主类."""
 
     @staticmethod
     def select(table: str, columns: list[str] | None = None) -> SelectBuilder:
-        """构建SELECT查询。.
+        """构建SELECT查询.
 
         Args:
             table: 表名
@@ -297,7 +297,7 @@ class QueryBuilder:
 
     @staticmethod
     def insert(table: str, columns: list[str]) -> InsertBuilder:
-        """构建INSERT查询。.
+        """构建INSERT查询.
 
         Args:
             table: 表名
@@ -310,7 +310,7 @@ class QueryBuilder:
 
     @staticmethod
     def delete(table: str) -> DeleteBuilder:
-        """构建DELETE查询。.
+        """构建DELETE查询.
 
         Args:
             table: 表名
@@ -322,7 +322,7 @@ class QueryBuilder:
 
     @staticmethod
     def build_time_filter(start_time: str, end_time: str) -> tuple[str, list]:
-        """构建时间范围过滤条件。.
+        """构建时间范围过滤条件.
 
         Args:
             start_time: 开始时间
@@ -356,7 +356,7 @@ class QueryBuilder:
 
     @staticmethod
     def build_symbol_filter(symbols: list[str]) -> tuple[str, list]:
-        """构建交易对过滤条件。.
+        """构建交易对过滤条件.
 
         Args:
             symbols: 交易对列表

@@ -6,8 +6,9 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
-from cryptoservice.models.enums import Freq
-from cryptoservice.services.market_service import MarketDataService, RetryConfig
+from cryptoservice.config import RetryConfig
+from cryptoservice.models import Freq
+from cryptoservice.services import MarketDataService
 
 load_dotenv()
 
@@ -30,10 +31,13 @@ RETRY_CONFIG = (
     ),
 )
 REQUEST_DELAY = 2  # 请求间隔（秒）
-INCLUDE_BUFFER_DAYS = 7  # 包含缓冲期天数
 
 # 增量下载配置
 INCREMENTAL = True  # 是否启用增量下载模式（只下载缺失的数据）
+
+# 自定义时间范围配置 (可选)
+CUSTOM_START_DATE = None  # 自定义起始日期，例如: "2024-02-01"，必须在universe时间范围内
+CUSTOM_END_DATE = None  # 自定义结束日期，例如: "2024-06-30"，必须在universe时间范围内
 
 # 新特征配置
 DOWNLOAD_MARKET_METRICS = True  # 是否下载市场指标数据 (资金费率、持仓量、多空比例)
@@ -74,6 +78,15 @@ async def main():
             else:
                 print("   - 将下载所有数据，可能会覆盖现有数据")
 
+            # 显示自定义时间范围信息
+            if CUSTOM_START_DATE or CUSTOM_END_DATE:
+                print("📅 自定义时间范围:")
+                print(f"   - 自定义起始日期: {CUSTOM_START_DATE or '未指定（使用universe原始）'}")
+                print(f"   - 自定义结束日期: {CUSTOM_END_DATE or '未指定（使用universe原始）'}")
+                print("   - 自定义时间范围必须在universe定义的时间范围内")
+            else:
+                print("📅 使用universe定义的完整时间范围")
+
             # 下载universe数据
             await service.download_universe_data(
                 universe_file=UNIVERSE_FILE,
@@ -81,14 +94,14 @@ async def main():
                 interval=INTERVAL,
                 max_workers=MAX_WORKERS,
                 max_retries=MAX_RETRIES,
-                include_buffer_days=INCLUDE_BUFFER_DAYS,
                 request_delay=REQUEST_DELAY,
                 download_market_metrics=DOWNLOAD_MARKET_METRICS,
                 metrics_interval=METRICS_INTERVAL,
                 long_short_ratio_period=LONG_SHORT_RATIO_PERIOD,
                 long_short_ratio_types=LONG_SHORT_RATIO_TYPES,
-                use_binance_vision=USE_BINANCE_VISION,
-                incremental=INCREMENTAL,  # 启用增量下载模式
+                incremental=INCREMENTAL,
+                custom_start_date=CUSTOM_START_DATE,  # 新增：自定义起始日期
+                custom_end_date=CUSTOM_END_DATE,  # 新增：自定义结束日期
             )
 
         print("✅ 数据下载完成!")
