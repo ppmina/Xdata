@@ -2,6 +2,45 @@
 
 <!-- next-version -->
 
+## v1.11.0 (2025-08-04)
+
+### Bug Fixes
+
+- Fix a lots of problems ([#17](https://github.com/ppmina/Xdata/pull/17),
+  [`5856e0b`](https://github.com/ppmina/Xdata/commit/5856e0bc2c752877bb329e0d0b42df7dcf94064f))
+
+- Fix a lots of problems
+  ([`e9bcf35`](https://github.com/ppmina/Xdata/commit/e9bcf3581971a0dfef2e3e179b8e1d55adb208ad))
+
+- Fix export problems ([#17](https://github.com/ppmina/Xdata/pull/17),
+  [`5856e0b`](https://github.com/ppmina/Xdata/commit/5856e0bc2c752877bb329e0d0b42df7dcf94064f))
+
+- Fix syntax errors ([#17](https://github.com/ppmina/Xdata/pull/17),
+  [`5856e0b`](https://github.com/ppmina/Xdata/commit/5856e0bc2c752877bb329e0d0b42df7dcf94064f))
+
+- Fix syntax errors
+  ([`e9bcf35`](https://github.com/ppmina/Xdata/commit/e9bcf3581971a0dfef2e3e179b8e1d55adb208ad))
+
+### Features
+
+- Add custom start_date and end_date for download ([#17](https://github.com/ppmina/Xdata/pull/17),
+  [`5856e0b`](https://github.com/ppmina/Xdata/commit/5856e0bc2c752877bb329e0d0b42df7dcf94064f))
+
+- Add four market features(oi, lsratio, funding rate, category)
+  ([#17](https://github.com/ppmina/Xdata/pull/17),
+  [`5856e0b`](https://github.com/ppmina/Xdata/commit/5856e0bc2c752877bb329e0d0b42df7dcf94064f))
+
+- Add four market features(oi, lsratio, funding rate, category)
+  ([`e9bcf35`](https://github.com/ppmina/Xdata/commit/e9bcf3581971a0dfef2e3e179b8e1d55adb208ad))
+
+- Improve proxy handling and logging in Binance client
+  ([#17](https://github.com/ppmina/Xdata/pull/17),
+  [`5856e0b`](https://github.com/ppmina/Xdata/commit/5856e0bc2c752877bb329e0d0b42df7dcf94064f))
+
+- Improve proxy handling and logging in Binance client
+  ([`e9bcf35`](https://github.com/ppmina/Xdata/commit/e9bcf3581971a0dfef2e3e179b8e1d55adb208ad))
+
+
 ## v1.10.0 (2025-08-03)
 
 ### Bug Fixes
