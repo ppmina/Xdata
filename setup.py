@@ -1,3 +1,5 @@
+"""This file is used to tell mypy that the cryptoservice package is safe to use."""
+
 from setuptools import setup
 
 setup(
