@@ -12,7 +12,7 @@ from decimal import Decimal
 from io import BytesIO
 
 import aiohttp
-from aiohttp import ClientTimeout
+from aiohttp import ClientConnectionError, ClientTimeout
 from binance import AsyncClient
 
 from cryptoservice.config import RetryConfig
@@ -37,7 +37,10 @@ class VisionDownloader(BaseDownloader):
         """
         super().__init__(client, request_delay)
         self.db: AsyncMarketDB | None = None
-        self.base_url = "https://s3-ap-northeast-1.amazonaws.com/data.binance.vision/data/futures/um/daily/metrics"
+        self.base_url = "https://data.binance.vision/data/futures/um/daily/metrics"
+        self._session: aiohttp.ClientSession | None = None
+        self._session_lock: asyncio.Lock | None = None
+        self._client_timeout = ClientTimeout(total=30)
 
     async def download_metrics_batch(
         self,
@@ -81,6 +84,8 @@ class VisionDownloader(BaseDownloader):
         except Exception as e:
             logger.error(f"从 Binance Vision 下载指标数据失败: {e}")
             raise MarketDataFetchError(f"从 Binance Vision 下载指标数据失败: {e}") from e
+        finally:
+            await self._close_session()
 
     async def _download_and_process_symbol_for_date(
         self,
@@ -118,7 +123,7 @@ class VisionDownloader(BaseDownloader):
                 if request_delay > 0:
                     await asyncio.sleep(request_delay)
 
-    async def _download_and_parse_metrics_csv(
+    async def _download_and_parse_metrics_csv(  # noqa: C901
         self,
         url: str,
         symbol: str,
@@ -129,10 +134,14 @@ class VisionDownloader(BaseDownloader):
             retry_config = RetryConfig(max_retries=3, base_delay=2.0)
 
         async def request_func():
-            timeout = ClientTimeout(total=30)
-            async with aiohttp.ClientSession(timeout=timeout) as session, session.get(url) as response:
-                response.raise_for_status()
-                return await response.read()
+            session = await self._get_session()
+            try:
+                async with session.get(url) as response:
+                    response.raise_for_status()
+                    return await response.read()
+            except ClientConnectionError:
+                await self._reset_session()
+                raise
 
         try:
             zip_content = await self._handle_async_request_with_retry(request_func, retry_config=retry_config)
@@ -174,6 +183,44 @@ class VisionDownloader(BaseDownloader):
         except Exception as e:
             logger.error(f"下载和解析指标数据失败 {symbol}: {e}")
             return None
+
+    async def _get_session(self) -> aiohttp.ClientSession:
+        """获取复用的aiohttp会话实例."""
+        if self._session_lock is None:
+            self._session_lock = asyncio.Lock()
+
+        async with self._session_lock:
+            if self._session is None or self._session.closed:
+                connector = aiohttp.TCPConnector(
+                    limit=20,
+                    ttl_dns_cache=300,
+                    enable_cleanup_closed=True,
+                    keepalive_timeout=30,
+                )
+                self._session = aiohttp.ClientSession(
+                    timeout=self._client_timeout,
+                    connector=connector,
+                    trust_env=True,
+                )
+
+        return self._session
+
+    async def _close_session(self) -> None:
+        """关闭当前的aiohttp会话."""
+        session = self._session
+        self._session = None
+
+        if session and not session.closed:
+            try:
+                await session.close()
+            except ClientConnectionError as exc:
+                logger.debug(f"关闭aiohttp会话时出现SSL问题: {exc}")
+            except Exception as exc:  # noqa: BLE001
+                logger.debug(f"关闭aiohttp会话时出现异常: {exc}")
+
+    async def _reset_session(self) -> None:
+        """重置客户端会话以便下次重建."""
+        await self._close_session()
 
     def _parse_oi_data(self, raw_data: list[dict], symbol: str) -> list[OpenInterest]:
         """解析持仓量数据."""
