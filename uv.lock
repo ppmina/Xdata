@@ -1,5 +1,5 @@
 version = 1
-revision = 2
+revision = 3
 requires-python = ">=3.10, <3.13"
 resolution-markers = [
     "python_full_version >= '3.12'",
@@ -323,7 +323,7 @@ toml = [
 
 [[package]]
 name = "cryptoservice"
-version = "1.10.0"
+version = "1.11.0"
 source = { editable = "." }
 dependencies = [
     { name = "aiosqlite" },
@@ -380,7 +380,6 @@ dev = [
     { name = "mypy" },
     { name = "pandas-stubs" },
     { name = "pytest-asyncio" },
-    { name = "python-semantic-release" },
     { name = "ruff" },
     { name = "types-requests" },
 ]
@@ -431,7 +430,6 @@ dev = [
     { name = "mypy", specifier = ">=1.16.0" },
     { name = "pandas-stubs", specifier = ">=2.2.3.250527" },
     { name = "pytest-asyncio", specifier = ">=1.1.0" },
-    { name = "python-semantic-release", specifier = ">=10.1.0" },
     { name = "ruff", specifier = ">=0.11.12" },
     { name = "types-requests", specifier = ">=2.32.4.20250611" },
 ]
@@ -1504,30 +1502,6 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/3b/ba/3ee473d71e32d60c8d6ef7b914f5f3df64a067b816499aa8a6083a397d4f/python_gitlab-6.0.0.tar.gz", hash = "sha256:704bf548c258f1cfe2f09b8ece9af1cc8fa6ae828ac6fe6a1cbe957c98431414", size = 397108, upload-time = "2025-06-04T02:38:33.497Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/b2/33/42788d9860c15fffc617d90a7f1ccda596b11f1abedf5a315f3b66da0d73/python_gitlab-6.0.0-py3-none-any.whl", hash = "sha256:d63bb56b5f7781a7eb0a9846a3aed9b783c8036f67107d9d48653e17242a7130", size = 144035, upload-time = "2025-06-04T02:38:31.011Z" },
-]
-
-[[package]]
-name = "python-semantic-release"
-version = "10.1.0"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "click" },
-    { name = "click-option-group" },
-    { name = "deprecated" },
-    { name = "dotty-dict" },
-    { name = "gitpython" },
-    { name = "importlib-resources" },
-    { name = "jinja2" },
-    { name = "pydantic" },
-    { name = "python-gitlab" },
-    { name = "requests" },
-    { name = "rich" },
-    { name = "shellingham" },
-    { name = "tomlkit" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/d6/2a/411ff290ad7ec1897e08c2a637b7d725b81529ca94d56331eed3f38ac012/python_semantic_release-10.1.0.tar.gz", hash = "sha256:199208470e6c51859665948013e76ece458a5b41271e7f7cc05e40e93d4050d2", size = 319419, upload-time = "2025-06-12T04:20:02.895Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/1c/2a/bc0e115e5463bb2285b932f71501ec7da3836a8ab6189219540bc70e44d0/python_semantic_release-10.1.0-py3-none-any.whl", hash = "sha256:b31e1fe45fb3ad842a2ccbded55a3f4a9a23f0e1e8780b005952ba926dcee6f0", size = 141200, upload-time = "2025-06-12T04:20:00.124Z" },
 ]
 
 [[package]]

@@ -43,53 +43,6 @@ docs = [
     "mkdocs-section-index>=0.3.8",
 ]
 
-[tool.semantic_release]
-version_variable = "src/cryptoservice/__init__.py:__version__"
-version_toml = ["pyproject.toml:project.version"]
-branch = "main"
-upload_to_pypi = false
-commit_message = "chore(release): v{version}"
-tag_format = "v{version}"
-major_on_zero = false
-
-[tool.semantic_release.changelog]
-changelog_file = "CHANGELOG.md"
-exclude_commit_patterns = [
-    "^chore",
-    "^ci",
-    "^test",
-    "^docs",
-    "^style",
-    "^refactor",
-    "Merge pull request",
-    "Merge branch",
-]
-mode = "update"
-insertion_flag = "<!-- next-version -->"
-
-[tool.semantic_release.changelog.environment]
-block_start_string = "{%"
-block_end_string = "%}"
-variable_start_string = "{{"
-variable_end_string = "}}"
-
-[tool.semantic_release.commit_parser_options]
-allowed_tags = [
-    "feat",
-    "fix",
-    "docs",
-    "style",
-    "refactor",
-    "perf",
-    "revert",
-    "test",
-    "chore",
-    "ci",
-    "build",
-]
-minor_tags = ["feat"]
-patch_tags = ["fix", "perf"]
-
 [tool.ruff]
 # 基本配置
 line-length = 120
@@ -173,7 +126,6 @@ dev = [
     "mypy>=1.16.0",
     "pandas-stubs>=2.2.3.250527",
     "pytest-asyncio>=1.1.0",
-    "python-semantic-release>=10.1.0",
     "ruff>=0.11.12",
     "types-requests>=2.32.4.20250611",
 ]
