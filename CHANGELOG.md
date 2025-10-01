@@ -2,6 +2,14 @@
 
 <!-- next-version -->
 
+## v1.11.1 (2025-10-01)
+
+### Other Changes
+
+- Develop ([#18](https://github.com/Mrzai/Xdata/pull/18))
+
+
+
 ## v1.11.0 (2025-08-04)
 
 ### Bug Fixes
