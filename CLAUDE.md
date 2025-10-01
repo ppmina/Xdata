@@ -11,7 +11,7 @@ This is a Python cryptocurrency data processing package called `cryptoservice` t
 - Historical data processing and analysis
 - Database storage with SQLite
 
-The project is currently at version 1.10.0 and supports Python >=3.10,<3.13.
+The project is currently at version 1.11.1 and supports Python >=3.10,<3.13.
 
 ## Architecture
 
@@ -178,3 +178,29 @@ The project organizes data in structured directories:
 - `data/exports/`: Exported numpy arrays organized by universe, timeframe, and data type
 - `data/categories/`: Symbol category CSV files with timestamps
 - Export format: `univ_{params}/1d/{metric_type}/YYYYMMDD.npy` and `.pkl` files for symbols
+
+## Release Management
+
+The project includes a custom release script for version management:
+```bash
+# Prepare a new release (updates version, changelog, tests, commits, tags)
+python3 scripts/prepare_release.py 1.12.0 --auto --push
+
+# Options:
+# --auto: Full workflow (test, commit, tag)
+# --push: Push to remote repository
+# --skip-tests: Skip running tests
+# --skip-changelog: Skip changelog generation
+```
+
+This script:
+- Updates version in `pyproject.toml` and `src/cryptoservice/__init__.py`
+- Generates changelog entries from commit history
+- Creates release branch, commits changes, and creates git tags
+- Optionally pushes to remote repository
+
+# important-instruction-reminders
+Do what has been asked; nothing more, nothing less.
+NEVER create files unless they're absolutely necessary for achieving your goal.
+ALWAYS prefer editing an existing file to creating a new one.
+NEVER proactively create documentation files (*.md) or README files. Only create documentation files if explicitly requested by the User.

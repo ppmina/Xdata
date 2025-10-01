@@ -28,7 +28,7 @@ T1_MONTHS = 1  # 1个月回看期
 T2_MONTHS = 1  # 1个月重平衡频率
 T3_MONTHS = 1  # 1个月最小合约存在时间
 # TOP_K = 160  # Top 160合约 (与 TOP_RATIO 二选一)
-TOP_RATIO = 0.1  # 选择Top 80%的合约
+TOP_RATIO = 0.1  # 选择Top 10%的合约
 DELAY_DAYS = 7  # 延迟7天
 QUOTE_ASSET = "USDT"  # 只使用USDT永续合约
 
