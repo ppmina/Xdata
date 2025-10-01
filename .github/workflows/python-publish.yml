@@ -22,6 +22,26 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Determine Version
+        id: version
+        run: |
+          if [[ "${GITHUB_REF}" == refs/tags/* ]]; then
+            version="${GITHUB_REF_NAME#v}"
+            tag="${GITHUB_REF_NAME}"
+          else
+            version=$(python - <<'PY'
+              from pathlib import Path
+              import tomllib
+
+              data = tomllib.loads(Path('pyproject.toml').read_text())
+              print(data['project']['version'])
+            PY
+            )
+            tag="v${version}"
+          fi
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
+          echo "tag=${tag}" >> "$GITHUB_OUTPUT"
+
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
@@ -63,8 +83,61 @@ jobs:
           echo "should_publish=$publish" >> "$GITHUB_OUTPUT"
 
       - name: Publish to PyPI
+        id: publish
         if: steps.intent.outputs.should_publish == 'true' && env.PYPI_API_TOKEN != ''
         env:
           TWINE_USERNAME: __token__
           TWINE_PASSWORD: ${{ secrets.PYPI_API_TOKEN }}
         run: twine upload dist/*
+
+      - name: Get Changelog
+        id: changelog
+        if: steps.publish.conclusion == 'success'
+        run: |
+          TAG="${{ steps.version.outputs.tag }}"
+          if [[ ! -f CHANGELOG.md ]]; then
+            printf 'changelog=No changelog available\n' >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          heading="## ${TAG}"
+          content=$(awk -v tag="$heading" '
+            $0 == tag {flag=1; next}
+            /^## / && flag {exit}
+            flag {print}
+          ' CHANGELOG.md)
+
+          if [[ -z "$content" ]]; then
+            content="No changelog available"
+          fi
+
+          # Deduplicate blank lines
+          cleaned=$(printf '%s\n' "$content" | awk 'NF {print; blank=0; next} !blank {print; blank=1}')
+
+          {
+            printf 'changelog<<EOF\n'
+            printf '%s\n' "$cleaned"
+            printf 'EOF\n'
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Send Webhook Notification
+        if: steps.publish.conclusion == 'success' && success()
+        uses: distributhor/workflow-webhook@v3
+        with:
+          webhook_url: ${{ secrets.WEBHOOK_URL }}
+          data: |
+            {
+              "package": "cryptoservice",
+              "version": "${{ steps.version.outputs.version }}",
+              "commit": "${{ github.sha }}",
+              "author": "${{ github.actor }}",
+              "message": "Package published successfully to PyPI",
+              "changelog": ${{ steps.changelog.outputs.changelog != '' && toJSON(steps.changelog.outputs.changelog) || '"No changelog"' }},
+              "features": {
+                "new": ${{ contains(steps.changelog.outputs.changelog, '### Feature') }},
+                "fixes": ${{ contains(steps.changelog.outputs.changelog, '### Fix') }},
+                "breaking": ${{ contains(steps.changelog.outputs.changelog, 'BREAKING CHANGE') }}
+              },
+              "repository": "${{ github.repository }}",
+              "release_url": "https://github.com/${{ github.repository }}/releases/tag/${{ steps.version.outputs.tag }}"
+            }

@@ -76,14 +76,10 @@ mkdocs serve            # 本地文档
 个人维护时推荐手动准备版本，并由 GitHub Actions 负责最终构建/发布：
 
 1. 确保工作区干净并切到 `main` 分支。
-2. 运行 `python3 scripts/prepare_release.py 1.12.0`（替换为目标版本），脚本会同步更新版本号，并依据自上一个标签以来的提交自动生成 `CHANGELOG.md` 段落。
-3. 检查 `CHANGELOG.md` 自动生成的条目，必要时手动调整；随后执行 `pytest` 等自检并提交：`git commit -am "chore: release v1.12.0"`。
-4. 打标签并推送：`git tag v1.12.0 && git push origin main --tags`。
-5. `Release` 工作流会在标签推送后自动运行测试、构建以及（若配置了 `PYPI_API_TOKEN`）上传到 PyPI。
-6. 如需仅验证构建或在未打标签时发布，可在 GitHub Actions 中手动触发 `Release` workflow，并在弹出的参数中选择是否上传到 PyPI。
+2. 运行 `python3 scripts/prepare_release.py 1.12.0 --auto --push`（替换为目标版本），脚本会从 `main` 检出新分支 `release/v1.12.0`，同步更新版本号，生成最新的 `CHANGELOG.md` 段落，执行 `pytest`，提交 `chore: release v1.12.0`、创建 `v1.12.0` 标签，并将分支和标签推送到远端。若只想本地检查，可省略 `--push`；如无需运行测试可加 `--skip-tests`；也可通过 `--base` / `--release-branch` 定制分支名称。
+3. `Release` 工作流会在标签推送后自动运行测试、构建以及（若配置了 `PYPI_API_TOKEN`）上传到 PyPI；也可以在 GitHub Actions 中手动触发该工作流只做验证。
 
-> 若只想更新版本号，可使用 `--skip-changelog` 跳过自动生成的变更记录。
-> 自动识别 `(#123)` 的提交引用并生成对应的 GitHub PR 链接。
+> 若只想更新版本号，可使用 `--skip-changelog` 跳过自动生成的变更记录；`(#123)` 的提交引用会自动转为 GitHub PR 链接。
 
 ## 📚 文档
 
