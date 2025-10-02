@@ -29,7 +29,7 @@ jobs:
             version="${GITHUB_REF_NAME#v}"
             tag="${GITHUB_REF_NAME}"
           else
-            version=$(python -c "from pathlib import Path; import tomllib; data = tomllib.loads(Path('pyproject.toml').read_text()); print(data['project']['version'])")
+            version=$(awk -F '"' '/^version = "/ {print $2; exit}' pyproject.toml)
             tag="v${version}"
           fi
           echo "version=${version}" >> "$GITHUB_OUTPUT"
