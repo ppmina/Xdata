@@ -2,6 +2,19 @@
 
 <!-- next-version -->
 
+## v1.12.1 (2025-10-02)
+
+### Fixes
+
+- fix demo comments
+
+### Chores
+
+- update infra lock
+- update infra
+
+
+
 ## v1.11.1 (2025-10-01)
 
 ### Other Changes
