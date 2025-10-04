@@ -2,6 +2,19 @@
 
 <!-- next-version -->
 
+## v1.13.0 (2025-10-05)
+
+### Features
+
+- add univ_dic2 and speed up lsr oi fr download and some bug fix
+
+### Fixes
+
+- release workflow file format error
+- release workflow file format error
+
+
+
 ## v1.12.1 (2025-10-02)
 
 ### Fixes
