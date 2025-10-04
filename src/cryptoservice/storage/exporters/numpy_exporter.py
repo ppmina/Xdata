@@ -4,6 +4,7 @@
 """
 
 import asyncio
+import json
 import logging
 from pathlib import Path
 from typing import Any
@@ -34,6 +35,7 @@ class NumpyExporter:
         """
         self.kline_query = kline_query
         self.resampler = resampler
+        self._file_lock = asyncio.Lock()  # 添加文件锁以防止并发读写冲突
 
     async def export_klines(
         self,
@@ -159,16 +161,34 @@ class NumpyExporter:
             freq: 数据频率
             date_str: 日期字符串
         """
-        loop = asyncio.get_event_loop()
+        symbols_path = output_path / "univ_dct2.json"
+        symbols_path.parent.mkdir(parents=True, exist_ok=True)
 
-        def save_symbols():
-            symbols_path = output_path / freq.value / "symbols"
-            symbols_path.mkdir(parents=True, exist_ok=True)
+        # 使用锁确保文件读写的线程安全
+        async with self._file_lock:
+            loop = asyncio.get_event_loop()
 
-            symbols = day_data.index.get_level_values("symbol").unique()
-            pd.Series(symbols).to_pickle(symbols_path / f"{date_str}.pkl")
+            def save_symbols():
+                symbols = day_data.index.get_level_values("symbol").unique().tolist()
 
-        await loop.run_in_executor(None, save_symbols)
+                # 读取现有数据（如果文件存在）
+                payload = {}
+                if symbols_path.exists():
+                    try:
+                        with open(symbols_path, encoding="utf-8") as fp:
+                            payload = json.load(fp)
+                    except (json.JSONDecodeError, OSError) as e:
+                        logger.warning(f"无法读取现有symbols文件: {symbols_path}，将创建新文件 (错误: {e})")
+                        payload = {}
+
+                # 添加当前日期的symbols
+                payload[date_str] = symbols
+
+                # 写入文件
+                with open(symbols_path, "w", encoding="utf-8") as fp:
+                    json.dump(payload, fp, ensure_ascii=False, indent=2)
+
+            await loop.run_in_executor(None, save_symbols)
 
     async def _export_single_feature(
         self, day_data: pd.DataFrame, feature: str, output_path: Path, freq: Freq, date_str: str
@@ -199,7 +219,7 @@ class NumpyExporter:
                     array = df_filled.values
 
                 # 创建存储路径
-                save_path = output_path / freq.value / feature
+                save_path = output_path / feature
                 save_path.mkdir(parents=True, exist_ok=True)
 
                 # 保存为npy文件
@@ -316,7 +336,7 @@ class NumpyExporter:
             }
 
         # 保存概要信息
-        summary_path = output_path / freq.value / "summary.json"
+        summary_path = output_path / "summary.json"
         summary_path.parent.mkdir(parents=True, exist_ok=True)
 
         import json

@@ -19,7 +19,7 @@ DB_PATH = "./data/database/market.db"  # 数据库文件路径
 
 # 下载配置
 INTERVAL = Freq.d1  # 数据频率: Freq.m1, Freq.h1, Freq.d1
-MAX_WORKERS = 2  # 最大并发数 (建议1-2，避免API限制)
+MAX_WORKERS = 100  # 最大并发数（Binance API建议1-5，Vision S3下载建议50-150）
 MAX_RETRIES = 3  # 最大重试次数
 RETRY_CONFIG = (
     RetryConfig(
@@ -30,7 +30,7 @@ RETRY_CONFIG = (
         jitter=True,
     ),
 )
-REQUEST_DELAY = 2  # 请求间隔（秒）
+
 
 # 增量下载配置
 INCREMENTAL = True  # 是否启用增量下载模式（只下载缺失的数据）
@@ -90,7 +90,7 @@ async def main():
                 interval=INTERVAL,
                 max_workers=MAX_WORKERS,
                 max_retries=MAX_RETRIES,
-                request_delay=REQUEST_DELAY,
+                retry_config=RETRY_CONFIG,
                 download_market_metrics=DOWNLOAD_MARKET_METRICS,
                 incremental=INCREMENTAL,
                 custom_start_date=CUSTOM_START_DATE,  # 新增：自定义起始日期

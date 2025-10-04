@@ -1,5 +1,6 @@
 """Binance API 客户端工厂，用于创建和管理客户端实例."""
 
+import asyncio
 import logging
 
 from binance import AsyncClient, Client
@@ -106,11 +107,26 @@ class BinanceClientFactory:
         return cls._async_instance
 
     @classmethod
-    async def close_client(cls) -> None:
-        """关闭现有的异步客户端会话."""
+    async def close_client(cls, timeout: float = 5.0) -> None:
+        """关闭现有的异步客户端会话.
+
+        Args:
+            timeout: 关闭连接的超时时间（秒），默认5秒
+        """
         if cls._async_instance:
-            await cls._async_instance.close_connection()
-            cls._async_instance = None
+            try:
+                # 使用超时控制来避免SSL关闭时长时间挂起
+                await asyncio.wait_for(cls._async_instance.close_connection(), timeout=timeout)
+            except TimeoutError:
+                # SSL连接关闭超时是常见的，特别是在使用代理时
+                # 这不影响数据完整性，因为所有操作都已完成
+                logger.debug(f"客户端连接关闭超时({timeout}秒)，这是正常的，可以忽略")
+            except Exception as e:
+                # 捕获其他关闭时的异常，避免影响程序退出
+                # 这些通常是网络清理相关的错误，不影响数据完整性
+                logger.debug(f"关闭客户端连接时出现异常: {type(e).__name__}, 可以安全忽略")
+            finally:
+                cls._async_instance = None
 
         logger.info("[yellow]Binance async client session closed.[/yellow]")
 

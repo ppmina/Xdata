@@ -321,7 +321,7 @@ class MarketDataService:
         max_workers: int = 4,
         max_retries: int = 3,
         retry_config: RetryConfig | None = None,
-        request_delay: float = 0.5,
+        request_delay: float = 0,
         download_market_metrics: bool = True,
         incremental: bool = True,
         custom_start_date: str | None = None,

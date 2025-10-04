@@ -48,10 +48,12 @@ class MetricsDownloader(BaseDownloader):
                 self.db = AsyncMarketDB(db_path)
             await self.db.initialize()
 
-            all_funding_rates = []
+            total_records = 0
             semaphore = asyncio.Semaphore(max_workers)
+            lock = asyncio.Lock()
 
             async def process_symbol(symbol: str):
+                nonlocal total_records
                 async with semaphore:
                     try:
                         logger.debug(f"获取 {symbol} 资金费率")
@@ -61,9 +63,12 @@ class MetricsDownloader(BaseDownloader):
                             end_time=end_time,
                             limit=1000,
                         )
-                        if funding_rates:
-                            all_funding_rates.extend(funding_rates)
-                            logger.debug(f"✅ {symbol}: {len(funding_rates)} 条记录")
+                        if funding_rates and self.db:
+                            # 立即插入数据库
+                            inserted = await self.db.insert_funding_rates(funding_rates)
+                            async with lock:
+                                total_records += inserted
+                            logger.info(f"✅ {symbol}: 下载并存储 {inserted} 条记录")
                     except Exception as e:
                         logger.warning(f"❌ {symbol}: {e}")
                         self._record_failed_download(
@@ -75,12 +80,7 @@ class MetricsDownloader(BaseDownloader):
             tasks = [process_symbol(symbol) for symbol in symbols]
             await asyncio.gather(*tasks)
 
-            # 批量存储
-            if all_funding_rates and self.db:
-                await self.db.insert_funding_rates(all_funding_rates)
-                logger.info(f"✅ 存储了 {len(all_funding_rates)} 条资金费率记录")
-
-            logger.info(f"💰 资金费率数据下载完成: {len(all_funding_rates)} 条记录")
+            logger.info(f"💰 资金费率数据下载完成: 总计 {total_records} 条记录")
 
         except Exception as e:
             logger.error(f"批量下载资金费率失败: {e}")
@@ -104,10 +104,12 @@ class MetricsDownloader(BaseDownloader):
                 self.db = AsyncMarketDB(db_path)
             await self.db.initialize()
 
-            all_open_interests = []
+            total_records = 0
             semaphore = asyncio.Semaphore(max_workers)
+            lock = asyncio.Lock()
 
             async def process_symbol(symbol: str):
+                nonlocal total_records
                 async with semaphore:
                     try:
                         logger.debug(f"获取 {symbol} 持仓量")
@@ -116,11 +118,14 @@ class MetricsDownloader(BaseDownloader):
                             period=interval.value,
                             start_time=start_time,
                             end_time=end_time,
-                            limit=500,
+                            limit=1000,
                         )
-                        if open_interests:
-                            all_open_interests.extend(open_interests)
-                            logger.debug(f"✅ {symbol}: {len(open_interests)} 条记录")
+                        if open_interests and self.db:
+                            # 立即插入数据库
+                            inserted = await self.db.insert_open_interests(open_interests)
+                            async with lock:
+                                total_records += inserted
+                            logger.info(f"✅ {symbol}: 下载并存储 {inserted} 条记录")
                     except Exception as e:
                         logger.warning(f"❌ {symbol}: {e}")
                         self._record_failed_download(
@@ -132,12 +137,7 @@ class MetricsDownloader(BaseDownloader):
             tasks = [process_symbol(symbol) for symbol in symbols]
             await asyncio.gather(*tasks)
 
-            # 批量存储
-            if all_open_interests and self.db:
-                await self.db.insert_open_interests(all_open_interests)
-                logger.info(f"✅ 存储了 {len(all_open_interests)} 条持仓量记录")
-
-            logger.info(f"📊 持仓量数据下载完成: {len(all_open_interests)} 条记录")
+            logger.info(f"📊 持仓量数据下载完成: 总计 {total_records} 条记录")
 
         except Exception as e:
             logger.error(f"批量下载持仓量失败: {e}")
@@ -162,10 +162,12 @@ class MetricsDownloader(BaseDownloader):
                 self.db = AsyncMarketDB(db_path)
             await self.db.initialize()
 
-            all_long_short_ratios = []
+            total_records = 0
             semaphore = asyncio.Semaphore(max_workers)
+            lock = asyncio.Lock()
 
             async def process_symbol(symbol: str):
+                nonlocal total_records
                 async with semaphore:
                     try:
                         logger.debug(f"获取 {symbol} 多空比例")
@@ -177,9 +179,12 @@ class MetricsDownloader(BaseDownloader):
                             end_time=end_time,
                             limit=500,
                         )
-                        if long_short_ratios:
-                            all_long_short_ratios.extend(long_short_ratios)
-                            logger.debug(f"✅ {symbol}: {len(long_short_ratios)} 条记录")
+                        if long_short_ratios and self.db:
+                            # 立即插入数据库
+                            inserted = await self.db.insert_long_short_ratios(long_short_ratios)
+                            async with lock:
+                                total_records += inserted
+                            logger.info(f"✅ {symbol}: 下载并存储 {inserted} 条记录")
                     except Exception as e:
                         logger.warning(f"❌ {symbol}: {e}")
                         self._record_failed_download(
@@ -196,12 +201,7 @@ class MetricsDownloader(BaseDownloader):
             tasks = [process_symbol(symbol) for symbol in symbols]
             await asyncio.gather(*tasks)
 
-            # 批量存储
-            if all_long_short_ratios and self.db:
-                await self.db.insert_long_short_ratios(all_long_short_ratios)
-                logger.info(f"✅ 存储了 {len(all_long_short_ratios)} 条多空比例记录")
-
-            logger.info(f"📊 多空比例数据下载完成: {len(all_long_short_ratios)} 条记录")
+            logger.info(f"📊 多空比例数据下载完成: 总计 {total_records} 条记录")
 
         except Exception as e:
             logger.error(f"批量下载多空比例失败: {e}")
@@ -242,7 +242,7 @@ class MetricsDownloader(BaseDownloader):
         period: str = "5m",
         start_time: str | None = None,
         end_time: str | None = None,
-        limit: int = 500,
+        limit: int = 1000,
     ) -> list[OpenInterest]:
         """异步下载单个交易对的持仓量数据."""
         try:

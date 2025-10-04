@@ -28,7 +28,7 @@ DOWNLOAD_CATEGORIES = True  # 下载分类数据
 
 # 自定义时间范围（可选）
 CUSTOM_START_DATE = "2024-10-01"
-CUSTOM_END_DATE = "2024-10-02"
+CUSTOM_END_DATE = "2024-10-31"
 
 # 字段名映射：长字段名 -> 缩写形式
 FIELD_MAPPING = {
@@ -49,6 +49,13 @@ FIELD_MAPPING = {
     "open_interest": "oi",
     # 多空比例只导出taker类型（Vision数据最完整的类型）
     "long_short_ratio": "lsr",
+}
+
+FREQ_MAPPING = {
+    "1d": "D1B",
+    "1h": "H1B",
+    "1m": "M1B",
+    "5m": "M5B",
 }
 
 
@@ -235,11 +242,8 @@ async def export_combined_data(db: Database, symbols: list[str], start_date: str
             print("      ⚠️ 没有数据可导出")
             return False
 
-        # 注意：数据已经在各自的处理函数中重采样到日级别，这里不再进行二次重采样
-        export_freq = DATA_FREQ
-
         # 使用numpy_exporter的内部方法直接导出
-        await db.numpy_exporter._export_by_dates(combined_df, output_path, export_freq)
+        await db.numpy_exporter._export_by_dates(combined_df, output_path, EXPORT_FREQ)
 
         print(f"      ✅ 数据导出完成: {len(combined_df.columns)} 个特征，{len(combined_df)} 条记录")
         return True
@@ -279,7 +283,7 @@ def create_output_path(universe_config, start_date: str, end_date: str) -> Path:
     else:
         dir_name = f"univ_{config.t1_months}_{config.t2_months}_{config.t3_months}_{top_value}"
 
-    return Path(EXPORT_BASE_PATH) / dir_name
+    return Path(EXPORT_BASE_PATH) / FREQ_MAPPING[EXPORT_FREQ.value] / dir_name
 
 
 def show_export_summary(output_path: Path):

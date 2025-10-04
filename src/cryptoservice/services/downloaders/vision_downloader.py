@@ -6,6 +6,7 @@
 import asyncio
 import csv
 import logging
+import time
 import zipfile
 from datetime import datetime
 from decimal import Decimal
@@ -40,7 +41,18 @@ class VisionDownloader(BaseDownloader):
         self.base_url = "https://data.binance.vision/data/futures/um/daily/metrics"
         self._session: aiohttp.ClientSession | None = None
         self._session_lock: asyncio.Lock | None = None
-        self._client_timeout = ClientTimeout(total=30)
+        self._client_timeout = ClientTimeout(total=60, connect=10)
+
+        # 性能统计
+        self._perf_stats = {
+            "download_time": 0.0,
+            "parse_time": 0.0,
+            "db_time": 0.0,
+            "download_count": 0,
+            "concurrent_count": 0,
+            "max_concurrent": 0,
+        }
+        self._concurrent_lock = asyncio.Lock()
 
     async def download_metrics_batch(
         self,
@@ -49,14 +61,34 @@ class VisionDownloader(BaseDownloader):
         end_date: str,
         db_path: str,
         data_types: list[str] | None = None,
-        request_delay: float = 1.0,
-        max_workers: int = 5,
+        request_delay: float = 0,
+        max_workers: int = 100,
     ) -> None:
-        """批量异步下载指标数据."""
+        """批量异步下载指标数据.
+
+        Args:
+            symbols: 交易对列表
+            start_date: 起始日期 (YYYY-MM-DD)
+            end_date: 结束日期 (YYYY-MM-DD)
+            db_path: 数据库路径
+            data_types: 数据类型列表（默认包含openInterest和longShortRatio）
+            request_delay: 请求之间的延迟（秒），0表示无延迟
+            max_workers: 最大并发下载数，默认100（Vision S3下载可以高并发）
+        """
         if data_types is None:
             data_types = ["openInterest", "longShortRatio"]
 
         try:
+            # 重置统计
+            self._perf_stats = {
+                "download_time": 0.0,
+                "parse_time": 0.0,
+                "db_time": 0.0,
+                "download_count": 0,
+                "concurrent_count": 0,
+                "max_concurrent": 0,
+            }
+
             logger.info(f"开始从 Binance Vision 下载指标数据: {data_types}")
 
             if self.db is None:
@@ -78,8 +110,35 @@ class VisionDownloader(BaseDownloader):
                     )
                     tasks.append(task)
 
+            total_tasks = len(tasks)
+            logger.info(f"📦 创建了 {total_tasks} 个下载任务，最大并发数: {max_workers}")
+            logger.info("💡 使用 asyncio 协程并发（不受 CPU 核心数限制）")
+
+            start_time = time.time()
             await asyncio.gather(*tasks)
+
+            elapsed = time.time() - start_time
             logger.info("✅ Binance Vision 指标数据下载完成")
+            logger.info("📊 性能统计:")
+            logger.info(f"   - 总耗时: {elapsed:.2f}秒")
+            logger.info(f"   - 下载任务: {self._perf_stats['download_count']}")
+            logger.info(f"   - 最大并发数: {self._perf_stats['max_concurrent']}")
+
+            dl_time = self._perf_stats["download_time"]
+            dl_pct = dl_time / elapsed * 100 if elapsed > 0 else 0
+            logger.info(f"   - 下载时间: {dl_time:.2f}秒 ({dl_pct:.1f}%)")
+
+            parse_time = self._perf_stats["parse_time"]
+            parse_pct = parse_time / elapsed * 100 if elapsed > 0 else 0
+            logger.info(f"   - 解析时间: {parse_time:.2f}秒 ({parse_pct:.1f}%)")
+
+            db_time = self._perf_stats["db_time"]
+            db_pct = db_time / elapsed * 100 if elapsed > 0 else 0
+            logger.info(f"   - 数据库时间: {db_time:.2f}秒 ({db_pct:.1f}%)")
+
+            if self._perf_stats["download_count"] > 0:
+                avg_per_task = elapsed / self._perf_stats["download_count"]
+                logger.info(f"   - 平均每任务: {avg_per_task:.3f}秒")
 
         except Exception as e:
             logger.error(f"从 Binance Vision 下载指标数据失败: {e}")
@@ -96,14 +155,30 @@ class VisionDownloader(BaseDownloader):
     ) -> None:
         """下载并处理单个交易对在特定日期的数据."""
         async with semaphore:
+            # 记录并发数
+            async with self._concurrent_lock:
+                self._perf_stats["concurrent_count"] += 1
+                current = self._perf_stats["concurrent_count"]
+                if current > self._perf_stats["max_concurrent"]:
+                    self._perf_stats["max_concurrent"] = current
+                    if current % 10 == 0:  # 每10个并发打印一次
+                        logger.info(f"🚀 当前并发: {current}")
+
             try:
                 url = f"{self.base_url}/{symbol}/{symbol}-metrics-{date_str}.zip"
-                logger.debug(f"下载 {symbol} 指标数据: {url}")
+                logger.debug(f"⬇️  下载 {symbol} {date_str} 指标数据")
 
-                retry_config = RetryConfig(max_retries=3, base_delay=2.0)
+                retry_config = RetryConfig(max_retries=3, base_delay=0)
+
+                # 计时：下载
+                dl_start = time.time()
                 metrics_data = await self._download_and_parse_metrics_csv(url, symbol, retry_config)
+                self._perf_stats["download_time"] += time.time() - dl_start
 
                 if metrics_data and self.db:
+                    # 计时：数据库插入
+                    db_start = time.time()
+
                     if metrics_data.get("open_interest"):
                         await self.db.insert_open_interests(metrics_data["open_interest"])
                         logger.info(f"✅ {symbol}: 存储了 {date_str} {len(metrics_data['open_interest'])} 条持仓量记录")
@@ -112,14 +187,22 @@ class VisionDownloader(BaseDownloader):
                         logger.info(
                             f"✅ {symbol}: 存储了 {date_str} {len(metrics_data['long_short_ratio'])} 条多空比例记录"
                         )
+
+                    self._perf_stats["db_time"] += time.time() - db_start
                 else:
                     logger.warning(f"⚠️ {symbol} on {date_str}: 无法获取指标数据")
+
+                self._perf_stats["download_count"] += 1
 
             except Exception as e:
                 logger.warning(f"下载 {symbol} on {date_str} 指标数据失败: {e}")
                 self._record_failed_download(symbol, str(e), {"url": url, "date": date_str, "data_type": "metrics"})
 
             finally:
+                # 减少并发计数
+                async with self._concurrent_lock:
+                    self._perf_stats["concurrent_count"] -= 1
+
                 if request_delay > 0:
                     await asyncio.sleep(request_delay)
 
@@ -131,21 +214,31 @@ class VisionDownloader(BaseDownloader):
     ) -> dict[str, list] | None:
         """使用aiohttp下载并解析指标CSV数据."""
         if retry_config is None:
-            retry_config = RetryConfig(max_retries=3, base_delay=2.0)
+            retry_config = RetryConfig(max_retries=3, base_delay=0)
 
-        async def request_func():
-            session = await self._get_session()
+        # 直接下载，不使用速率限制器（Vision是S3静态文件）
+        session = await self._get_session()
+
+        for attempt in range(retry_config.max_retries + 1):
             try:
                 async with session.get(url) as response:
                     response.raise_for_status()
-                    return await response.read()
+                    zip_content = await response.read()
+                    break
             except ClientConnectionError:
                 await self._reset_session()
-                raise
+                if attempt == retry_config.max_retries:
+                    raise
+                session = await self._get_session()
+                await asyncio.sleep(retry_config.base_delay * (2**attempt))
+            except Exception:
+                if attempt == retry_config.max_retries:
+                    raise
+                await asyncio.sleep(retry_config.base_delay * (2**attempt))
 
         try:
-            zip_content = await self._handle_async_request_with_retry(request_func, retry_config=retry_config)
-
+            # 计时：解析
+            parse_start = time.time()
             with zipfile.ZipFile(BytesIO(zip_content)) as zip_file:
                 csv_files = [f for f in zip_file.namelist() if f.endswith(".csv")]
 
@@ -179,6 +272,10 @@ class VisionDownloader(BaseDownloader):
                     except Exception as e:
                         logger.warning(f"解析CSV文件 {csv_file} 时出错: {e}")
                         continue
+
+                # 记录解析时间
+                self._perf_stats["parse_time"] += time.time() - parse_start
+
                 return result if result["open_interest"] or result["long_short_ratio"] else None
         except Exception as e:
             logger.error(f"下载和解析指标数据失败 {symbol}: {e}")
@@ -192,14 +289,16 @@ class VisionDownloader(BaseDownloader):
         async with self._session_lock:
             if self._session is None or self._session.closed:
                 connector = aiohttp.TCPConnector(
-                    limit=20,
+                    limit=200,  # 增加TCP连接池以支持更高并发
+                    limit_per_host=100,  # 每个主机的连接数限制
                     ttl_dns_cache=300,
                     enable_cleanup_closed=True,
-                    keepalive_timeout=30,
+                    force_close=True,  # 强制关闭连接，避免SSL超时（与keepalive互斥）
                 )
                 self._session = aiohttp.ClientSession(
                     timeout=self._client_timeout,
                     connector=connector,
+                    connector_owner=True,
                     trust_env=True,
                 )
 
@@ -212,7 +311,10 @@ class VisionDownloader(BaseDownloader):
 
         if session and not session.closed:
             try:
-                await session.close()
+                # 使用较短的超时关闭会话，避免长时间等待
+                await asyncio.wait_for(session.close(), timeout=5.0)
+            except TimeoutError:
+                logger.debug("关闭aiohttp会话超时，强制关闭")
             except ClientConnectionError as exc:
                 logger.debug(f"关闭aiohttp会话时出现SSL问题: {exc}")
             except Exception as exc:  # noqa: BLE001
