@@ -18,7 +18,7 @@ UNIVERSE_FILE = "./data/universe.json"  # Universe定义文件
 DB_PATH = "./data/database/market.db"  # 数据库文件路径
 
 # 下载配置
-INTERVAL = Freq.d1  # 数据频率: Freq.m1, Freq.h1, Freq.d1
+INTERVAL = Freq.h1  # 数据频率: Freq.m1, Freq.h1, Freq.d1
 MAX_WORKERS = 100  # 最大并发数（Binance API建议1-5，Vision S3下载建议50-150）
 MAX_RETRIES = 3  # 最大重试次数
 RETRY_CONFIG = (

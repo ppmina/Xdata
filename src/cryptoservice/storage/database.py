@@ -56,7 +56,7 @@ class Database:
         self.resampler = DataResampler()
 
         # 导出器
-        self.numpy_exporter = NumpyExporter(self.kline_query, self.resampler)
+        self.numpy_exporter = NumpyExporter(self.kline_query, self.resampler, self.metrics_query)
         self.csv_exporter = CsvExporter(self.kline_query)
         self.parquet_exporter = ParquetExporter(self.kline_query)
 
