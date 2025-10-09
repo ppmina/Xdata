@@ -72,7 +72,7 @@ def test_market_ticker_from_kline() -> None:
         "50.0",  # taker_buy_volume
         "2500000.0",  # taker_buy_quote_volume
     ]
-    ticker = KlineMarketTicker.from_binance_kline(kline_data)
+    ticker = KlineMarketTicker.from_binance_kline("BTCUSDT", kline_data)
     assert ticker.symbol == "BTCUSDT"
     assert ticker.last_price == Decimal("50000.0")
     assert ticker.high_price == Decimal("51000.0")
