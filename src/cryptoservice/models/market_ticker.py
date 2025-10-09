@@ -2,7 +2,7 @@
 
 from dataclasses import dataclass
 from decimal import Decimal
-from typing import Any
+from typing import Any, cast
 
 
 @dataclass
@@ -129,7 +129,6 @@ class KlineMarketTicker(BaseMarketTicker):
 
     Attributes:
         symbol: 交易对
-        last_price: 最新价格（等同于收盘价）
         open_time: 开盘时间（毫秒时间戳）
         open_price: 开盘价
         high_price: 最高价
@@ -198,7 +197,7 @@ class SpotKlineTicker(KlineMarketTicker):
     @classmethod
     def from_binance_kline(cls, symbol: str, kline_data: list) -> "SpotKlineTicker":
         """从Binance API响应创建SpotKlineTicker实例."""
-        return cls.from_binance_kline(symbol, kline_data)
+        return cast("SpotKlineTicker", super().from_binance_kline(symbol, kline_data))
 
 
 @dataclass
@@ -212,7 +211,7 @@ class FuturesKlineTicker(KlineMarketTicker):
     @classmethod
     def from_binance_kline(cls, symbol: str, kline_data: list) -> "FuturesKlineTicker":
         """从Binance API响应创建FuturesKlineTicker实例."""
-        return cls.from_binance_kline(symbol, kline_data)
+        return cast("FuturesKlineTicker", super().from_binance_kline(symbol, kline_data))
 
 
 class KlineIndex:
