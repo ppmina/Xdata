@@ -53,14 +53,12 @@ class IncrementalManager:
         logger.info(f"制定K线增量下载计划: {len(symbols)} 个交易对, {start_date} - {end_date}, {freq.value}")
 
         plan = {}
-        full_timestamps = self._generate_timestamp_range(start_date, end_date, freq)
 
-        if not full_timestamps:
-            logger.warning("生成的时间戳范围为空")
-            return {}
-
-        start_ts = full_timestamps[0]
-        end_ts = full_timestamps[-1]
+        # 转换日期为时间戳（只转换一次边界值）
+        # 使用 UTC 时区以保持与下载逻辑的一致性
+        start_ts = int(pd.Timestamp(start_date + " 00:00:00", tz="UTC").timestamp() * 1000)
+        # 结束时间设为第二天的00:00:00，以包含整个 end_date 当天
+        end_ts = int((pd.Timestamp(end_date, tz="UTC") + pd.Timedelta(days=1)).timestamp() * 1000)
 
         # 为每个交易对检查缺失数据
         for symbol in symbols:
@@ -70,7 +68,7 @@ class IncrementalManager:
                     plan[symbol] = missing_timestamps
                     logger.debug(f"{symbol}: 发现 {len(missing_timestamps)} 个缺失时间戳")
                 else:
-                    logger.debug(f"{symbol}: 数据完整")
+                    logger.info(f"{symbol}: 数据完整")
 
             except Exception as e:
                 logger.error(f"检查 {symbol} 缺失数据时出错: {e}")
@@ -104,9 +102,9 @@ class IncrementalManager:
 
         plan = {}
 
-        # 转换日期为时间戳
-        start_ts = int(pd.Timestamp(start_date).timestamp() * 1000)
-        end_ts = int(pd.Timestamp(end_date).timestamp() * 1000)
+        # 转换日期为时间戳（使用 UTC 时区）
+        start_ts = int(pd.Timestamp(start_date, tz="UTC").timestamp() * 1000)
+        end_ts = int(pd.Timestamp(end_date, tz="UTC").timestamp() * 1000)
 
         # 为每个交易对检查缺失数据
         for symbol in symbols:
@@ -143,7 +141,7 @@ class IncrementalManager:
         """
         logger.info(f"生成K线数据覆盖率报告: {len(symbols)} 个交易对")
 
-        total_expected = len(self._generate_timestamp_range(start_date, end_date, freq))
+        total_expected = self._count_expected_records(start_date, end_date, freq)
         if total_expected == 0:
             return {"error": "时间范围无效"}
 
@@ -255,8 +253,8 @@ class IncrementalManager:
         logger.info(f"{symbol} 数据间隙分析完成: 发现 {len(gaps)} 个间隙")
         return gaps
 
-    def _generate_timestamp_range(self, start_date: str, end_date: str, freq: Freq) -> list[int]:
-        """生成完整的时间戳范围.
+    def _count_expected_records(self, start_date: str, end_date: str, freq: Freq) -> int:
+        """计算预期的记录数量（不生成完整列表，性能更好）.
 
         Args:
             start_date: 开始日期 (YYYY-MM-DD)
@@ -264,7 +262,7 @@ class IncrementalManager:
             freq: 数据频率
 
         Returns:
-            时间戳列表（毫秒）
+            预期的记录数量
         """
         freq_map = {
             Freq.m1: "1min",
@@ -286,31 +284,19 @@ class IncrementalManager:
         pandas_freq = freq_map.get(freq, "1h")
 
         try:
-            # 处理同一天的情况
-            if start_date == end_date:
-                # 单日范围，从当天00:00:00到第二天00:00:00（不包含）
-                time_range = pd.date_range(
-                    start=start_date + " 00:00:00",
-                    end=pd.Timestamp(end_date) + pd.Timedelta(days=1),
-                    freq=pandas_freq,
-                    inclusive="left",  # 不包含结束时间
-                )
-            else:
-                # 多日范围
-                time_range = pd.date_range(
-                    start=start_date,
-                    end=pd.Timestamp(end_date) + pd.Timedelta(days=1),
-                    freq=pandas_freq,
-                    inclusive="left",  # 不包含结束时间
-                )
-
-            # 转换为毫秒时间戳
-            timestamps = [int(ts.timestamp() * 1000) for ts in time_range]
-            return timestamps
+            # 生成时间范围但只计算数量（使用 UTC 时区）
+            time_range = pd.date_range(
+                start=start_date + " 00:00:00",
+                end=pd.Timestamp(end_date, tz="UTC") + pd.Timedelta(days=1),
+                freq=pandas_freq,
+                inclusive="left",  # 不包含结束时间
+                tz="UTC",
+            )
+            return len(time_range)
 
         except Exception as e:
-            logger.error(f"生成时间戳范围失败: {e}")
-            return []
+            logger.error(f"计算预期记录数量失败: {e}")
+            return 0
 
     def _get_freq_milliseconds(self, freq: Freq) -> int:
         """获取频率对应的毫秒数.
@@ -368,7 +354,7 @@ class IncrementalManager:
                     )
                 else:
                     # 计算覆盖率
-                    expected_records = len(self._generate_timestamp_range(start_date, end_date, freq))
+                    expected_records = self._count_expected_records(start_date, end_date, freq)
                     actual_records = time_range["record_count"]
                     coverage = (actual_records / expected_records) * 100 if expected_records > 0 else 0
 

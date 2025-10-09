@@ -92,6 +92,24 @@ python demo/query_database.py BTCUSDT ETHUSDT
 - 自动重连机制
 - 实时K线数据流
 
+### 🔄 iterator_examples.py
+**功能**: 展示Database类的异步迭代器使用方法
+
+**主要特性**:
+- `iter_symbols()`: 迭代所有交易对符号
+- `iter_klines_by_symbol()`: 按交易对迭代K线数据
+- `iter_klines_chunked()`: 分块迭代大量数据，避免内存溢出
+
+**使用场景**:
+- 批量处理大量交易对数据
+- 流式处理数据，适合内存受限环境
+- 实时数据分析和转换
+
+**运行示例**:
+```bash
+python demo/iterator_examples.py
+```
+
 ## 文件结构 / File Structure
 
 ```
@@ -101,7 +119,9 @@ demo/
 ├── download_data.py       # 下载历史数据
 ├── export_data.py         # 导出数据文件
 ├── query_database.py      # 查询数据库
-└── websocket.py          # WebSocket演示
+├── iterator_examples.py   # 异步迭代器示例
+├── websocket.py          # WebSocket演示
+└── readNpy.ipynb         # Jupyter notebook示例
 
 data/                      # 数据目录 (自动创建)
 ├── universe.json         # 宇宙定义文件

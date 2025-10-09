@@ -101,7 +101,7 @@ class UniverseSnapshot:
 
     @staticmethod
     def _calculate_timestamp(date_str: str, time_str: str = "00:00:00") -> str:
-        """计算日期的时间戳（毫秒）.
+        """计算日期时间的时间戳（毫秒）.
 
         Args:
             date_str: 日期字符串 (YYYY-MM-DD)
@@ -110,9 +110,27 @@ class UniverseSnapshot:
         Returns:
             str: 毫秒时间戳
         """
-        from datetime import datetime
+        from cryptoservice.utils import date_to_timestamp_start, datetime_str_to_timestamp
 
-        return str(int(datetime.strptime(f"{date_str} {time_str}", "%Y-%m-%d %H:%M:%S").timestamp() * 1000))
+        if time_str == "00:00:00":
+            return str(date_to_timestamp_start(date_str))
+        return str(datetime_str_to_timestamp(f"{date_str} {time_str}"))
+
+    @staticmethod
+    def _calculate_end_timestamp(date_str: str) -> str:
+        """计算日期结束时间戳（次日00:00:00的毫秒时间戳）.
+
+        使用次日 00:00:00 而不是当天 23:59:59，确保与下载逻辑一致。
+
+        Args:
+            date_str: 日期字符串 (YYYY-MM-DD)
+
+        Returns:
+            str: 次日00:00:00的毫秒时间戳
+        """
+        from cryptoservice.utils import date_to_timestamp_end
+
+        return str(date_to_timestamp_end(date_str))
 
     @classmethod
     def create_with_inferred_periods(
@@ -164,9 +182,9 @@ class UniverseSnapshot:
         usage_end_str = usage_end_dt.strftime("%Y-%m-%d")
 
         calculated_t1_start_ts = cls._calculate_timestamp(calculated_t1_start_str, "00:00:00")
-        calculated_t1_end_ts = cls._calculate_timestamp(effective_date, "23:59:59")
+        calculated_t1_end_ts = cls._calculate_end_timestamp(effective_date)
         start_date_ts = cls._calculate_timestamp(usage_start_str, "00:00:00")
-        end_date_ts = cls._calculate_timestamp(usage_end_str, "23:59:59")
+        end_date_ts = cls._calculate_end_timestamp(usage_end_str)
 
         return cls(
             effective_date=effective_date,  # 重平衡生效日期
@@ -210,9 +228,9 @@ class UniverseSnapshot:
         """
         # 计算所有时间戳（毫秒）
         calculated_t1_start_ts = cls._calculate_timestamp(calculated_t1_start, "00:00:00")
-        calculated_t1_end_ts = cls._calculate_timestamp(calculated_t1_end, "23:59:59")
+        calculated_t1_end_ts = cls._calculate_end_timestamp(calculated_t1_end)
         start_date_ts = cls._calculate_timestamp(usage_t1_start, "00:00:00")
-        end_date_ts = cls._calculate_timestamp(usage_t1_end, "23:59:59")
+        end_date_ts = cls._calculate_end_timestamp(usage_t1_end)
 
         return cls(
             effective_date=calculated_t1_end,  # 重平衡生效日期（计算周期结束日期）
@@ -387,7 +405,7 @@ class UniverseDefinition:
             if start_date_ts is None:
                 start_date_ts = UniverseSnapshot._calculate_timestamp(start_date, "00:00:00")
             if end_date_ts is None:
-                end_date_ts = UniverseSnapshot._calculate_timestamp(end_date, "23:59:59")
+                end_date_ts = UniverseSnapshot._calculate_end_timestamp(end_date)
 
             snapshot = UniverseSnapshot(
                 effective_date=snap["effective_date"],

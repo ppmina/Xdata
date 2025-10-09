@@ -1,10 +1,7 @@
-"""工具模块，用于提供时间函数、样例时间生成和日志设置等工具."""
+"""工具模块，用于提供时间函数、样例时间生成等工具."""
 
-import logging
 import time
 from datetime import datetime, timedelta
-
-from rich.logging import RichHandler
 
 from cryptoservice.models.enums import Freq
 
@@ -65,12 +62,6 @@ class Tool:
             case Freq.d1:
                 return ["24:00:00.000000"]
         return []
-
-
-def setup_logging(level: int = logging.INFO) -> None:
-    """设置日志配置."""
-    logging.basicConfig(level=level, format="%(message)s", handlers=[RichHandler(rich_tracebacks=True)])
-    return None
 
 
 if __name__ == "__main__":

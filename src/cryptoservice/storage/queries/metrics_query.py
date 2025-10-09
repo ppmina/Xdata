@@ -317,11 +317,11 @@ class MetricsQuery:
         if not table_name:
             raise ValueError(f"不支持的数据类型: {data_type}")
 
-        # 生成完整的时间戳范围（基于间隔）
-        start_dt = pd.Timestamp(start_ts, unit="ms")
-        end_dt = pd.Timestamp(end_ts, unit="ms")
+        # 生成完整的时间戳范围（基于间隔，使用 UTC 时区）
+        start_dt = pd.Timestamp(start_ts, unit="ms", tz="UTC")
+        end_dt = pd.Timestamp(end_ts, unit="ms", tz="UTC")
 
-        time_range = pd.date_range(start=start_dt, end=end_dt, freq=f"{interval_hours}h", inclusive="left")
+        time_range = pd.date_range(start=start_dt, end=end_dt, freq=f"{interval_hours}h", inclusive="left", tz="UTC")
         full_timestamps = {int(ts.timestamp() * 1000) for ts in time_range}
 
         # 查询现有的时间戳

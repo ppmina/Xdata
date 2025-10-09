@@ -1,21 +1,14 @@
 """Binance API 客户端工厂，用于创建和管理客户端实例."""
 
 import asyncio
-import logging
 
 from binance import AsyncClient, Client
-from rich.logging import RichHandler
 
-from cryptoservice.config import settings
+from cryptoservice.config import get_logger, settings
 from cryptoservice.exceptions import MarketDataError
 
-# 设置 rich logger
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(message)s",
-    handlers=[RichHandler(rich_tracebacks=True)],
-)
-logger = logging.getLogger(__name__)
+# 使用统一的日志配置
+logger = get_logger(__name__)
 
 
 class BinanceClientFactory:

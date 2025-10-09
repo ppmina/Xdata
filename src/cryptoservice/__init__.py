@@ -1,6 +1,6 @@
 """Cryptocurrency trading bot package."""
 
-__version__ = "1.13.1"
+__version__ = "1.14.0"
 __author__ = "Minnn"
 
 # 可以在这里导出常用的模块，使得用户可以直接从包根导入
@@ -9,6 +9,7 @@ import decimal
 import sqlite3
 
 from .client import BinanceClientFactory
+from .config import Environment, LogLevel, get_logger, setup_logging
 from .services import MarketDataService
 from .storage import AsyncMarketDB
 
@@ -25,4 +26,8 @@ __all__ = [
     "BinanceClientFactory",
     "MarketDataService",
     "AsyncMarketDB",
+    "setup_logging",
+    "get_logger",
+    "LogLevel",
+    "Environment",
 ]

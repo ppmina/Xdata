@@ -7,14 +7,26 @@ import os
 from pathlib import Path
 from typing import Any
 
-from pydantic_settings import BaseSettings
+from pydantic import Field
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # 项目根目录
 ROOT_DIR = Path(__file__).parent.parent.parent.parent
 
 
 class Settings(BaseSettings):
-    """应用配置类."""
+    """应用配置类.
+
+    所有配置项都会自动从环境变量读取，环境变量名与字段名相同。
+    例如：LOG_LEVEL 环境变量对应 log_level 字段。
+    """
+
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        extra="allow",  # 允许额外的字段
+        case_sensitive=False,  # 环境变量不区分大小写
+    )
 
     # API 配置
     API_RATE_LIMIT: int = 1200
@@ -39,8 +51,30 @@ class Settings(BaseSettings):
     # 缓存配置
     CACHE_TTL: int = 60  # 缓存过期时间（秒）
 
+    # 日志配置（自动从环境变量读取）
+    LOG_LEVEL: str = Field(
+        default="INFO",
+        description="日志级别: DEBUG, INFO, WARNING, ERROR, CRITICAL",
+    )
+    LOG_ENVIRONMENT: str = Field(
+        default="development",
+        description="运行环境: development, production, test",
+    )
+    LOG_FILE: str = Field(
+        default="",
+        description="日志文件路径（生产环境建议配置）",
+    )
+    LOG_ENABLE_RICH: bool = Field(
+        default=True,
+        description="是否启用Rich格式化（开发环境推荐）",
+    )
+
     def get_proxy_config(self) -> dict[str, str]:
-        """获取代理配置."""
+        """获取代理配置.
+
+        Returns:
+            代理配置字典，包含 http 和 https 代理
+        """
         proxies = {}
 
         # 优先使用配置中的值，然后使用环境变量
@@ -53,13 +87,6 @@ class Settings(BaseSettings):
             proxies["https"] = https_proxy
 
         return proxies
-
-    class Config:
-        """基本配置."""
-
-        env_file = ".env"
-        env_file_encoding = "utf-8"
-        extra = "allow"  # 允许额外的字段
 
 
 # 创建全局设置实例

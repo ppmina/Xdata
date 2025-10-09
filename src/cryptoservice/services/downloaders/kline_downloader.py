@@ -6,7 +6,6 @@
 import asyncio
 import logging
 from collections.abc import AsyncGenerator
-from datetime import datetime
 from pathlib import Path
 
 from binance import AsyncClient
@@ -328,14 +327,16 @@ class KlineDownloader(BaseDownloader):
         return valid_data
 
     def _date_to_timestamp_start(self, date: str) -> str:
-        """将日期字符串转换为当天开始的时间戳."""
-        timestamp = int(datetime.strptime(f"{date} 00:00:00", "%Y-%m-%d %H:%M:%S").timestamp() * 1000)
-        return str(timestamp)
+        """将日期字符串转换为当天开始的时间戳（UTC）."""
+        from cryptoservice.utils import date_to_timestamp_start
+
+        return str(date_to_timestamp_start(date))
 
     def _date_to_timestamp_end(self, date: str) -> str:
-        """将日期字符串转换为当天结束的时间戳."""
-        timestamp = int(datetime.strptime(f"{date} 23:59:59", "%Y-%m-%d %H:%M:%S").timestamp() * 1000)
-        return str(timestamp)
+        """将日期字符串转换为次日开始的时间戳（UTC）."""
+        from cryptoservice.utils import date_to_timestamp_end
+
+        return str(date_to_timestamp_end(date))
 
     def _generate_recommendations(self, successful_symbols: list[str], failed_symbols: list[str]) -> list[str]:
         """生成建议."""

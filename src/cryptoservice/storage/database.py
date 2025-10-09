@@ -490,3 +490,75 @@ class Database:
     def is_initialized(self) -> bool:
         """检查是否已初始化."""
         return self._initialized
+
+    # === 异步迭代器 ===
+    async def iter_symbols(self, freq: Freq):
+        """迭代所有交易对.
+
+        Args:
+            freq: 数据频率过滤，None表示所有频率
+
+        Yields:
+            每个交易对符号
+        """
+        symbols = await self.get_symbols(freq)
+        for symbol in symbols:
+            yield symbol
+
+    async def iter_klines_by_symbol(
+        self, symbols: list[str], start_time: str, end_time: str, freq: Freq, columns: list[str] | None = None
+    ):
+        """按交易对迭代K线数据.
+
+        每次迭代返回一个交易对的所有K线数据。
+
+        Args:
+            symbols: 交易对列表
+            start_time: 开始时间
+            end_time: 结束时间
+            freq: 数据频率
+            columns: 需要查询的列
+
+        Yields:
+            (symbol, dataframe) 元组
+        """
+        if not self._initialized:
+            await self.initialize()
+
+        for symbol in symbols:
+            df = await self.kline_query.select_by_time_range([symbol], start_time, end_time, freq, columns)
+            yield symbol, df
+
+    async def iter_klines_chunked(
+        self,
+        symbols: list[str],
+        start_time: str,
+        end_time: str,
+        freq: Freq,
+        chunk_size: int = 10000,
+        columns: list[str] | None = None,
+    ):
+        """分块迭代K线数据.
+
+        适用于大量数据的场景，避免一次性加载所有数据到内存。
+
+        Args:
+            symbols: 交易对列表
+            start_time: 开始时间
+            end_time: 结束时间
+            freq: 数据频率
+            chunk_size: 每块的行数
+            columns: 需要查询的列
+
+        Yields:
+            DataFrame 数据块
+        """
+        if not self._initialized:
+            await self.initialize()
+
+        # 查询所有数据
+        df = await self.kline_query.select_by_time_range(symbols, start_time, end_time, freq, columns)
+
+        # 分块返回
+        for i in range(0, len(df), chunk_size):
+            yield df.iloc[i : i + chunk_size]
