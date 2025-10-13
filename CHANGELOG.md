@@ -2,6 +2,24 @@
 
 <!-- next-version -->
 
+## v1.14.1 (2025-10-13)
+
+### Features
+
+- new timestampe file and new resampler
+- add univ_dic2 and speed up lsr oi fr download and some bug fix
+
+### Fixes
+
+- release workflow file format error
+- release workflow file format error
+
+### Other Changes
+
+- Release/v1.14.0 ([#19](https://github.com/ppmina/Xdata/pull/19))
+
+
+
 ## v1.14.0 (2025-10-09)
 
 ### Fixes
