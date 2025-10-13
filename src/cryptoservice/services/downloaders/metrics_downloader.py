@@ -5,7 +5,6 @@
 
 import asyncio
 import logging
-from datetime import datetime
 
 from binance import AsyncClient
 
@@ -309,14 +308,16 @@ class MetricsDownloader(BaseDownloader):
             raise MarketDataFetchError(f"获取多空比例失败: {e}") from e
 
     def _date_to_timestamp_start(self, date: str) -> str:
-        """将日期字符串转换为当天开始的时间戳."""
-        timestamp = int(datetime.strptime(f"{date} 00:00:00", "%Y-%m-%d %H:%M:%S").timestamp() * 1000)
-        return str(timestamp)
+        """将日期字符串转换为当天开始的时间戳（UTC）."""
+        from cryptoservice.utils import date_to_timestamp_start
+
+        return str(date_to_timestamp_start(date))
 
     def _date_to_timestamp_end(self, date: str) -> str:
-        """将日期字符串转换为当天结束的时间戳."""
-        timestamp = int(datetime.strptime(f"{date} 23:59:59", "%Y-%m-%d %H:%M:%S").timestamp() * 1000)
-        return str(timestamp)
+        """将日期字符串转换为次日开始的时间戳（UTC）."""
+        from cryptoservice.utils import date_to_timestamp_end
+
+        return str(date_to_timestamp_end(date))
 
     def download(self, *args, **kwargs):
         """实现基类的抽象方法."""

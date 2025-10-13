@@ -4,7 +4,7 @@
 """
 
 import logging
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -97,7 +97,7 @@ class UniverseManager:
                 logger.info(f"处理日期 {i + 1}/{len(rebalance_dates)}: {rebalance_date}")
 
                 # 计算基准日期（重新平衡日期前delay_days天）
-                base_date = pd.to_datetime(rebalance_date) - timedelta(days=delay_days)
+                base_date = pd.to_datetime(rebalance_date, utc=True) - timedelta(days=delay_days)
                 calculated_t1_end = base_date.strftime("%Y-%m-%d")
 
                 # 计算T1回看期间的开始日期
@@ -126,7 +126,9 @@ class UniverseManager:
                     usage_t1_start=rebalance_date,
                     usage_t1_end=min(
                         end_date,
-                        (pd.to_datetime(rebalance_date) + pd.DateOffset(months=t1_months)).strftime("%Y-%m-%d"),
+                        (pd.to_datetime(rebalance_date, utc=True) + pd.DateOffset(months=t1_months)).strftime(
+                            "%Y-%m-%d"
+                        ),
                     ),
                     calculated_t1_start=calculated_t1_start,
                     calculated_t1_end=calculated_t1_end,
@@ -148,7 +150,7 @@ class UniverseManager:
             universe_def = UniverseDefinition(
                 config=config,
                 snapshots=all_snapshots,
-                creation_time=datetime.now(),
+                creation_time=datetime.now(tz=UTC),
                 description=description,
             )
 
@@ -196,7 +198,7 @@ class UniverseManager:
                 finally:
                     self.market_service.kline_downloader.rate_limit_manager = original_manager
                 if klines:
-                    expected_days = (pd.to_datetime(end_date) - pd.to_datetime(start_date)).days + 1
+                    expected_days = (pd.to_datetime(end_date, utc=True) - pd.to_datetime(start_date, utc=True)).days + 1
                     actual_days = len(klines)
                     if actual_days < expected_days * 0.8:
                         logger.warning(f"交易对 {symbol} 数据不完整: 期望{expected_days}天，实际{actual_days}天")
@@ -315,7 +317,7 @@ class UniverseManager:
         """检查交易对是否在指定日期之前就存在."""
         try:
             # 检查在cutoff_date之前是否有数据
-            check_date = (pd.to_datetime(cutoff_date) - timedelta(days=1)).strftime("%Y-%m-%d")
+            check_date = (pd.to_datetime(cutoff_date, utc=True) - timedelta(days=1)).strftime("%Y-%m-%d")
             return await self.market_service.check_symbol_exists_on_date(symbol, check_date)
         except Exception:
             # 如果检查失败，默认认为存在
@@ -324,8 +326,8 @@ class UniverseManager:
     def _generate_rebalance_dates(self, start_date: str, end_date: str, t2_months: int) -> list[str]:
         """生成重新选择universe的日期序列."""
         dates = []
-        start_date_obj = pd.to_datetime(start_date)
-        end_date_obj = pd.to_datetime(end_date)
+        start_date_obj = pd.to_datetime(start_date, utc=True)
+        end_date_obj = pd.to_datetime(end_date, utc=True)
 
         # 从起始日期开始，每隔T2个月生成重平衡日期
         current_date = start_date_obj
@@ -338,7 +340,7 @@ class UniverseManager:
 
     def _subtract_months(self, date_str: str, months: int) -> str:
         """从日期减去指定月数."""
-        date_obj = pd.to_datetime(date_str)
+        date_obj = pd.to_datetime(date_str, utc=True)
         result_date = date_obj - pd.DateOffset(months=months)
         return str(result_date.strftime("%Y-%m-%d"))
 
@@ -397,21 +399,21 @@ class UniverseManager:
             )
 
         # 计算总体时间范围
-        start_date = pd.to_datetime(min(usage_dates)) - timedelta(days=buffer_days)
-        end_date = pd.to_datetime(max(usage_dates)) + timedelta(days=buffer_days)
+        start_date = pd.to_datetime(min(usage_dates), utc=True) - timedelta(days=buffer_days)
+        end_date = pd.to_datetime(max(usage_dates), utc=True) + timedelta(days=buffer_days)
 
         if extend_to_present:
-            end_date = max(end_date, pd.to_datetime("today"))
+            end_date = max(end_date, pd.to_datetime("today", utc=True))
 
         return {
             "unique_symbols": sorted(all_symbols),
             "total_symbols": len(all_symbols),
             "overall_start_date": start_date.strftime("%Y-%m-%d"),
             "overall_end_date": end_date.strftime("%Y-%m-%d"),
-            "usage_period_start": pd.to_datetime(min(usage_dates)).strftime("%Y-%m-%d"),
-            "usage_period_end": pd.to_datetime(max(usage_dates)).strftime("%Y-%m-%d"),
-            "calculation_period_start": pd.to_datetime(min(calculation_dates)).strftime("%Y-%m-%d"),
-            "calculation_period_end": pd.to_datetime(max(calculation_dates)).strftime("%Y-%m-%d"),
+            "usage_period_start": pd.to_datetime(min(usage_dates), utc=True).strftime("%Y-%m-%d"),
+            "usage_period_end": pd.to_datetime(max(usage_dates), utc=True).strftime("%Y-%m-%d"),
+            "calculation_period_start": pd.to_datetime(min(calculation_dates), utc=True).strftime("%Y-%m-%d"),
+            "calculation_period_end": pd.to_datetime(max(calculation_dates), utc=True).strftime("%Y-%m-%d"),
             "snapshots_count": len(universe_def.snapshots),
             "note": "推荐使用download_universe_data_by_periods方法进行精确下载",
         }

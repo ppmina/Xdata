@@ -60,7 +60,7 @@ def test_market_ticker_from_24h_ticker() -> None:
 def test_market_ticker_from_kline() -> None:
     """测试K线数据解析."""
     kline_data = [
-        "BTCUSDT",  # symbol
+        1234567890000,  # open_time
         "49000.0",  # open
         "51000.0",  # high
         "48000.0",  # low
@@ -71,8 +71,9 @@ def test_market_ticker_from_kline() -> None:
         1000,  # count
         "50.0",  # taker_buy_volume
         "2500000.0",  # taker_buy_quote_volume
+        "0",  # ignore
     ]
-    ticker = KlineMarketTicker.from_binance_kline(kline_data)
+    ticker = KlineMarketTicker.from_binance_kline("BTCUSDT", kline_data)
     assert ticker.symbol == "BTCUSDT"
     assert ticker.last_price == Decimal("50000.0")
     assert ticker.high_price == Decimal("51000.0")

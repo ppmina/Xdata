@@ -333,22 +333,22 @@ class QueryBuilder:
         """
         import pandas as pd
 
-        # 转换时间格式
+        # 转换时间格式（使用 UTC 时区确保一致性）
         if isinstance(start_time, str) and not start_time.isdigit():
             # 如果只是日期格式 YYYY-MM-DD，设为当天开始
             if len(start_time) == 10 and start_time.count("-") == 2:
-                start_ts = int(pd.Timestamp(start_time + " 00:00:00").timestamp() * 1000)
+                start_ts = int(pd.Timestamp(start_time + " 00:00:00", tz="UTC").timestamp() * 1000)
             else:
-                start_ts = int(pd.Timestamp(start_time).timestamp() * 1000)
+                start_ts = int(pd.Timestamp(start_time, tz="UTC").timestamp() * 1000)
         else:
             start_ts = int(start_time)
 
         if isinstance(end_time, str) and not end_time.isdigit():
             # 如果只是日期格式 YYYY-MM-DD，设为当天结束
             if len(end_time) == 10 and end_time.count("-") == 2:
-                end_ts = int(pd.Timestamp(end_time + " 23:59:59.999").timestamp() * 1000)
+                end_ts = int(pd.Timestamp(end_time + " 23:59:59.999", tz="UTC").timestamp() * 1000)
             else:
-                end_ts = int(pd.Timestamp(end_time).timestamp() * 1000)
+                end_ts = int(pd.Timestamp(end_time, tz="UTC").timestamp() * 1000)
         else:
             end_ts = int(end_time)
 

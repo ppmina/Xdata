@@ -9,9 +9,11 @@ from .market_data import (
 )
 from .market_ticker import (
     DailyMarketTicker,
+    FuturesKlineTicker,
     KlineIndex,
     KlineMarketTicker,
     PerpetualMarketTicker,
+    SpotKlineTicker,
     SymbolTicker,
 )
 from .universe import UniverseConfig, UniverseDefinition, UniverseSnapshot
@@ -20,6 +22,8 @@ __all__ = [
     "SymbolTicker",
     "DailyMarketTicker",
     "KlineMarketTicker",
+    "SpotKlineTicker",
+    "FuturesKlineTicker",
     "PerpetualMarketTicker",
     "FundingRate",
     "OpenInterest",

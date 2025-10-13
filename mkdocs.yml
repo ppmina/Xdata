@@ -83,7 +83,9 @@ nav:
   - 快速开始: quickstart.md
   - Universe策略: universe.md
   - 数据导出: export.md
+  - 异步迭代器: iterators.md
   - 实时数据: websocket.md
+  - 配置管理: configuration.md
   - API参考:
     - 数据库操作: api/data/storage_db.md
     - 市场数据服务: api/services/market_service.md

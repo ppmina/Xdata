@@ -18,8 +18,12 @@ UNIVERSE_FILE = "./data/universe.json"  # Universe定义文件
 DB_PATH = "./data/database/market.db"  # 数据库文件路径
 
 # 下载配置
-INTERVAL = Freq.h1  # 数据频率: Freq.m1, Freq.h1, Freq.d1
-MAX_WORKERS = 100  # 最大并发数（Binance API建议1-5，Vision S3下载建议50-150）
+LONG_SHORT_RATIO_TYPES = ["account"]  # 多空比例数据类型
+INTERVAL = Freq.m5  # 数据频率: Freq.m1, Freq.h1, Freq.d1
+MAX_API_WORKERS = 1  # 最大并发数（Binance API建议1-5，）
+MAX_VISION_WORKERS = 50  # Vision S3下载最大并发数, 建议50-150)
+API_REQUEST_DELAY = 0.5  # API请求延迟
+VISION_REQUEST_DELAY = 0  # Vision请求延迟
 MAX_RETRIES = 3  # 最大重试次数
 RETRY_CONFIG = (
     RetryConfig(
@@ -67,13 +71,6 @@ async def main():
     # 创建服务并作为上下文管理器使用
     try:
         async with await MarketDataService.create(api_key=api_key, api_secret=api_secret) as service:
-            print(f"🔄 增量下载模式: {'启用' if INCREMENTAL else '禁用'}")
-            if INCREMENTAL:
-                print("   - 系统将分析现有数据，只下载缺失的部分")
-                print("   - 这可以大大加快重复运行的速度")
-            else:
-                print("   - 将下载所有数据，可能会覆盖现有数据")
-
             # 显示自定义时间范围信息
             if CUSTOM_START_DATE or CUSTOM_END_DATE:
                 print("📅 自定义时间范围:")
@@ -87,12 +84,16 @@ async def main():
             await service.download_universe_data(
                 universe_file=UNIVERSE_FILE,
                 db_path=DB_PATH,
-                interval=INTERVAL,
-                max_workers=MAX_WORKERS,
-                max_retries=MAX_RETRIES,
+                long_short_ratio_types=LONG_SHORT_RATIO_TYPES,
                 retry_config=RETRY_CONFIG,
+                api_request_delay=API_REQUEST_DELAY,
+                vision_request_delay=VISION_REQUEST_DELAY,
                 download_market_metrics=DOWNLOAD_MARKET_METRICS,
                 incremental=INCREMENTAL,
+                interval=INTERVAL,
+                max_api_workers=MAX_API_WORKERS,
+                max_vision_workers=MAX_VISION_WORKERS,
+                max_retries=MAX_RETRIES,
                 custom_start_date=CUSTOM_START_DATE,  # 新增：自定义起始日期
                 custom_end_date=CUSTOM_END_DATE,  # 新增：自定义结束日期
             )

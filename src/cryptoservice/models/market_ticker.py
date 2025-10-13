@@ -2,7 +2,7 @@
 
 from dataclasses import dataclass
 from decimal import Decimal
-from typing import Any
+from typing import Any, cast
 
 
 @dataclass
@@ -123,36 +123,95 @@ class DailyMarketTicker(BaseMarketTicker):
 
 @dataclass
 class KlineMarketTicker(BaseMarketTicker):
-    """K线行情数据类.
+    """K线行情数据基类（完整的Binance K线数据）.
+
+    包含现货和期货K线的共同字段。
 
     Attributes:
         symbol: 交易对
-        last_price: 最新价格
+        open_time: 开盘时间（毫秒时间戳）
         open_price: 开盘价
         high_price: 最高价
         low_price: 最低价
+        close_price: 收盘价
         volume: 成交量
-        close_time: 收盘时间
+        close_time: 收盘时间（毫秒时间戳）
+        quote_volume: 成交额（计价货币）
+        trades_count: 成交笔数
+        taker_buy_volume: 买方成交量（主动买入）
+        taker_buy_quote_volume: 买方成交额（主动买入）
     """
 
+    open_time: int
     open_price: Decimal
     high_price: Decimal
     low_price: Decimal
+    close_price: Decimal
     volume: Decimal
     close_time: int
+    quote_volume: Decimal
+    trades_count: int
+    taker_buy_volume: Decimal
+    taker_buy_quote_volume: Decimal
 
     @classmethod
-    def from_binance_kline(cls, kline_data: list) -> "KlineMarketTicker":
-        """从Binance API响应创建KlineMarketTicker实例."""
+    def from_binance_kline(cls, symbol: str, kline_data: list) -> "KlineMarketTicker":
+        """从Binance API响应创建KlineMarketTicker实例.
+
+        Args:
+            symbol: 交易对符号
+            kline_data: Binance K线数据数组
+                [0] open_time, [1] open, [2] high, [3] low, [4] close,
+                [5] volume, [6] close_time, [7] quote_volume, [8] trades_count,
+                [9] taker_buy_volume, [10] taker_buy_quote_volume, [11] ignore
+
+        Returns:
+            KlineMarketTicker 实例
+        """
+        close_price = Decimal(str(kline_data[4]))
         return cls(
-            symbol=kline_data[0],
-            last_price=Decimal(str(kline_data[4])),
+            symbol=symbol,
+            last_price=close_price,  # last_price 等同于 close_price
+            open_time=int(kline_data[0]),
             open_price=Decimal(str(kline_data[1])),
             high_price=Decimal(str(kline_data[2])),
             low_price=Decimal(str(kline_data[3])),
+            close_price=close_price,
             volume=Decimal(str(kline_data[5])),
-            close_time=kline_data[6],
+            close_time=int(kline_data[6]),
+            quote_volume=Decimal(str(kline_data[7])),
+            trades_count=int(kline_data[8]),
+            taker_buy_volume=Decimal(str(kline_data[9])),
+            taker_buy_quote_volume=Decimal(str(kline_data[10])),
         )
+
+
+@dataclass
+class SpotKlineTicker(KlineMarketTicker):
+    """现货K线行情数据类.
+
+    专门用于现货市场的K线数据，继承基类的所有字段。
+    未来可以添加现货特有的字段（如借贷利率等）。
+    """
+
+    @classmethod
+    def from_binance_kline(cls, symbol: str, kline_data: list) -> "SpotKlineTicker":
+        """从Binance API响应创建SpotKlineTicker实例."""
+        return cast("SpotKlineTicker", super().from_binance_kline(symbol, kline_data))
+
+
+@dataclass
+class FuturesKlineTicker(KlineMarketTicker):
+    """期货K线行情数据类.
+
+    专门用于期货市场的K线数据，继承基类的所有字段。
+    未来可以添加期货特有的字段（如标记价格、资金费率预测等）。
+    """
+
+    @classmethod
+    def from_binance_kline(cls, symbol: str, kline_data: list) -> "FuturesKlineTicker":
+        """从Binance API响应创建FuturesKlineTicker实例."""
+        return cast("FuturesKlineTicker", super().from_binance_kline(symbol, kline_data))
 
 
 class KlineIndex:

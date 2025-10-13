@@ -103,17 +103,19 @@ class BaseDownloader(ABC):
                 # 特殊处理频率限制错误
                 if self.error_handler.is_rate_limit_error(e):
                     wait_time = await self.async_rate_limit_manager.handle_rate_limit_error()
-                    logger.warning(f"🚫 频率限制，等待 {wait_time}秒后重试")
+                    logger.warning(f"get {kwargs.get('symbol')} 🚫 频率限制，等待 {wait_time}秒后重试")
                     await asyncio.sleep(wait_time)  # 额外等待
                     continue
 
                 # 处理不可重试的错误
                 if not self.error_handler.should_retry(e, backoff.attempt, retry_config.max_retries):
-                    logger.error(f"❌ 请求失败: {e}")
+                    logger.error(f"get {kwargs.get('symbol')} ❌ 请求失败: {e}")
                     raise e
 
                 # 执行重试
-                logger.warning(f"🔄 重试 {backoff.attempt + 1}/{retry_config.max_retries}: {e}")
+                logger.warning(
+                    f"🔄 get {kwargs.get('symbol')} 重试 {backoff.attempt + 1}/{retry_config.max_retries}: {e}"
+                )
                 await backoff.wait()
 
     def _record_failed_download(self, symbol: str, error: str, metadata: dict[str, Any] | None = None):
@@ -140,15 +142,16 @@ class BaseDownloader(ABC):
             self.failed_downloads.clear()
 
     def _date_to_timestamp_start(self, date: str) -> str:
-        """将日期字符串转换为当天开始的时间戳."""
-        from datetime import datetime
+        """将日期字符串转换为当天开始的时间戳（UTC）."""
+        from cryptoservice.utils import date_to_timestamp_start
 
-        timestamp = int(datetime.strptime(f"{date} 00:00:00", "%Y-%m-%d %H:%M:%S").timestamp() * 1000)
-        return str(timestamp)
+        return str(date_to_timestamp_start(date))
 
     def _date_to_timestamp_end(self, date: str) -> str:
-        """将日期字符串转换为当天结束的时间戳."""
-        from datetime import datetime
+        """将日期字符串转换为次日开始的时间戳（UTC）.
 
-        timestamp = int(datetime.strptime(f"{date} 23:59:59", "%Y-%m-%d %H:%M:%S").timestamp() * 1000)
-        return str(timestamp)
+        使用次日 00:00:00 而不是当天 23:59:59，确保与增量下载逻辑一致。
+        """
+        from cryptoservice.utils import date_to_timestamp_end
+
+        return str(date_to_timestamp_end(date))

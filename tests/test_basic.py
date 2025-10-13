@@ -11,8 +11,8 @@ import pytest
 from cryptoservice.models.enums import Freq, HistoricalKlinesType, SortBy
 from cryptoservice.models.market_ticker import (
     DailyMarketTicker,
-    KlineMarketTicker,
-    PerpetualMarketTicker,
+    FuturesKlineTicker,
+    SpotKlineTicker,
     SymbolTicker,
 )
 from cryptoservice.models.universe import (
@@ -248,10 +248,10 @@ def test_daily_market_ticker():
     assert ticker.quote_volume == Decimal("5000000.0")
 
 
-def test_kline_market_ticker():
+def test_spot_market_ticker():
     """测试KlineMarketTicker模型."""
     kline_data = [
-        "BTCUSDT",  # symbol
+        1234567890000,  # open_time
         "49000.0",  # open
         "51000.0",  # high
         "48000.0",  # low
@@ -262,8 +262,9 @@ def test_kline_market_ticker():
         1000,  # count
         "50.0",  # taker_buy_volume
         "2500000.0",  # taker_buy_quote_volume
+        "0",  # ignore
     ]
-    ticker = KlineMarketTicker.from_binance_kline(kline_data)
+    ticker = SpotKlineTicker.from_binance_kline("BTCUSDT", kline_data)
     assert ticker.symbol == "BTCUSDT"
     assert ticker.last_price == Decimal("50000.0")
     assert ticker.high_price == Decimal("51000.0")
@@ -272,10 +273,11 @@ def test_kline_market_ticker():
 
 
 def test_perpetual_market_ticker():
-    """测试PerpetualMarketTicker模型."""
+    """测试FuturesKlineTicker模型."""
     # 测试基本创建
-    ticker = PerpetualMarketTicker(
+    ticker = FuturesKlineTicker(
         symbol="BTCUSDT",
+        last_price=Decimal("50000"),  # last_price等同于close_price
         open_time=1234567890000,  # 正确的参数名
         open_price=Decimal("49000"),
         high_price=Decimal("51000"),

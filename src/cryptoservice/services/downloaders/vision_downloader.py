@@ -60,9 +60,8 @@ class VisionDownloader(BaseDownloader):
         start_date: str,
         end_date: str,
         db_path: str,
-        data_types: list[str] | None = None,
-        request_delay: float = 0,
-        max_workers: int = 100,
+        max_workers: int,
+        request_delay: float,
     ) -> None:
         """批量异步下载指标数据.
 
@@ -71,14 +70,11 @@ class VisionDownloader(BaseDownloader):
             start_date: 起始日期 (YYYY-MM-DD)
             end_date: 结束日期 (YYYY-MM-DD)
             db_path: 数据库路径
-            data_types: 数据类型列表（默认包含openInterest和longShortRatio）
             request_delay: 请求之间的延迟（秒），0表示无延迟
-            max_workers: 最大并发下载数，默认100（Vision S3下载可以高并发）
+            max_workers: 最大并发下载数（Vision S3下载可以高并发）
         """
-        if data_types is None:
-            data_types = ["openInterest", "longShortRatio"]
-
         try:
+            data_types = ["openInterest", "longShortRatio"]
             # 重置统计
             self._perf_stats = {
                 "download_time": 0.0,
@@ -112,7 +108,6 @@ class VisionDownloader(BaseDownloader):
 
             total_tasks = len(tasks)
             logger.info(f"📦 创建了 {total_tasks} 个下载任务，最大并发数: {max_workers}")
-            logger.info("💡 使用 asyncio 协程并发（不受 CPU 核心数限制）")
 
             start_time = time.time()
             await asyncio.gather(*tasks)
@@ -216,25 +211,27 @@ class VisionDownloader(BaseDownloader):
         if retry_config is None:
             retry_config = RetryConfig(max_retries=3, base_delay=0)
 
-        # 直接下载，不使用速率限制器（Vision是S3静态文件）
-        session = await self._get_session()
-
-        for attempt in range(retry_config.max_retries + 1):
+        # 使用基类的重试机制下载ZIP文件
+        async def _download_zip() -> bytes:
+            """下载ZIP文件的内部异步函数."""
+            session = await self._get_session()
             try:
                 async with session.get(url) as response:
                     response.raise_for_status()
-                    zip_content = await response.read()
-                    break
+                    return await response.read()
             except ClientConnectionError:
                 await self._reset_session()
-                if attempt == retry_config.max_retries:
-                    raise
-                session = await self._get_session()
-                await asyncio.sleep(retry_config.base_delay * (2**attempt))
-            except Exception:
-                if attempt == retry_config.max_retries:
-                    raise
-                await asyncio.sleep(retry_config.base_delay * (2**attempt))
+                raise
+
+        try:
+            # 使用基类的异步重试处理机制
+            zip_content = await self._handle_async_request_with_retry(
+                _download_zip,
+                retry_config=retry_config,
+            )
+        except Exception as e:
+            logger.error(f"下载指标数据失败 {symbol}: {e}")
+            return None
 
         try:
             # 计时：解析
@@ -330,9 +327,13 @@ class VisionDownloader(BaseDownloader):
 
         for row in raw_data:
             try:
-                # 解析时间字段
+                # 解析时间字段（Binance API 返回的是 UTC 时间）
                 create_time = row["create_time"]
-                timestamp = int(datetime.strptime(create_time, "%Y-%m-%d %H:%M:%S").timestamp() * 1000)
+                from datetime import UTC
+
+                timestamp = int(
+                    datetime.strptime(create_time, "%Y-%m-%d %H:%M:%S").replace(tzinfo=UTC).timestamp() * 1000
+                )
 
                 # 安全获取持仓量值
                 oi_value = self._safe_decimal_convert(row.get("sum_open_interest"))
@@ -360,9 +361,13 @@ class VisionDownloader(BaseDownloader):
 
         for row in raw_data:
             try:
-                # 解析时间字段
+                # 解析时间字段（Binance API 返回的是 UTC 时间）
                 create_time = row["create_time"]
-                timestamp = int(datetime.strptime(create_time, "%Y-%m-%d %H:%M:%S").timestamp() * 1000)
+                from datetime import UTC
+
+                timestamp = int(
+                    datetime.strptime(create_time, "%Y-%m-%d %H:%M:%S").replace(tzinfo=UTC).timestamp() * 1000
+                )
 
                 # 处理顶级交易者数据 - 分别处理，确保无损
                 try:

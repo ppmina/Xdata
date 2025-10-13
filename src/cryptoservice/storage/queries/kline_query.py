@@ -300,14 +300,15 @@ class KlineQuery:
             Freq.M1: "1M",
         }
 
-        start_dt = pd.Timestamp(start_ts, unit="ms")
-        end_dt = pd.Timestamp(end_ts, unit="ms")
+        start_dt = pd.Timestamp(start_ts, unit="ms", tz="UTC")
+        end_dt = pd.Timestamp(end_ts, unit="ms", tz="UTC")
 
         time_range = pd.date_range(
             start=start_dt,
             end=end_dt,
             freq=freq_map.get(freq, "1h"),
             inclusive="left",  # 不包含结束时间
+            tz="UTC",
         )
         full_timestamps = {int(ts.timestamp() * 1000) for ts in time_range}
 

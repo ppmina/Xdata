@@ -6,7 +6,7 @@
 import logging
 from datetime import datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from binance import AsyncClient
 
@@ -17,12 +17,13 @@ from cryptoservice.models import (
     DailyMarketTicker,
     Freq,
     FundingRate,
+    FuturesKlineTicker,
     HistoricalKlinesType,
     IntegrityReport,
-    KlineMarketTicker,
     LongShortRatio,
     OpenInterest,
     SortBy,
+    SpotKlineTicker,
     SymbolTicker,
     UniverseDefinition,
 )
@@ -151,11 +152,24 @@ class MarketDataService:
         self,
         symbol: str,
         start_time: str | datetime,
+        interval: Freq,
         end_time: str | datetime | None = None,
-        interval: Freq = Freq.h1,
         klines_type: HistoricalKlinesType = HistoricalKlinesType.SPOT,
-    ) -> list[KlineMarketTicker]:
-        """获取历史行情数据."""
+    ) -> list["SpotKlineTicker"] | list["FuturesKlineTicker"]:
+        """获取历史行情数据.
+
+        Args:
+            symbol: 交易对符号
+            start_time: 开始时间
+            end_time: 结束时间（默认为当前时间）
+            interval: K线频率
+            klines_type: K线类型（现货/期货）
+
+        Returns:
+            根据 klines_type 返回不同类型:
+            - SPOT: list[SpotKlineTicker]
+            - FUTURES: list[FuturesKlineTicker]
+        """
         try:
             # 处理时间格式
             if isinstance(start_time, str):
@@ -169,9 +183,11 @@ class MarketDataService:
             start_ts = self._date_to_timestamp_start(start_time.strftime("%Y-%m-%d"))
             end_ts = self._date_to_timestamp_end(end_time.strftime("%Y-%m-%d"))
 
-            logger.info(f"获取 {symbol} 的历史数据 ({interval.value})")
+            market_type = "期货" if klines_type == HistoricalKlinesType.FUTURES else "现货"
+            logger.info(f"获取 {symbol} 的{market_type}历史数据 ({interval.value})")
 
-            # 根据klines_type选择API
+            ticker_class: type[SpotKlineTicker] | type[FuturesKlineTicker]
+            # 根据klines_type选择API和返回类型
             if klines_type == HistoricalKlinesType.FUTURES:
                 klines = await self.client.futures_klines(
                     symbol=symbol,
@@ -180,6 +196,7 @@ class MarketDataService:
                     endTime=end_ts,
                     limit=1500,
                 )
+                ticker_class = FuturesKlineTicker
             else:  # SPOT
                 klines = await self.client.get_klines(
                     symbol=symbol,
@@ -188,27 +205,16 @@ class MarketDataService:
                     endTime=end_ts,
                     limit=1500,
                 )
+                ticker_class = SpotKlineTicker
 
             data = list(klines)
             if not data:
                 logger.warning(f"未找到交易对 {symbol} 在指定时间段内的数据")
                 return []
 
-            # 转换为KlineMarketTicker对象
-            from decimal import Decimal
-
-            return [
-                KlineMarketTicker(
-                    symbol=symbol,
-                    last_price=Decimal(str(kline[4])),  # 收盘价作为最新价格
-                    open_price=Decimal(str(kline[1])),
-                    high_price=Decimal(str(kline[2])),
-                    low_price=Decimal(str(kline[3])),
-                    volume=Decimal(str(kline[5])),
-                    close_time=kline[6],
-                )
-                for kline in data
-            ]
+            # 根据市场类型创建相应的Ticker对象
+            result = [ticker_class.from_binance_kline(symbol, kline) for kline in data]
+            return cast(list[FuturesKlineTicker] | list[SpotKlineTicker], result)
 
         except Exception as e:
             logger.error(f"Error getting historical data for {symbol}: {e}")
@@ -288,12 +294,9 @@ class MarketDataService:
         db_path: Path | str,
         end_time: str | None = None,
         interval: Freq = Freq.h1,
-        max_workers: int = 5,
+        max_workers: int = 1,
         max_retries: int = 3,
-        progress=None,
-        request_delay: float = 0.5,
         retry_config: RetryConfig | None = None,
-        enable_integrity_check: bool = True,
         incremental: bool = True,
     ) -> IntegrityReport:
         """获取永续合约数据并存储."""
@@ -317,13 +320,16 @@ class MarketDataService:
         self,
         universe_file: Path | str,
         db_path: Path | str,
+        long_short_ratio_types: list[str],
+        retry_config: RetryConfig,
+        api_request_delay: float,
+        vision_request_delay: float,
+        download_market_metrics: bool,
+        incremental: bool,
         interval: Freq = Freq.m1,
-        max_workers: int = 4,
+        max_api_workers: int = 1,
+        max_vision_workers: int = 50,
         max_retries: int = 3,
-        retry_config: RetryConfig | None = None,
-        request_delay: float = 0,
-        download_market_metrics: bool = True,
-        incremental: bool = True,
         custom_start_date: str | None = None,
         custom_end_date: str | None = None,
     ) -> None:
@@ -332,14 +338,17 @@ class MarketDataService:
         Args:
             universe_file: Path to the universe definition file
             db_path: Path to the database file where data will be stored
-            interval: Time interval for K-line data (default: 1m)
-            max_workers: Maximum number of concurrent workers
-            max_retries: Maximum number of retry attempts for failed requests
+            long_short_ratio_types: List of long-short ratio data types to download
             retry_config: Custom retry configuration, overrides max_retries
-            request_delay: Delay in seconds between API requests
+            api_request_delay: Delay in seconds between API requests
+            vision_request_delay: Delay in seconds between Vision requests
             download_market_metrics: Whether to download market metrics data
             incremental: Whether to download incremental data,
              if True, only download new data, if False, re-download all data
+            interval: Time interval for K-line data (default: 1m)
+            max_api_workers: Maximum number of concurrent API workers
+            max_vision_workers: Maximum number of concurrent Vision workers
+            max_retries: Maximum number of retry attempts for failed requests
             custom_start_date: Custom global start date, will override the start date
              in the universe but must be within the universe time range
             custom_end_date: Custom global end date, will override the end date
@@ -367,28 +376,31 @@ class MarketDataService:
             logger.info("📊 按周期下载数据:")
             logger.info(f"   - 总快照数: {len(universe_def.snapshots)}")
             logger.info(f"   - 数据频率: {interval.value}")
-            logger.info(f"   - 并发线程: {max_workers}")
-            logger.info(f"   - 请求间隔: {request_delay}秒")
+            logger.info(f"   - API并发线程: {max_api_workers}")
+            logger.info(f"   - Vision并发线程: {max_vision_workers}")
+            logger.info(f"   - API请求间隔: {api_request_delay}秒")
+            logger.info(f"   - Vision请求间隔: {vision_request_delay}秒")
             logger.info(f"   - 数据库路径: {db_file_path}")
             logger.info(f"   - 下载市场指标: {download_market_metrics}")
 
+            kline_download_results = []
             # 为每个周期单独下载数据
             for i, snapshot in enumerate(universe_def.snapshots):
                 logger.info(f"📅 处理快照 {i + 1}/{len(universe_def.snapshots)}: {snapshot.effective_date}")
 
                 # 下载K线数据
-                await self.get_perpetual_data(
-                    symbols=snapshot.symbols,
-                    start_time=snapshot.start_date,
-                    end_time=snapshot.end_date,
-                    db_path=db_file_path,
-                    interval=interval,
-                    max_workers=max_workers,
-                    max_retries=max_retries,
-                    retry_config=retry_config,
-                    enable_integrity_check=True,
-                    request_delay=request_delay,
-                    incremental=incremental,
+                kline_download_results.append(
+                    await self.get_perpetual_data(
+                        symbols=snapshot.symbols,
+                        start_time=snapshot.start_date,
+                        end_time=snapshot.end_date,
+                        db_path=db_file_path,
+                        interval=interval,
+                        max_workers=max_api_workers,
+                        max_retries=max_retries,
+                        retry_config=retry_config,
+                        incremental=incremental,
+                    )
                 )
 
                 # 下载市场指标数据
@@ -397,12 +409,17 @@ class MarketDataService:
                     await self._download_market_metrics_for_snapshot(
                         snapshot=snapshot,
                         db_path=db_file_path,
-                        request_delay=request_delay,
+                        api_request_delay=api_request_delay,
+                        vision_request_delay=vision_request_delay,
+                        max_api_workers=max_api_workers,
+                        max_vision_workers=max_vision_workers,
                     )
 
                 logger.info(f"   ✅ 快照 {snapshot.effective_date} 下载完成")
 
-            logger.info("🎉 所有universe数据下载完成!")
+            logger.info("🎉 universe数据下载结果完整性报告: ")
+            for result in kline_download_results:
+                logger.info(result)
             logger.info(f"📁 数据已保存到: {db_file_path}")
 
         except Exception as e:
@@ -520,18 +537,16 @@ class MarketDataService:
         self,
         snapshot,
         db_path: Path,
-        long_short_ratio_types: list[str] | None = None,
-        request_delay: float = 0.5,
+        api_request_delay: float,
+        vision_request_delay: float,
+        max_api_workers: int,
+        max_vision_workers: int,
     ) -> None:
         """为单个快照下载市场指标数据."""
         try:
             # 初始化数据库连接
             if self.db is None:
                 self.db = Database(db_path)
-
-            # 设置默认值
-            if long_short_ratio_types is None:
-                long_short_ratio_types = ["account"]
 
             symbols = snapshot.symbols
             start_time = snapshot.start_date
@@ -544,7 +559,8 @@ class MarketDataService:
                 start_date=start_time,
                 end_date=end_time,
                 db_path=str(db_path),
-                request_delay=request_delay,
+                request_delay=vision_request_delay,
+                max_workers=max_vision_workers,
             )
 
             # 下载Metrics API数据（资金费率）
@@ -554,8 +570,8 @@ class MarketDataService:
                 start_time=start_time,
                 end_time=end_time,
                 db_path=str(db_path),
-                request_delay=request_delay,
-                max_workers=2,  # 限制并发以避免API限制
+                request_delay=api_request_delay,
+                max_workers=max_api_workers,  # 限制并发以避免API限制
             )
 
             logger.info("      ✅ 市场指标数据下载完成")
@@ -584,14 +600,16 @@ class MarketDataService:
         return path_obj
 
     def _date_to_timestamp_start(self, date: str) -> str:
-        """将日期字符串转换为当天开始的时间戳."""
-        timestamp = int(datetime.strptime(f"{date} 00:00:00", "%Y-%m-%d %H:%M:%S").timestamp() * 1000)
-        return str(timestamp)
+        """将日期字符串转换为当天开始的时间戳（UTC）."""
+        from cryptoservice.utils import date_to_timestamp_start
+
+        return str(date_to_timestamp_start(date))
 
     def _date_to_timestamp_end(self, date: str) -> str:
-        """将日期字符串转换为当天结束的时间戳."""
-        timestamp = int(datetime.strptime(f"{date} 23:59:59", "%Y-%m-%d %H:%M:%S").timestamp() * 1000)
-        return str(timestamp)
+        """将日期字符串转换为次日开始的时间戳（UTC）."""
+        from cryptoservice.utils import date_to_timestamp_end
+
+        return str(date_to_timestamp_end(date))
 
     def _convert_time_to_string(self, time_value: str | datetime | None) -> str:
         """将时间值转换为字符串格式."""
