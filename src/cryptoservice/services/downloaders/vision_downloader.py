@@ -228,7 +228,6 @@ class VisionDownloader(BaseDownloader):
             zip_content = await self._handle_async_request_with_retry(
                 _download_zip,
                 retry_config=retry_config,
-                symbol=symbol,
             )
         except Exception as e:
             logger.error(f"下载指标数据失败 {symbol}: {e}")

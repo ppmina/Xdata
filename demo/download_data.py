@@ -44,7 +44,7 @@ CUSTOM_START_DATE = None  # 自定义起始日期，例如: "2024-02-01"，必�
 CUSTOM_END_DATE = None  # 自定义结束日期，例如: "2024-06-30"，必须在universe时间范围内
 
 # 新特征配置
-DOWNLOAD_MARKET_METRICS = False  # 是否下载市场指标数据 (资金费率、持仓量、多空比例)
+DOWNLOAD_MARKET_METRICS = True  # 是否下载市场指标数据 (资金费率、持仓量、多空比例)
 
 # ========================================
 
