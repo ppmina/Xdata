@@ -29,7 +29,7 @@ logger = logging.getLogger(__name__)
 class VisionDownloader(BaseDownloader):
     """Binance Vision数据下载器."""
 
-    def __init__(self, client: AsyncClient, request_delay: float = 1.0):
+    def __init__(self, client: AsyncClient, request_delay: float = 0):
         """初始化Binance Vision数据下载器.
 
         Args:
@@ -52,7 +52,6 @@ class VisionDownloader(BaseDownloader):
             "concurrent_count": 0,
             "max_concurrent": 0,
         }
-        self._concurrent_lock = asyncio.Lock()
 
     async def download_metrics_batch(
         self,
@@ -151,13 +150,12 @@ class VisionDownloader(BaseDownloader):
         """下载并处理单个交易对在特定日期的数据."""
         async with semaphore:
             # 记录并发数
-            async with self._concurrent_lock:
-                self._perf_stats["concurrent_count"] += 1
-                current = self._perf_stats["concurrent_count"]
-                if current > self._perf_stats["max_concurrent"]:
-                    self._perf_stats["max_concurrent"] = current
-                    if current % 10 == 0:  # 每10个并发打印一次
-                        logger.info(f"🚀 当前并发: {current}")
+            self._perf_stats["concurrent_count"] += 1
+            current = self._perf_stats["concurrent_count"]
+            if current > self._perf_stats["max_concurrent"]:
+                self._perf_stats["max_concurrent"] = current
+                if current % 10 == 0:  # 每10个并发打印一次
+                    logger.info(f"🚀 当前并发: {current}")
 
             try:
                 url = f"{self.base_url}/{symbol}/{symbol}-metrics-{date_str}.zip"
@@ -195,11 +193,10 @@ class VisionDownloader(BaseDownloader):
 
             finally:
                 # 减少并发计数
-                async with self._concurrent_lock:
-                    self._perf_stats["concurrent_count"] -= 1
+                self._perf_stats["concurrent_count"] -= 1
 
-                if request_delay > 0:
-                    await asyncio.sleep(request_delay)
+        if request_delay > 0:
+            await asyncio.sleep(request_delay)
 
     async def _download_and_parse_metrics_csv(  # noqa: C901
         self,
