@@ -3,17 +3,17 @@
 提供增量下载计划和缺失数据分析功能。
 """
 
-import logging
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import pandas as pd
 
+from cryptoservice.config.logging import get_logger
 from cryptoservice.models import Freq
 
 if TYPE_CHECKING:
     from .queries import KlineQuery, MetricsQuery
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class IncrementalManager:
@@ -21,6 +21,13 @@ class IncrementalManager:
 
     专注于增量下载计划制定和缺失数据分析。
     """
+
+    _METRICS_LABELS = {
+        "funding_rate": "资金费率(FR)",
+        "open_interest": "持仓量(OI)",
+        "long_short_ratio": "多空比例(LSR)",
+        "vision-metrics": "Vision指标(OI+LSR)",
+    }
 
     def __init__(self, kline_query: "KlineQuery", metrics_query: "MetricsQuery"):
         """初始化增量下载管理器.
@@ -34,7 +41,7 @@ class IncrementalManager:
 
     async def plan_kline_download(
         self, symbols: list[str], start_date: str, end_date: str, freq: Freq
-    ) -> dict[str, list[int]]:
+    ) -> dict[str, dict[str, Any]]:
         """制定K线数据增量下载计划.
 
         Args:
@@ -44,15 +51,23 @@ class IncrementalManager:
             freq: 数据频率
 
         Returns:
-            {symbol: [missing_timestamps]} 缺失数据计划
+            {symbol: {"start_ts": int, "end_ts": int, "start_time": str, "end_time": str, "missing_count": int}}
         """
         if not symbols:
-            logger.warning("没有指定交易对")
+            logger.warning("plan.skip", dataset="kline", reason="no_symbols")
             return {}
 
-        logger.info(f"制定K线增量下载计划: {len(symbols)} 个交易对, {start_date} - {end_date}, {freq.value}")
+        logger.info(
+            "plan.start",
+            dataset="kline",
+            freq=freq.value,
+            symbols=len(symbols),
+            start=start_date,
+            end=end_date,
+        )
 
-        plan = {}
+        plan: dict[str, dict[str, Any]] = {}
+        step_ms = self._get_freq_milliseconds(freq)
 
         # 转换日期为时间戳（只转换一次边界值）
         # 使用 UTC 时区以保持与下载逻辑的一致性
@@ -65,23 +80,190 @@ class IncrementalManager:
             try:
                 missing_timestamps = await self.kline_query.get_missing_timestamps(symbol, start_ts, end_ts, freq)
                 if missing_timestamps:
-                    plan[symbol] = missing_timestamps
-                    logger.debug(f"{symbol}: 发现 {len(missing_timestamps)} 个缺失时间戳")
+                    segment = self._build_single_segment(
+                        missing_timestamps,
+                        step_ms,
+                        start_ts,
+                        end_ts,
+                    )
+                    plan[symbol] = {
+                        "start_ts": segment["start_ts"],
+                        "end_ts": segment["end_ts"],
+                        "start_time": segment["start_time"],
+                        "end_time": segment["end_time"],
+                        "missing_count": len(missing_timestamps),
+                    }
+                    logger.debug(
+                        "plan.detail",
+                        dataset="kline",
+                        symbol=symbol,
+                        missing=len(missing_timestamps),
+                        range=f"{segment['start_time']}→{segment['end_time']}",
+                    )
                 else:
-                    logger.info(f"{symbol}: 数据完整")
+                    logger.debug(
+                        "plan.detail",
+                        dataset="kline",
+                        symbol=symbol,
+                        missing=0,
+                        status="complete",
+                    )
 
             except Exception as e:
-                logger.error(f"检查 {symbol} 缺失数据时出错: {e}")
+                logger.error(f"[kline-{freq.value}] 检查 {symbol} 缺失数据时出错: {e}")
                 continue
 
-        total_missing = sum(len(timestamps) for timestamps in plan.values())
-        logger.info(f"K线增量下载计划完成: {len(plan)} 个交易对需要下载, 总计 {total_missing} 个时间点")
+        total_missing = sum(int(entry.get("missing_count", 0)) for entry in plan.values())
+        log_kwargs: dict[str, Any] = {
+            "dataset": "kline",
+            "freq": freq.value,
+            "needed": len(plan),
+            "total_symbols": len(symbols),
+            "missing_points": total_missing,
+            "start": start_date,
+            "end": end_date,
+        }
+        if plan:
+            preview = sorted(
+                ((symbol, int(info.get("missing_count", 0))) for symbol, info in plan.items()),
+                key=lambda item: item[1],
+                reverse=True,
+            )
+            top_examples = [f"{symbol}({count})" for symbol, count in preview[:3]]
+            if top_examples:
+                log_kwargs["missing_examples"] = ", ".join(top_examples)
+        logger.info(
+            "plan.summary",
+            **log_kwargs,
+        )
 
         return plan
 
+    async def plan_vision_metrics_download(
+        self,
+        symbols: list[str],
+        start_date: str,
+        end_date: str,
+    ) -> dict[str, dict[str, Any]]:
+        """制定Vision指标数据增量下载计划.
+
+        Args:
+            symbols: 交易对列表
+            start_date: 开始日期 (YYYY-MM-DD)
+            end_date: 结束日期 (YYYY-MM-DD)
+
+        Returns:
+            {symbol: {"start_date": str, "end_date": str, "missing_dates": list[str], "missing_count": int}}
+        """
+        if not symbols:
+            logger.warning("plan.skip", dataset="vision-metrics", reason="no_symbols")
+            return {}
+
+        display_name = self._METRICS_LABELS["vision-metrics"]
+        logger.info(
+            "plan.start",
+            dataset="vision-metrics",
+            symbols=len(symbols),
+            start=start_date,
+            end=end_date,
+        )
+
+        date_range = pd.date_range(start=start_date, end=end_date, freq="D")
+        if date_range.empty:
+            logger.warning("[vision-metrics] 日期范围为空，无法生成增量计划")
+            return {}
+
+        plan, complete_count = await self._collect_vision_plan(symbols, date_range)
+        total_expected = len(symbols) * len(date_range)
+        total_missing_dates = sum(int(entry.get("missing_count", 0)) for entry in plan.values())
+
+        log_kwargs: dict[str, Any] = {
+            "dataset": "vision-metrics",
+            "display_name": display_name,
+            "needed": len(plan),
+            "total_symbols": len(symbols),
+            "missing_days": total_missing_dates,
+            "complete_counts": f"{complete_count}/{total_expected}",
+            "start": start_date,
+            "end": end_date,
+        }
+        if plan:
+            preview = sorted(
+                ((symbol, int(info.get("missing_count", 0))) for symbol, info in plan.items()),
+                key=lambda item: item[1],
+                reverse=True,
+            )
+            top_examples = [f"{symbol}({count})" for symbol, count in preview[:3]]
+            if top_examples:
+                log_kwargs["missing_examples"] = ", ".join(top_examples)
+        logger.info(
+            "plan.summary",
+            **log_kwargs,
+        )
+
+        return plan
+
+    @staticmethod
+    def _register_missing_day(plan: dict[str, dict[str, Any]], symbol: str, date_value: str) -> None:
+        entry = plan.setdefault(
+            symbol,
+            {
+                "missing_dates": [],
+                "start_date": date_value,
+                "end_date": date_value,
+                "missing_count": 0,
+            },
+        )
+        missing_dates = entry.get("missing_dates")
+        if not isinstance(missing_dates, list):
+            missing_dates = []
+            entry["missing_dates"] = missing_dates
+        missing_dates.append(date_value)
+        entry["missing_count"] = len(missing_dates)
+        start_recorded = entry.get("start_date", date_value)
+        end_recorded = entry.get("end_date", date_value)
+        if isinstance(start_recorded, str) and date_value < start_recorded:
+            entry["start_date"] = date_value
+        if isinstance(end_recorded, str) and date_value > end_recorded:
+            entry["end_date"] = date_value
+
+    async def _collect_vision_plan(
+        self,
+        symbols: list[str],
+        date_range: pd.DatetimeIndex,
+    ) -> tuple[dict[str, dict[str, Any]], int]:
+        plan: dict[str, dict[str, Any]] = {}
+        complete_count = 0
+
+        for symbol in symbols:
+            for date in date_range:
+                date_str = date.strftime("%Y-%m-%d")
+                try:
+                    status = await self.metrics_query.get_daily_metrics_status(symbol, date_str)
+                except Exception as exc:  # noqa: BLE001
+                    logger.error(f"[vision-metrics] 检查 {symbol} {date_str} 时出错: {exc}")
+                    self._register_missing_day(plan, symbol, date_str)
+                    continue
+
+                oi_count = status.get("open_interest", 0)
+                lsr_count = status.get("long_short_ratio", 0)
+
+                if oi_count > 0 and lsr_count > 0:
+                    logger.debug(f"[vision-metrics] {symbol} {date_str}: 数据完整 (OI: {oi_count}, LSR: {lsr_count})")
+                    complete_count += 1
+                else:
+                    self._register_missing_day(plan, symbol, date_str)
+
+        return plan, complete_count
+
     async def plan_metrics_download(
-        self, symbols: list[str], start_date: str, end_date: str, data_type: str, interval_hours: int = 8
-    ) -> dict[str, list[int]]:
+        self,
+        symbols: list[str],
+        start_date: str,
+        end_date: str,
+        data_type: str,
+        interval_hours: float = 8,
+    ) -> dict[str, dict[str, Any]]:
         """制定指标数据增量下载计划.
 
         Args:
@@ -92,38 +274,104 @@ class IncrementalManager:
             interval_hours: 数据间隔小时数
 
         Returns:
-            {symbol: [missing_timestamps]} 缺失数据计划
+            {
+                symbol: {
+                    "start_ts": int,
+                    "end_ts": int,
+                    "start_time": str,
+                    "end_time": str,
+                    "missing_count": int,
+                    "interval_ms": int,
+                }
+            }
         """
         if not symbols:
-            logger.warning("没有指定交易对")
+            logger.warning("plan.skip", dataset=data_type, reason="no_symbols")
             return {}
 
-        logger.info(f"制定{data_type}增量下载计划: {len(symbols)} 个交易对, {start_date} - {end_date}")
+        display_name = self._METRICS_LABELS.get(data_type, data_type)
+        logger.info(
+            "plan.start",
+            dataset=data_type,
+            display_name=display_name,
+            symbols=len(symbols),
+            start=start_date,
+            end=end_date,
+            interval_hours=interval_hours,
+        )
 
-        plan = {}
+        plan: dict[str, dict[str, Any]] = {}
 
         # 转换日期为时间戳（使用 UTC 时区）
         start_ts = int(pd.Timestamp(start_date, tz="UTC").timestamp() * 1000)
         end_ts = int(pd.Timestamp(end_date, tz="UTC").timestamp() * 1000)
+        interval_ms = self._hours_to_milliseconds(interval_hours)
+        interval_hours_value = int(interval_hours) if interval_hours > 0 else 1
 
         # 为每个交易对检查缺失数据
         for symbol in symbols:
             try:
                 missing_timestamps = await self.metrics_query.get_missing_timestamps(
-                    data_type, symbol, start_ts, end_ts, interval_hours
+                    data_type, symbol, start_ts, end_ts, interval_hours_value
                 )
                 if missing_timestamps:
-                    plan[symbol] = missing_timestamps
-                    logger.debug(f"{symbol}: 发现 {len(missing_timestamps)} 个缺失时间戳")
+                    segment = self._build_single_segment(
+                        missing_timestamps,
+                        interval_ms,
+                        start_ts,
+                        end_ts,
+                    )
+                    plan[symbol] = {
+                        "start_ts": segment["start_ts"],
+                        "end_ts": segment["end_ts"],
+                        "start_time": segment["start_time"],
+                        "end_time": segment["end_time"],
+                        "missing_count": len(missing_timestamps),
+                        "interval_ms": interval_ms,
+                    }
+                    logger.debug(
+                        "plan.detail",
+                        dataset=data_type,
+                        symbol=symbol,
+                        missing=len(missing_timestamps),
+                        range=f"{segment['start_time']}→{segment['end_time']}",
+                    )
                 else:
-                    logger.debug(f"{symbol}: 数据完整")
+                    logger.debug(
+                        "plan.detail",
+                        dataset=data_type,
+                        symbol=symbol,
+                        missing=0,
+                        status="complete",
+                    )
 
             except Exception as e:
-                logger.error(f"检查 {symbol} {data_type} 缺失数据时出错: {e}")
+                logger.error(f"[{data_type}] 检查 {symbol} 缺失数据时出错: {e}")
                 continue
 
-        total_missing = sum(len(timestamps) for timestamps in plan.values())
-        logger.info(f"{data_type}增量下载计划完成: {len(plan)} 个交易对需要下载, 总计 {total_missing} 个时间点")
+        total_missing = sum(int(entry.get("missing_count", 0)) for entry in plan.values())
+        log_kwargs: dict[str, Any] = {
+            "dataset": data_type,
+            "display_name": display_name,
+            "needed": len(plan),
+            "total_symbols": len(symbols),
+            "missing_points": total_missing,
+            "start": start_date,
+            "end": end_date,
+        }
+        if plan:
+            preview = sorted(
+                ((symbol, int(info.get("missing_count", 0))) for symbol, info in plan.items()),
+                key=lambda item: item[1],
+                reverse=True,
+            )
+            top_examples = [f"{symbol}({count})" for symbol, count in preview[:3]]
+            if top_examples:
+                log_kwargs["missing_examples"] = ", ".join(top_examples)
+        logger.info(
+            "plan.summary",
+            **log_kwargs,
+        )
 
         return plan
 
@@ -325,6 +573,48 @@ class IncrementalManager:
         }
 
         return freq_ms_map.get(freq, 60 * 60 * 1000)  # 默认1小时
+
+    @staticmethod
+    def _hours_to_milliseconds(hours: float) -> int:
+        """将小时时间间隔转换为毫秒."""
+        if hours is None or hours <= 0:
+            return 60 * 60 * 1000  # 默认1小时
+        return max(int(round(hours * 60 * 60 * 1000)), 60 * 1000)
+
+    def _build_single_segment(
+        self,
+        missing_timestamps: list[int],
+        step_ms: int,
+        start_bound: int,
+        end_bound: int,
+    ) -> dict[str, Any]:
+        """根据缺失时间戳构建单个下载区间."""
+        if not missing_timestamps:
+            return {
+                "start_ts": start_bound,
+                "end_ts": end_bound,
+                "start_time": self._format_timestamp(start_bound),
+                "end_time": self._format_timestamp(end_bound),
+            }
+
+        first_missing = max(missing_timestamps[0], start_bound)
+        last_missing = min(missing_timestamps[-1], max(start_bound, end_bound - step_ms))
+
+        end_ts = min(last_missing + step_ms, end_bound)
+        if end_ts <= first_missing:
+            end_ts = min(first_missing + step_ms, end_bound)
+
+        return {
+            "start_ts": first_missing,
+            "end_ts": end_ts,
+            "start_time": self._format_timestamp(first_missing),
+            "end_time": self._format_timestamp(end_ts),
+        }
+
+    @staticmethod
+    def _format_timestamp(timestamp_ms: int) -> str:
+        """将毫秒时间戳格式化为可读字符串."""
+        return pd.Timestamp(timestamp_ms, unit="ms", tz="UTC").strftime("%Y-%m-%d %H:%M:%S")
 
     async def get_download_priority(self, symbols: list[str], start_date: str, end_date: str, freq: Freq) -> list[dict]:
         """获取下载优先级建议.

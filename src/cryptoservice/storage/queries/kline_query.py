@@ -3,11 +3,11 @@
 专门处理K线数据的查询操作。
 """
 
-import logging
 from typing import TYPE_CHECKING, Any
 
 import pandas as pd
 
+from cryptoservice.config.logging import get_logger
 from cryptoservice.models import Freq
 
 from .builder import QueryBuilder
@@ -15,7 +15,7 @@ from .builder import QueryBuilder
 if TYPE_CHECKING:
     from ..connection import ConnectionPool
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class KlineQuery:
@@ -98,7 +98,7 @@ class KlineQuery:
         df = pd.DataFrame(rows, columns=query_columns)
         df = df.set_index(["symbol", "timestamp"])
 
-        logger.info(f"查询K线数据完成: {len(df)} 条记录")
+        logger.info("select_by_time_range_complete", records=len(df))
         return df
 
     async def select_by_timestamp_range(

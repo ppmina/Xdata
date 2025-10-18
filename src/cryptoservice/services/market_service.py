@@ -3,7 +3,6 @@
 专注于核心API功能，使用组合模式整合各个专业模块。
 """
 
-import logging
 from datetime import datetime
 from pathlib import Path
 from typing import Any, cast
@@ -12,6 +11,7 @@ from binance import AsyncClient
 
 from cryptoservice.client import BinanceClientFactory
 from cryptoservice.config import RetryConfig, settings
+from cryptoservice.config.logging import get_logger
 from cryptoservice.exceptions import InvalidSymbolError, MarketDataFetchError
 from cryptoservice.models import (
     DailyMarketTicker,
@@ -29,12 +29,13 @@ from cryptoservice.models import (
 )
 from cryptoservice.storage.database import Database
 from cryptoservice.utils import DataConverter
+from cryptoservice.utils.logger import generate_run_id
 
 # 导入新的模块
 from .downloaders import KlineDownloader, MetricsDownloader, VisionDownloader
 from .processors import CategoryManager, DataValidator, TimeRangeProcessor, UniverseManager
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class MarketDataService:
@@ -298,6 +299,7 @@ class MarketDataService:
         max_retries: int = 3,
         retry_config: RetryConfig | None = None,
         incremental: bool = True,
+        run_id: str | None = None,
     ) -> IntegrityReport:
         """获取永续合约数据并存储."""
         # 验证并准备数据库文件路径
@@ -314,6 +316,7 @@ class MarketDataService:
             max_workers=max_workers,
             retry_config=retry_config or RetryConfig(max_retries=max_retries),
             incremental=incremental,
+            run_id=run_id,
         )
 
     async def download_universe_data(
@@ -355,57 +358,68 @@ class MarketDataService:
              in the universe but must be within the universe time range
 
         """
+        run_id = generate_run_id("universe")
         try:
-            # 验证路径
             universe_file_obj = self._validate_and_prepare_path(universe_file, is_file=True)
             db_file_path = self._validate_and_prepare_path(db_path, is_file=True)
 
-            # 检查universe文件是否存在
             if not universe_file_obj.exists():
                 raise FileNotFoundError(f"Universe文件不存在: {universe_file_obj}")
 
-            # 加载universe定义
             universe_def = UniverseDefinition.load_from_file(universe_file_obj)
 
-            # 验证和处理自定义时间范围
             if custom_start_date or custom_end_date:
                 universe_def = TimeRangeProcessor.apply_custom_time_range(
                     universe_def, custom_start_date, custom_end_date
                 )
 
-            logger.info("📊 按周期下载数据:")
-            logger.info(f"   - 总快照数: {len(universe_def.snapshots)}")
-            logger.info(f"   - 数据频率: {interval.value}")
-            logger.info(f"   - API并发线程: {max_api_workers}")
-            logger.info(f"   - Vision并发线程: {max_vision_workers}")
-            logger.info(f"   - API请求间隔: {api_request_delay}秒")
-            logger.info(f"   - Vision请求间隔: {vision_request_delay}秒")
-            logger.info(f"   - 数据库路径: {db_file_path}")
-            logger.info(f"   - 下载市场指标: {download_market_metrics}")
+            logger.info(
+                "run.start",
+                run=run_id,
+                snapshots=len(universe_def.snapshots),
+                interval=interval.value,
+                api_workers=max_api_workers,
+                vision_workers=max_vision_workers,
+                api_delay_s=api_request_delay,
+                vision_delay_s=vision_request_delay,
+                db_path=str(db_file_path),
+                download_market_metrics=download_market_metrics,
+            )
 
-            kline_download_results = []
-            # 为每个周期单独下载数据
-            for i, snapshot in enumerate(universe_def.snapshots):
-                logger.info(f"📅 处理快照 {i + 1}/{len(universe_def.snapshots)}: {snapshot.effective_date}")
+            kline_download_results: list[IntegrityReport] = []
 
-                # 下载K线数据
-                kline_download_results.append(
-                    await self.get_perpetual_data(
-                        symbols=snapshot.symbols,
-                        start_time=snapshot.start_date,
-                        end_time=snapshot.end_date,
-                        db_path=db_file_path,
-                        interval=interval,
-                        max_workers=max_api_workers,
-                        max_retries=max_retries,
-                        retry_config=retry_config,
-                        incremental=incremental,
-                    )
+            for index, snapshot in enumerate(universe_def.snapshots, start=1):
+                logger.info(
+                    "snapshot.start",
+                    run=run_id,
+                    index=index,
+                    total=len(universe_def.snapshots),
+                    snapshot=snapshot.effective_date,
+                    start_date=snapshot.start_date,
+                    end_date=snapshot.end_date,
+                    symbols=len(snapshot.symbols),
                 )
 
-                # 下载市场指标数据
+                kline_report = await self.get_perpetual_data(
+                    symbols=snapshot.symbols,
+                    start_time=snapshot.start_date,
+                    end_time=snapshot.end_date,
+                    db_path=db_file_path,
+                    interval=interval,
+                    max_workers=max_api_workers,
+                    max_retries=max_retries,
+                    retry_config=retry_config,
+                    incremental=incremental,
+                    run_id=run_id,
+                )
+                kline_download_results.append(kline_report)
+
                 if download_market_metrics:
-                    logger.info("   📈 开始下载市场指标数据...")
+                    logger.info(
+                        "metrics.start",
+                        run=run_id,
+                        snapshot=snapshot.effective_date,
+                    )
                     await self._download_market_metrics_for_snapshot(
                         snapshot=snapshot,
                         db_path=db_file_path,
@@ -413,18 +427,36 @@ class MarketDataService:
                         vision_request_delay=vision_request_delay,
                         max_api_workers=max_api_workers,
                         max_vision_workers=max_vision_workers,
+                        incremental=incremental,
+                        run_id=run_id,
                     )
 
-                logger.info(f"   ✅ 快照 {snapshot.effective_date} 下载完成")
+                logger.info(
+                    "snapshot.done",
+                    run=run_id,
+                    snapshot=snapshot.effective_date,
+                )
 
-            logger.info("🎉 universe数据下载结果完整性报告: ")
-            for result in kline_download_results:
-                logger.info(result)
-            logger.info(f"📁 数据已保存到: {db_file_path}")
+            total_symbols = sum(report.total_symbols for report in kline_download_results)
+            total_success = sum(report.successful_symbols for report in kline_download_results)
+            total_failures = sum(len(report.failed_symbols) for report in kline_download_results)
 
-        except Exception as e:
-            logger.error(f"按周期下载universe数据失败: {e}")
-            raise MarketDataFetchError(f"按周期下载universe数据失败: {e}") from e
+            logger.info(
+                "run.summary",
+                run=run_id,
+                snapshots=len(universe_def.snapshots),
+                kline_total_symbols=total_symbols,
+                kline_success=total_success,
+                kline_failures=total_failures,
+                db_path=str(db_file_path),
+            )
+        except Exception as exc:
+            logger.error(
+                "run.error",
+                run=run_id,
+                error=str(exc),
+            )
+            raise MarketDataFetchError(f"按周期下载universe数据失败: {exc}") from exc
 
     # ==================== Universe管理 ====================
 
@@ -541,8 +573,21 @@ class MarketDataService:
         vision_request_delay: float,
         max_api_workers: int,
         max_vision_workers: int,
+        incremental: bool = True,
+        run_id: str | None = None,
     ) -> None:
-        """为单个快照下载市场指标数据."""
+        """为单个快照下载市场指标数据.
+
+        Args:
+            snapshot: Universe快照定义
+            db_path: 数据库路径
+            api_request_delay: API请求延迟
+            vision_request_delay: Vision请求延迟
+            max_api_workers: 最大API并发数
+            max_vision_workers: 最大Vision并发数
+            incremental: 是否启用增量下载（默认True）
+            run_id: 当前下载任务标识，用于日志跟踪
+        """
         try:
             # 初始化数据库连接
             if self.db is None:
@@ -553,7 +598,17 @@ class MarketDataService:
             end_time = snapshot.end_date
 
             # 下载Vision数据（持仓量、多空比例）
-            logger.info("      📊 使用 Binance Vision 下载市场指标数据...")
+            logger.info(
+                "vision.download.start",
+                run=run_id,
+                snapshot=snapshot.effective_date,
+                dataset="vision-metrics",
+                symbols=len(symbols),
+                start=start_time,
+                end=end_time,
+                max_workers=max_vision_workers,
+                incremental=incremental,
+            )
             await self.vision_downloader.download_metrics_batch(
                 symbols=symbols,
                 start_date=start_time,
@@ -561,10 +616,21 @@ class MarketDataService:
                 db_path=str(db_path),
                 request_delay=vision_request_delay,
                 max_workers=max_vision_workers,
+                incremental=incremental,
             )
 
             # 下载Metrics API数据（资金费率）
-            logger.info("      💰 使用 Binance API 下载资金费率数据...")
+            logger.info(
+                "funding.download.start",
+                run=run_id,
+                snapshot=snapshot.effective_date,
+                dataset="funding_rate",
+                symbols=len(symbols),
+                start=start_time,
+                end=end_time,
+                max_workers=max_api_workers,
+                incremental=incremental,
+            )
             await self.metrics_downloader.download_funding_rate_batch(
                 symbols=symbols,
                 start_time=start_time,
@@ -572,12 +638,23 @@ class MarketDataService:
                 db_path=str(db_path),
                 request_delay=api_request_delay,
                 max_workers=max_api_workers,  # 限制并发以避免API限制
+                incremental=incremental,
             )
 
-            logger.info("      ✅ 市场指标数据下载完成")
+            logger.info(
+                "metrics.snapshot_done",
+                run=run_id,
+                snapshot=snapshot.effective_date,
+                dataset="market_metrics",
+            )
 
         except Exception as e:
-            logger.error(f"下载市场指标数据失败: {e}")
+            logger.error(
+                "metrics.snapshot_error",
+                run=run_id,
+                snapshot=snapshot.effective_date,
+                error=str(e),
+            )
             raise MarketDataFetchError(f"下载市场指标数据失败: {e}") from e
 
     def _validate_and_prepare_path(self, path: Path | str, is_file: bool = False, file_name: str | None = None) -> Path:

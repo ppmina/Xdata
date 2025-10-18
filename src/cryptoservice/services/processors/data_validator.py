@@ -3,16 +3,16 @@
 提供各种数据的质量检查和完整性验证功能。
 """
 
-import logging
 from datetime import timedelta
 from pathlib import Path
 
 import pandas as pd
 
+from cryptoservice.config.logging import get_logger
 from cryptoservice.models import Freq, IntegrityReport
 from cryptoservice.storage.database import Database as AsyncMarketDB
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 # TODO: 时间连续性检验

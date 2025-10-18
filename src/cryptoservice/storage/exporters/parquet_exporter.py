@@ -4,18 +4,18 @@
 """
 
 import asyncio
-import logging
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal
 
 import pandas as pd
 
+from cryptoservice.config.logging import get_logger
 from cryptoservice.models import Freq
 
 if TYPE_CHECKING:
     from ..queries import KlineQuery
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class ParquetExporter:

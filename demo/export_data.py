@@ -6,8 +6,12 @@
 import asyncio
 from pathlib import Path
 
+from cryptoservice.config.logging import get_logger
 from cryptoservice.models import Freq, UniverseDefinition
 from cryptoservice.storage import Database
+from cryptoservice.utils.cli_helper import print_summary, print_completion_stats
+
+logger = get_logger(__name__)
 
 # ============== 配置参数 ==============
 UNIVERSE_FILE = "./data/universe.json"
@@ -15,8 +19,8 @@ DB_PATH = "./data/database/market.db"
 EXPORT_BASE_PATH = "./data/exports"
 
 # 导出配置
-SOURCE_FREQ = Freq.h1
-EXPORT_FREQ = Freq.h1
+SOURCE_FREQ = Freq.m5
+EXPORT_FREQ = Freq.m5
 EXPORT_KLINES = True
 EXPORT_METRICS = True
 
@@ -62,15 +66,9 @@ def create_output_path(universe_config, snapshot_id: int, start_date: str, end_d
 
 async def main():
     """主函数 - 展示如何使用导出功能."""
-    print("=" * 80)
-    print("📤 开始从数据库导出数据")
-    print("=" * 80)
-    print(f"📋 Universe文件: {UNIVERSE_FILE}")
-    print(f"💾 数据库路径: {DB_PATH}")
-    print(f"📁 导出路径: {EXPORT_BASE_PATH}")
-    print(f"⏱️  导出频率: {EXPORT_FREQ.value}")
+    logger.info("export_start", action="starting_export")
 
-    # 显示导出的特征
+    # 构建导出特征列表
     features = []
     if EXPORT_KLINES:
         kline_features = ["opn", "hgh", "low", "cls", "vol", "amt", "tnum", "tbvol", "tbamt", "tsvol", "tsamt"]
@@ -79,44 +77,56 @@ async def main():
         metrics_features = ["fr", "oi", "lsr"]
         features.extend(metrics_features)
 
-    print(f"📊 导出特征: {len(features)} 个 - {', '.join(features)}")
+    logger.info(
+        "export_config",
+        universe_file=UNIVERSE_FILE,
+        db_path=DB_PATH,
+        export_path=EXPORT_BASE_PATH,
+        export_freq=EXPORT_FREQ.value,
+        features_count=len(features),
+        features=", ".join(features),
+    )
 
     if CUSTOM_START_DATE or CUSTOM_END_DATE:
-        print(f"🎯 自定义时间范围: {CUSTOM_START_DATE} 至 {CUSTOM_END_DATE}")
-
-    print("=" * 80)
+        logger.info("custom_time_range", start=CUSTOM_START_DATE, end=CUSTOM_END_DATE)
 
     try:
         # 1. 加载 Universe 定义
-        print("\n📖 加载 Universe 定义...")
+        logger.info("loading_universe", file=UNIVERSE_FILE)
         universe_def = UniverseDefinition.load_from_file(UNIVERSE_FILE)
-        print(f"   ✅ 成功加载 {len(universe_def.snapshots)} 个快照")
+        logger.info("universe_loaded", snapshots=len(universe_def.snapshots))
 
         # 2. 初始化数据库
-        print("\n🔗 初始化数据库...")
+        logger.info("initializing_database", db_path=DB_PATH)
         db = Database(DB_PATH)
         await db.initialize()
-        print("   ✅ 数据库初始化成功")
+        logger.info("database_initialized")
 
         try:
             # 3. 处理每个快照
             success_count = 0
-            for i, snapshot in enumerate(universe_def.snapshots):
-                print(f"\n{'=' * 80}")
-                print(f"📋 处理快照 {i + 1}/{len(universe_def.snapshots)}")
-                print(f"{'=' * 80}")
+            total_npy_files = 0
+            total_json_files = 0
+            total_size_mb = 0.0
 
+            for i, snapshot in enumerate(universe_def.snapshots):
                 # 计算时间范围
                 start_date = CUSTOM_START_DATE or snapshot.start_date
                 end_date = CUSTOM_END_DATE or snapshot.end_date
 
-                print(f"   📅 时间范围: {start_date} 至 {end_date}")
-                print(f"   💱 交易对数量: {len(snapshot.symbols)}")
-                print(f"   📝 前5个交易对: {snapshot.symbols[:5]}")
+                logger.info(
+                    "processing_snapshot",
+                    index=i + 1,
+                    total=len(universe_def.snapshots),
+                    start_date=start_date,
+                    end_date=end_date,
+                    symbols_count=len(snapshot.symbols),
+                    symbols_sample=snapshot.symbols[:5],
+                )
 
                 # 创建输出路径
                 output_path = create_output_path(universe_def.config, i, start_date, end_date)
-                print(f"   📁 输出路径: {output_path}")
+                logger.info("output_path_created", path=str(output_path))
 
                 # 4. 使用统一的导出接口
                 try:
@@ -136,46 +146,63 @@ async def main():
                     if output_path.exists():
                         npy_files = list(output_path.rglob("*.npy"))
                         json_files = list(output_path.rglob("*.json"))
-                        total_size = sum(f.stat().st_size for f in output_path.rglob("*") if f.is_file()) / (
+                        size_mb = sum(f.stat().st_size for f in output_path.rglob("*") if f.is_file()) / (
                             1024 * 1024
                         )
 
-                        print("\n   📊 导出文件统计:")
-                        print(f"      • NumPy 文件: {len(npy_files)} 个")
-                        print(f"      • JSON 文件: {len(json_files)} 个")
-                        print(f"      • 总大小: {total_size:.1f} MB")
+                        total_npy_files += len(npy_files)
+                        total_json_files += len(json_files)
+                        total_size_mb += size_mb
+
+                        logger.info(
+                            "export_stats",
+                            npy_files=len(npy_files),
+                            json_files=len(json_files),
+                            total_size_mb=f"{size_mb:.1f}",
+                        )
 
                     success_count += 1
-                    print(f"\n   ✅ 快照 {i + 1} 导出完成")
+                    logger.info("snapshot_export_complete", snapshot_index=i + 1)
 
                 except Exception as e:
-                    print(f"\n   ❌ 快照 {i + 1} 导出失败: {e}")
-                    import traceback
+                    logger.error("snapshot_export_failed", snapshot_index=i + 1, error=str(e), exc_info=True)
 
-                    traceback.print_exc()
+            # 5. 显示执行总结
+            failed_count = len(universe_def.snapshots) - success_count
+            completion_rate = (success_count / len(universe_def.snapshots) * 100) if universe_def.snapshots else 0
 
-            # 5. 汇总结果
-            print(f"\n{'=' * 80}")
-            print("🎯 导出完成汇总")
-            print(f"{'=' * 80}")
-            print(f"   📊 总快照数: {len(universe_def.snapshots)}")
-            print(f"   ✅ 成功导出: {success_count}/{len(universe_def.snapshots)}")
-
-            if success_count == len(universe_def.snapshots):
-                print("   🎉 所有数据导出成功！")
+            # 确定执行状态
+            if failed_count == 0:
+                status = "success"
+            elif success_count > 0:
+                status = "partial"
             else:
-                print("   ⚠️  部分快照导出失败，请检查日志")
-            print(f"{'=' * 80}")
+                status = "failed"
 
         finally:
             await db.close()
-            print("\n🔒 数据库已关闭")
+
+            # 显示总结
+            print_summary(
+                title="数据导出总结",
+                status=status,
+                items={
+                    "导出频率": EXPORT_FREQ.value,
+                    "输出路径": EXPORT_BASE_PATH,
+                    "总快照数": len(universe_def.snapshots),
+                    "成功导出": success_count,
+                    "失败数量": failed_count,
+                    "完成率": completion_rate,
+                    "NPY 文件数": total_npy_files,
+                    "JSON 文件数": total_json_files,
+                    "总大小 (MB)": f"{total_size_mb:.1f}",
+                    "包含K线": EXPORT_KLINES,
+                    "包含指标": EXPORT_METRICS,
+                },
+            )
 
     except Exception as e:
-        print(f"\n❌ 数据导出失败: {e}")
-        import traceback
-
-        traceback.print_exc()
+        logger.error("export_failed", error=str(e), exc_info=True)
         raise
 
 

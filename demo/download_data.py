@@ -7,10 +7,14 @@ from pathlib import Path
 from dotenv import load_dotenv
 
 from cryptoservice.config import RetryConfig
+from cryptoservice.config.logging import get_logger
 from cryptoservice.models import Freq
 from cryptoservice.services import MarketDataService
+from cryptoservice.utils.cli_helper import print_summary, print_progress_header
 
 load_dotenv()
+
+logger = get_logger(__name__)
 
 # ============== 配置参数 ==============
 # 文件路径
@@ -40,8 +44,8 @@ RETRY_CONFIG = (
 INCREMENTAL = True  # 是否启用增量下载模式（只下载缺失的数据）
 
 # 自定义时间范围配置 (可选)
-CUSTOM_START_DATE = None  # 自定义起始日期，例如: "2024-02-01"，必须在universe时间范围内
-CUSTOM_END_DATE = None  # 自定义结束日期，例如: "2024-06-30"，必须在universe时间范围内
+CUSTOM_START_DATE = "2024-10-01" # 自定义起始日期，例如: "2024-02-01"，必须在universe时间范围内
+CUSTOM_END_DATE = "2024-10-31"  # 自定义结束日期，例如: "2024-06-30"，必须在universe时间范围内
 
 # 新特征配置
 DOWNLOAD_MARKET_METRICS = True  # 是否下载市场指标数据 (资金费率、持仓量、多空比例)
@@ -56,13 +60,12 @@ async def main():
     api_secret = os.getenv("BINANCE_API_SECRET")
 
     if not api_key or not api_secret:
-        print("❌ 请设置环境变量: BINANCE_API_KEY 和 BINANCE_API_SECRET")
+        logger.error("env_vars_missing", required="BINANCE_API_KEY and BINANCE_API_SECRET")
         return
 
     # 检查Universe文件是否存在
     if not Path(UNIVERSE_FILE).exists():
-        print(f"❌ Universe文件不存在: {UNIVERSE_FILE}")
-        print("请先运行 define_universe.py 创建Universe文件")
+        logger.error("universe_file_not_found", path=UNIVERSE_FILE, hint="run define_universe.py first")
         return
 
     # 确保数据库存在
@@ -70,17 +73,22 @@ async def main():
 
     # 创建服务并作为上下文管理器使用
     try:
+        print_progress_header(
+                "Universe 数据下载",
+                details={
+                    "Universe 文件": UNIVERSE_FILE,
+                    "数据库路径": DB_PATH,
+                    "数据频率": INTERVAL.value,
+                    "增量模式": "是" if INCREMENTAL else "否",
+                    "下载指标": "是" if DOWNLOAD_MARKET_METRICS else "否",
+                    "API 并发数": MAX_API_WORKERS,
+                    "Vision 并发数": MAX_VISION_WORKERS,
+                },
+            )
         async with await MarketDataService.create(api_key=api_key, api_secret=api_secret) as service:
             # 显示自定义时间范围信息
-            if CUSTOM_START_DATE or CUSTOM_END_DATE:
-                print("📅 自定义时间范围:")
-                print(f"   - 自定义起始日期: {CUSTOM_START_DATE or '未指定（使用universe原始）'}")
-                print(f"   - 自定义结束日期: {CUSTOM_END_DATE or '未指定（使用universe原始）'}")
-                print("   - 自定义时间范围必须在universe定义的时间范围内")
-            else:
-                print("📅 使用universe定义的完整时间范围")
+            logger.info("custom_time_range", start=CUSTOM_START_DATE or "use_universe_default", end=CUSTOM_END_DATE or "use_universe_default", note="must_be_within_universe_range")
 
-            # 下载universe数据
             await service.download_universe_data(
                 universe_file=UNIVERSE_FILE,
                 db_path=DB_PATH,
@@ -94,14 +102,35 @@ async def main():
                 max_api_workers=MAX_API_WORKERS,
                 max_vision_workers=MAX_VISION_WORKERS,
                 max_retries=MAX_RETRIES,
-                custom_start_date=CUSTOM_START_DATE,  # 新增：自定义起始日期
-                custom_end_date=CUSTOM_END_DATE,  # 新增：自定义结束日期
+                custom_start_date=CUSTOM_START_DATE,
+                custom_end_date=CUSTOM_END_DATE,
             )
 
-        print("✅ 数据下载完成!")
+            logger.info("download_universe_complete")
+
+        # 显示下载总结
+        print_summary(
+            title="数据下载完成",
+            status="success",
+            items={
+                "Universe 文件": UNIVERSE_FILE,
+                "数据库路径": DB_PATH,
+                "数据频率": INTERVAL.value,
+                "增量模式": INCREMENTAL,
+                "下载指标": DOWNLOAD_MARKET_METRICS,
+            },
+        )
 
     except Exception as e:
-        print(f"❌ 数据下载失败: {e}")
+        logger.error("download_universe_failed", error=str(e))
+        print_summary(
+            title="数据下载失败",
+            status="failed",
+            items={
+                "错误信息": str(e),
+                "Universe 文件": UNIVERSE_FILE,
+            },
+        )
         raise
 
 

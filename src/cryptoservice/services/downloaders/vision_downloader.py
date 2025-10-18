@@ -5,7 +5,6 @@
 
 import asyncio
 import csv
-import logging
 import time
 import zipfile
 from datetime import datetime
@@ -17,13 +16,14 @@ from aiohttp import ClientConnectionError, ClientTimeout
 from binance import AsyncClient
 
 from cryptoservice.config import RetryConfig
+from cryptoservice.config.logging import get_logger
 from cryptoservice.exceptions import MarketDataFetchError
 from cryptoservice.models import LongShortRatio, OpenInterest
 from cryptoservice.storage.database import Database as AsyncMarketDB
 
 from .base_downloader import BaseDownloader
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class VisionDownloader(BaseDownloader):
@@ -53,7 +53,7 @@ class VisionDownloader(BaseDownloader):
             "max_concurrent": 0,
         }
 
-    async def download_metrics_batch(
+    async def download_metrics_batch(  # noqa: C901
         self,
         symbols: list[str],
         start_date: str,
@@ -61,6 +61,7 @@ class VisionDownloader(BaseDownloader):
         db_path: str,
         max_workers: int,
         request_delay: float,
+        incremental: bool = True,
     ) -> None:
         """批量异步下载指标数据.
 
@@ -71,6 +72,7 @@ class VisionDownloader(BaseDownloader):
             db_path: 数据库路径
             request_delay: 请求之间的延迟（秒），0表示无延迟
             max_workers: 最大并发下载数，决定TCP连接池大小
+            incremental: 是否启用增量下载（默认True）
         """
         try:
             data_types = ["openInterest", "longShortRatio"]
@@ -84,7 +86,7 @@ class VisionDownloader(BaseDownloader):
                 "max_concurrent": 0,
             }
 
-            logger.info(f"开始从 Binance Vision 下载指标数据: {data_types}")
+            logger.info("vision_download_start", data_types=data_types)
 
             if self.db is None:
                 self.db = AsyncMarketDB(db_path)
@@ -93,22 +95,43 @@ class VisionDownloader(BaseDownloader):
             import pandas as pd
 
             date_range = pd.date_range(start=start_date, end=end_date, freq="D")
+            total_candidates = len(symbols) * len(date_range)
+
+            if incremental:
+                logger.info("incremental_mode_enabled", action="analyzing_data")
+                plan = await self.db.incremental.plan_vision_metrics_download(symbols, start_date, end_date)
+
+                symbol_date_pairs = [
+                    (symbol, date_str)
+                    for symbol, details in plan.items()
+                    for date_str in details.get("missing_dates", [])
+                ]
+                skipped_count = total_candidates - len(symbol_date_pairs)
+
+                if not symbol_date_pairs:
+                    logger.info("vision_data_complete", action="skipping_download")
+                    return
+
+                logger.info(
+                    "incremental_analysis_complete",
+                    tasks_to_download=len(symbol_date_pairs),
+                    tasks_skipped=skipped_count,
+                )
+            else:
+                # 不启用增量下载，下载所有数据
+                symbol_date_pairs = [(symbol, date.strftime("%Y-%m-%d")) for date in date_range for symbol in symbols]
 
             semaphore = asyncio.Semaphore(max_workers)
             tasks = []
 
-            for date in date_range:
-                date_str = date.strftime("%Y-%m-%d")
-                for symbol in symbols:
-                    task = asyncio.create_task(
-                        self._download_and_process_symbol_for_date(
-                            symbol, date_str, semaphore, request_delay, max_workers
-                        )
-                    )
-                    tasks.append(task)
+            for symbol, date_str in symbol_date_pairs:
+                task = asyncio.create_task(
+                    self._download_and_process_symbol_for_date(symbol, date_str, semaphore, request_delay, max_workers)
+                )
+                tasks.append(task)
 
             total_tasks = len(tasks)
-            logger.info(f"创建了 {total_tasks} 个下载任务，最大并发数: {max_workers}")
+            logger.info("download_tasks_created", total_tasks=total_tasks, max_workers=max_workers)
 
             start_time = time.time()
             await asyncio.gather(*tasks)
@@ -116,46 +139,45 @@ class VisionDownloader(BaseDownloader):
             elapsed = time.time() - start_time
 
             # 完整性检查
-            total_expected = len(symbols) * len(date_range)
+            total_expected = len(symbol_date_pairs)
             success_count = self._perf_stats["download_count"]
             failed_count = len(self.failed_downloads)
             success_rate = (success_count / total_expected * 100) if total_expected > 0 else 0
 
-            logger.info("Binance Vision 指标数据下载完成")
-            logger.info("=" * 50)
-            logger.info("完整性报告:")
-            logger.info(f"   - 预期任务数: {total_expected}")
-            logger.info(f"   - 成功任务数: {success_count}")
-            logger.info(f"   - 失败任务数: {failed_count}")
-            logger.info(f"   - 成功率: {success_rate:.1f}%")
-
-            if failed_count > 0:
-                logger.warning(f"   - 失败的交易对数: {len(self.failed_downloads)}")
-                logger.warning("   - 使用 get_failed_downloads() 查看详细失败信息")
-
-            logger.info("=" * 50)
-            logger.info("性能统计:")
-            logger.info(f"   - 总耗时: {elapsed:.2f}秒")
-            logger.info(f"   - 最大并发数: {self._perf_stats['max_concurrent']}")
-
             dl_time = self._perf_stats["download_time"]
             dl_pct = dl_time / elapsed * 100 if elapsed > 0 else 0
-            logger.info(f"   - 下载时间: {dl_time:.2f}秒 ({dl_pct:.1f}%)")
-
             parse_time = self._perf_stats["parse_time"]
             parse_pct = parse_time / elapsed * 100 if elapsed > 0 else 0
-            logger.info(f"   - 解析时间: {parse_time:.2f}秒 ({parse_pct:.1f}%)")
-
             db_time = self._perf_stats["db_time"]
             db_pct = db_time / elapsed * 100 if elapsed > 0 else 0
-            logger.info(f"   - 数据库时间: {db_time:.2f}秒 ({db_pct:.1f}%)")
+            avg_per_task = elapsed / success_count if success_count > 0 else 0
 
-            if success_count > 0:
-                avg_per_task = elapsed / success_count
-                logger.info(f"   - 平均每任务: {avg_per_task:.3f}秒")
+            logger.info(
+                "vision_download_complete",
+                total_expected=total_expected,
+                success_count=success_count,
+                failed_count=failed_count,
+                success_rate=f"{success_rate:.1f}",
+                total_elapsed=f"{elapsed:.2f}",
+                max_concurrent=self._perf_stats["max_concurrent"],
+                download_time=f"{dl_time:.2f}",
+                download_pct=f"{dl_pct:.1f}",
+                parse_time=f"{parse_time:.2f}",
+                parse_pct=f"{parse_pct:.1f}",
+                db_time=f"{db_time:.2f}",
+                db_pct=f"{db_pct:.1f}",
+                avg_per_task=f"{avg_per_task:.3f}",
+            )
+
+            if failed_count > 0:
+                logger.warning(
+                    "vision_download_failures",
+                    failed_symbols=len(self.failed_downloads),
+                    hint="use get_failed_downloads()",
+                )
 
         except Exception as e:
-            logger.error(f"从 Binance Vision 下载指标数据失败: {e}")
+            logger.error("vision_download_error", error=str(e))
             raise MarketDataFetchError(f"从 Binance Vision 下载指标数据失败: {e}") from e
         finally:
             await self._close_session()
@@ -176,11 +198,11 @@ class VisionDownloader(BaseDownloader):
             if current > self._perf_stats["max_concurrent"]:
                 self._perf_stats["max_concurrent"] = current
                 if current % 10 == 0:  # 每10个并发打印一次
-                    logger.debug(f"当前并发: {current}")
+                    logger.debug("concurrent_count", current=current)
 
             try:
                 url = f"{self.base_url}/{symbol}/{symbol}-metrics-{date_str}.zip"
-                logger.debug(f"[{symbol}] 下载 {date_str} 指标数据")
+                logger.debug("download_symbol_metrics", symbol=symbol, date=date_str)
 
                 retry_config = RetryConfig(max_retries=3, base_delay=0)
 
@@ -200,21 +222,29 @@ class VisionDownloader(BaseDownloader):
 
                     if metrics_data.get("open_interest"):
                         await self.db.insert_open_interests(metrics_data["open_interest"])
-                        logger.info(f"[{symbol}] 存储了 {date_str} {len(metrics_data['open_interest'])} 条持仓量记录")
+                        logger.info(
+                            "stored_open_interest",
+                            symbol=symbol,
+                            date=date_str,
+                            records=len(metrics_data["open_interest"]),
+                        )
                     if metrics_data.get("long_short_ratio"):
                         await self.db.insert_long_short_ratios(metrics_data["long_short_ratio"])
                         logger.info(
-                            f"[{symbol}] 存储了 {date_str} {len(metrics_data['long_short_ratio'])} 条多空比例记录"
+                            "stored_long_short_ratio",
+                            symbol=symbol,
+                            date=date_str,
+                            records=len(metrics_data["long_short_ratio"]),
                         )
 
                     self._perf_stats["db_time"] += time.time() - db_start
                 else:
-                    logger.warning(f"[{symbol}] {date_str}: 无法获取指标数据")
+                    logger.warning("no_metrics_data", symbol=symbol, date=date_str)
 
                 self._perf_stats["download_count"] += 1
 
             except Exception as e:
-                logger.warning(f"[{symbol}] 下载 {date_str} 指标数据失败: {e}")
+                logger.warning("download_metrics_failed", symbol=symbol, date=date_str, error=str(e))
                 self._record_failed_download(symbol, str(e), {"url": url, "date": date_str, "data_type": "metrics"})
 
             finally:
@@ -250,7 +280,7 @@ class VisionDownloader(BaseDownloader):
                 retry_config=retry_config,
             )
         except Exception as e:
-            logger.error(f"[{symbol}] 下载指标数据失败: {e}")
+            logger.error("download_zip_failed", symbol=symbol, error=str(e))
             return None
 
         try:
@@ -260,7 +290,7 @@ class VisionDownloader(BaseDownloader):
                 csv_files = [f for f in zip_file.namelist() if f.endswith(".csv")]
 
                 if not csv_files:
-                    logger.warning(f"ZIP文件中没有找到CSV文件: {url}")
+                    logger.warning("no_csv_in_zip", url=url)
                     return None
 
                 result: dict[str, list] = {"open_interest": [], "long_short_ratio": []}
@@ -287,7 +317,7 @@ class VisionDownloader(BaseDownloader):
                         ):
                             result["long_short_ratio"].extend(self._parse_lsr_data(rows, symbol, csv_file))
                     except Exception as e:
-                        logger.warning(f"解析CSV文件 {csv_file} 时出错: {e}")
+                        logger.warning("parse_csv_error", csv_file=csv_file, error=str(e))
                         continue
 
                 # 记录解析时间
@@ -295,7 +325,7 @@ class VisionDownloader(BaseDownloader):
 
                 return result if result["open_interest"] or result["long_short_ratio"] else None
         except Exception as e:
-            logger.error(f"[{symbol}] 下载和解析指标数据失败: {e}")
+            logger.error("parse_metrics_error", symbol=symbol, error=str(e))
             return None
 
     async def _get_session(self, max_workers: int) -> aiohttp.ClientSession:
@@ -328,7 +358,7 @@ class VisionDownloader(BaseDownloader):
                     connector_owner=True,
                     trust_env=True,
                 )
-                logger.debug(f"创建HTTP会话，连接池大小: {max_workers}")
+                logger.debug("http_session_created", pool_size=max_workers)
 
         return self._session
 
@@ -346,11 +376,11 @@ class VisionDownloader(BaseDownloader):
                     # 使用较短的超时关闭会话，避免长时间等待
                     await asyncio.wait_for(session.close(), timeout=5.0)
                 except TimeoutError:
-                    logger.debug("关闭aiohttp会话超时，强制关闭")
+                    logger.debug("session_close_timeout")
                 except ClientConnectionError as exc:
-                    logger.debug(f"关闭aiohttp会话时出现连接问题: {exc}")
+                    logger.debug("session_close_connection_error", error=str(exc))
                 except Exception as exc:  # noqa: BLE001
-                    logger.debug(f"关闭aiohttp会话时出现异常: {exc}")
+                    logger.debug("session_close_error", error=str(exc))
 
     def _parse_oi_data(self, raw_data: list[dict], symbol: str) -> list[OpenInterest]:
         """解析持仓量数据."""
@@ -381,7 +411,7 @@ class VisionDownloader(BaseDownloader):
                     open_interests.append(open_interest)
 
             except (ValueError, KeyError) as e:
-                logger.warning(f"解析持仓量数据行时出错: {e}, 行数据: {row}")
+                logger.warning("parse_oi_row_error", error=str(e), row=row)
                 continue
 
         return open_interests
@@ -434,7 +464,7 @@ class VisionDownloader(BaseDownloader):
                                 )
                             )
                 except Exception as e:
-                    logger.debug(f"跳过顶级交易者数据处理 {symbol} at {create_time}: {e}")
+                    logger.debug("skip_toptrader_data", symbol=symbol, time=create_time, error=str(e))
 
                 # 处理Taker数据 - 独立处理，确保无损
                 try:
@@ -462,10 +492,10 @@ class VisionDownloader(BaseDownloader):
                                 )
                             )
                 except Exception as e:
-                    logger.debug(f"跳过Taker数据处理 {symbol} at {create_time}: {e}")
+                    logger.debug("skip_taker_data", symbol=symbol, time=create_time, error=str(e))
 
             except (ValueError, KeyError) as e:
-                logger.warning(f"解析多空比例数据行时出错: {e}, 行数据: {row}")
+                logger.warning("parse_lsr_row_error", error=str(e), row=row)
                 continue
 
         return long_short_ratios

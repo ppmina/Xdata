@@ -3,12 +3,12 @@
 提供数据库操作的统一入口和门面.
 """
 
-import logging
 from pathlib import Path
 from typing import Any, Literal
 
 import pandas as pd
 
+from cryptoservice.config.logging import get_logger
 from cryptoservice.models import Freq, PerpetualMarketTicker
 
 from .connection import ConnectionPool
@@ -19,7 +19,7 @@ from .resampler import DataResampler
 from .schema import DatabaseSchema
 from .stores import FundingStore, InterestStore, KlineStore, RatioStore
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class Database:
@@ -71,13 +71,13 @@ class Database:
         await self.schema.create_all_tables(self.pool)
         self._initialized = True
 
-        logger.info(f"数据库初始化完成: {self.db_path}")
+        logger.info("database_initialized", db_path=str(self.db_path))
 
     async def close(self):
         """关闭数据库."""
         await self.pool.close()
         self._initialized = False
-        logger.info("数据库已关闭")
+        logger.info("database_closed")
 
     # === 上下文管理器 ===
     async def __aenter__(self):
@@ -256,7 +256,7 @@ class Database:
     # === 增量下载支持 ===
     async def plan_kline_download(
         self, symbols: list[str], start_date: str, end_date: str, freq: Freq
-    ) -> dict[str, list[int]]:
+    ) -> dict[str, dict[str, int | str]]:
         """制定K线数据增量下载计划.
 
         Args:
@@ -273,8 +273,13 @@ class Database:
         return await self.incremental.plan_kline_download(symbols, start_date, end_date, freq)
 
     async def plan_metrics_download(
-        self, symbols: list[str], start_date: str, end_date: str, data_type: str, interval_hours: int = 8
-    ) -> dict[str, list[int]]:
+        self,
+        symbols: list[str],
+        start_date: str,
+        end_date: str,
+        data_type: str,
+        interval_hours: float = 8,
+    ) -> dict[str, dict[str, int | str]]:
         """制定指标数据增量下载计划.
 
         Args:

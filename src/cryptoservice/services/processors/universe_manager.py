@@ -3,7 +3,6 @@
 专门处理Universe定义、管理和相关操作。
 """
 
-import logging
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -13,11 +12,12 @@ import pandas as pd
 if TYPE_CHECKING:
     from cryptoservice.services.market_service import MarketDataService
 
+from cryptoservice.config.logging import get_logger
 from cryptoservice.exceptions import MarketDataFetchError
 from cryptoservice.models import Freq, UniverseConfig, UniverseDefinition, UniverseSnapshot
 from cryptoservice.utils import RateLimitManager
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class UniverseManager:

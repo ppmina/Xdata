@@ -3,13 +3,14 @@
 定义所有表的DDL语句和索引创建。
 """
 
-import logging
 from typing import TYPE_CHECKING
+
+from cryptoservice.config.logging import get_logger
 
 if TYPE_CHECKING:
     from .connection import ConnectionPool
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class DatabaseSchema:
@@ -124,7 +125,7 @@ class DatabaseSchema:
         Args:
             connection_pool: 数据库连接池
         """
-        logger.info("开始创建数据库表结构")
+        logger.info("create_all_tables_start")
 
         async with connection_pool.get_connection() as conn:
             for table_config in cls.ALL_TABLES:
@@ -143,7 +144,7 @@ class DatabaseSchema:
             # 提交事务
             await conn.commit()
 
-        logger.info("数据库表结构创建完成")
+        logger.info("create_all_tables_complete")
 
     @classmethod
     async def drop_all_tables(cls, connection_pool: "ConnectionPool") -> None:

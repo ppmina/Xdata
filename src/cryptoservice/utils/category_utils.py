@@ -3,14 +3,15 @@
 提供分类数据的读取、处理和分析功能
 """
 
-import logging
 from pathlib import Path
 from typing import Any
 
 import numpy as np
 import pandas as pd
 
-logger = logging.getLogger(__name__)
+from cryptoservice.config.logging import get_logger
+
+logger = get_logger(__name__)
 
 
 class CategoryUtils:

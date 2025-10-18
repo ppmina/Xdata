@@ -4,13 +4,13 @@
 """
 
 import asyncio
-import logging
 from abc import ABC, abstractmethod
 from typing import Any
 
 from binance import AsyncClient
 
 from cryptoservice.config import RetryConfig
+from cryptoservice.config.logging import get_logger
 from cryptoservice.utils import (
     AsyncExponentialBackoff,
     AsyncRateLimitManager,
@@ -19,7 +19,7 @@ from cryptoservice.utils import (
     RateLimitManager,
 )
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class BaseDownloader(ABC):

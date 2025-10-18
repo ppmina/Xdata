@@ -3,13 +3,14 @@
 专门处理持仓量数据的存储操作。
 """
 
-import logging
 from typing import TYPE_CHECKING, Any
+
+from cryptoservice.config.logging import get_logger
 
 if TYPE_CHECKING:
     from ..connection import ConnectionPool
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class InterestStore:

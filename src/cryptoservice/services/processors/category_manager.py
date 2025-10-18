@@ -4,16 +4,16 @@
 """
 
 import csv
-import logging
 from datetime import datetime
 from pathlib import Path
 
 import requests
 
 from cryptoservice.config import settings
+from cryptoservice.config.logging import get_logger
 from cryptoservice.models import UniverseDefinition
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class CategoryManager:

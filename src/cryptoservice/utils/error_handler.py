@@ -4,14 +4,13 @@
 """
 
 import asyncio
-import logging
 import secrets
 import time
 
-from cryptoservice.config import RetryConfig
+from cryptoservice.config import RetryConfig, get_logger
 from cryptoservice.models import ErrorSeverity
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class ExponentialBackoff:

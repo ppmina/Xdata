@@ -5,13 +5,13 @@
 
 import asyncio
 import json
-import logging
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
 import pandas as pd
 
+from cryptoservice.config.logging import get_logger
 from cryptoservice.models import Freq
 
 from ..queries import KlineQuery
@@ -20,7 +20,7 @@ from ..resampler import DataResampler
 if TYPE_CHECKING:
     from ..queries import MetricsQuery
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class NumpyExporter:
@@ -95,7 +95,7 @@ class NumpyExporter:
         output_path = Path(output_path)
         output_path.mkdir(parents=True, exist_ok=True)
 
-        logger.info(f"开始导出NumPy数据: {len(symbols)} 个交易对 ({start_time} - {end_time})")
+        logger.info("export_klines_start", symbols=len(symbols), start_time=start_time, end_time=end_time)
 
         # 获取数据
         df = await self.kline_query.select_by_time_range(symbols, start_time, end_time, freq)
@@ -107,14 +107,14 @@ class NumpyExporter:
         # 重采样（如果需要）
         export_freq = freq
         if target_freq and self.resampler:
-            logger.info(f"重采样数据从 {freq.value} 到 {target_freq.value}")
+            logger.info("resample_klines_start", source_freq=freq.value, target_freq=target_freq.value)
             df = await self.resampler.resample(df, target_freq)
             export_freq = target_freq
 
         # 按日期分组导出
         await self._export_by_dates(df, output_path, export_freq)
 
-        logger.info(f"NumPy数据导出完成: {output_path}")
+        logger.info("export_klines_complete", path=output_path)
 
     async def _export_by_dates(
         self, df: pd.DataFrame, output_path: Path, freq: Freq, timestamp_dfs: dict[str, pd.DataFrame] | None = None
@@ -131,7 +131,7 @@ class NumpyExporter:
         timestamps = df.index.get_level_values("timestamp")
         unique_dates = sorted({pd.Timestamp(ts, unit="ms").date() for ts in timestamps})
 
-        logger.info(f"按日期导出数据: {len(unique_dates)} 天")
+        logger.info("export_by_dates_start", dates=len(unique_dates))
 
         # 并发处理多个日期
         tasks = []
@@ -176,7 +176,7 @@ class NumpyExporter:
         if day_data.empty:
             return
 
-        logger.debug(f"导出日期 {date_str}: {len(day_data)} 条记录")
+        logger.debug("export_single_date_start", date=date_str, records=len(day_data))
 
         # 保存交易对顺序
         await self._save_symbols(day_data, output_path, freq, date_str)
@@ -234,13 +234,13 @@ class NumpyExporter:
                     day_ts_data = ts_df[day_mask.values]
 
                     if day_ts_data.empty:
-                        logger.debug(f"{ts_name}: 当天无数据")
+                        logger.debug("export_timestamps_empty", type=ts_name)
                         continue
 
                     # 重塑为 n x T 矩阵
                     ts_array = day_ts_data["timestamp"].unstack("timestamp").values
                     merged_columns[ts_name] = ts_array
-                    logger.debug(f"{ts_name}: {ts_array.shape}")
+                    logger.debug("export_timestamps_complete", type=ts_name, shape=ts_array.shape)
 
                 if not merged_columns:
                     logger.debug("没有 timestamp 数据可导出")
@@ -263,10 +263,10 @@ class NumpyExporter:
                 # 保存合并后的 timestamp 数组
                 np.save(save_path / f"{date_str}.npy", merged_array)
 
-                logger.debug(f"Timestamp 合并完成: {merged_array.shape}, 顺序: {' -> '.join(merged_columns.keys())}")
+                logger.debug("export_timestamps_complete", shape=merged_array.shape, types=list(merged_columns.keys()))
 
             except Exception as e:
-                logger.error(f"导出合并 timestamp 失败: {e}")
+                logger.error("export_timestamps_failed", error=str(e))
                 import traceback
 
                 traceback.print_exc()
@@ -299,7 +299,7 @@ class NumpyExporter:
                         with open(symbols_path, encoding="utf-8") as fp:
                             payload = json.load(fp)
                     except (json.JSONDecodeError, OSError) as e:
-                        logger.warning(f"无法读取现有symbols文件: {symbols_path}，将创建新文件 (错误: {e})")
+                        logger.warning("load_symbols_file_failed", path=symbols_path, error=str(e))
                         payload = {}
 
                 # 添加当前日期的symbols
@@ -333,7 +333,7 @@ class NumpyExporter:
 
                 # 处理缺失值
                 if np.isnan(array).any():
-                    logger.debug(f"特征 {feature} 包含缺失值，使用前向填充")
+                    logger.debug("export_single_feature_missing_values", feature=feature)
                     # 使用前向填充处理缺失值
                     df_filled = pd.DataFrame(array, index=feature_data.index, columns=feature_data.columns)
                     df_filled = df_filled.ffill(axis=1)
@@ -348,14 +348,14 @@ class NumpyExporter:
 
                 return len(array)
             except Exception as e:
-                logger.error(f"处理特征 {feature} 时出错: {e}")
+                logger.error("export_single_feature_failed", feature=feature, error=str(e))
                 return 0
 
         # 在线程池中执行
         count = await loop.run_in_executor(None, process_and_save)
 
         if count > 0:
-            logger.debug(f"特征 {feature} 导出完成: {count} 个交易对")
+            logger.debug("export_single_feature_complete", feature=feature, records=count)
 
     async def export_with_custom_features(
         self,
@@ -399,7 +399,7 @@ class NumpyExporter:
         output_path = Path(output_path)
         output_path.mkdir(parents=True, exist_ok=True)
 
-        logger.info(f"开始导出NumPy数据（自定义特征）: {len(symbols)} 个交易对")
+        logger.info("export_with_custom_features_start", symbols=len(symbols))
 
         # 获取数据
         columns = list(feature_mapping.keys())
@@ -415,7 +415,7 @@ class NumpyExporter:
         # 按日期分组导出
         await self._export_by_dates(df, output_path, freq)
 
-        logger.info(f"NumPy数据导出完成: {output_path}")
+        logger.info("export_with_custom_features_complete", path=output_path)
 
     async def export_summary_info(
         self, symbols: list[str], start_time: str, end_time: str, freq: Freq, output_path: Path
@@ -465,7 +465,7 @@ class NumpyExporter:
         with open(summary_path, "w", encoding="utf-8") as f:
             json.dump(summary, f, indent=2, ensure_ascii=False)
 
-        logger.info(f"概要信息已保存: {summary_path}")
+        logger.info("export_summary_info_complete", path=summary_path)
         return summary
 
     async def export_combined_data(  # noqa: C901
@@ -553,14 +553,18 @@ class NumpyExporter:
         output_path.mkdir(parents=True, exist_ok=True)
 
         logger.info(
-            f"开始导出数据: {len(symbols)} 个交易对 ({start_time} - {end_time}), "
-            f"源频率: {source_freq.value}, 导出频率: {export_freq.value}"
+            "export_combined_data_start",
+            symbols=len(symbols),
+            start_time=start_time,
+            end_time=end_time,
+            source_freq=source_freq.value,
+            export_freq=export_freq.value,
         )
 
         # 1. 获取 K线数据（使用 source_freq）
         combined_df = pd.DataFrame()
         if include_klines:
-            logger.info(f"从数据库获取 {source_freq.value} K线数据...")
+            logger.info("select_kline_data_start", source_freq=source_freq.value)
             kline_df = await self.kline_query.select_by_time_range(symbols, start_time, end_time, source_freq)
 
             if kline_df.empty:
@@ -571,7 +575,7 @@ class NumpyExporter:
                 logger.error(error_msg)
                 raise ValueError(error_msg)
 
-            logger.info(f"获取 K线数据: {len(kline_df)} 条记录")
+            logger.info("select_kline_data_complete", records=len(kline_df))
             combined_df = kline_df.copy()
 
             # 重采样 K线数据（如果需要）
@@ -579,9 +583,9 @@ class NumpyExporter:
                 if not self.resampler:
                     raise ValueError("需要重采样但 resampler 未初始化")
 
-                logger.info(f"重采样 K线数据: {source_freq.value} -> {export_freq.value}")
+                logger.info("resample_kline_data_start", source_freq=source_freq.value, export_freq=export_freq.value)
                 combined_df = await self.resampler.resample(combined_df, export_freq)
-                logger.info(f"重采样后: {len(combined_df)} 条记录")
+                logger.info("resample_kline_data_complete", records=len(combined_df))
 
         # 2. 合并 Metrics 数据（如果需要）
         timestamp_dfs = {}  # 存储各类数据的原始 timestamp
@@ -614,8 +618,8 @@ class NumpyExporter:
         # 4. 导出数据（包括 timestamp）
         await self._export_by_dates(combined_df, output_path, export_freq, timestamp_dfs)
 
-        logger.info(f"数据导出完成: {len(combined_df.columns)} 个特征，{len(combined_df)} 条记录")
-        logger.info(f"Timestamp 类型: {list(timestamp_dfs.keys())}")
+        logger.info("export_combined_data_complete", columns=len(combined_df.columns), records=len(combined_df))
+        logger.info("export_combined_data_timestamp_types", types=list(timestamp_dfs.keys()))
 
     async def _fetch_and_merge_metrics(  # noqa: C901
         self,
@@ -659,7 +663,7 @@ class NumpyExporter:
         # 资金费率
         if metrics_config.get("funding_rate"):
             try:
-                logger.info("获取资金费率数据...")
+                logger.info("fetch_funding_rate_data_start")
                 fr_df_raw = await self.metrics_query.select_funding_rates(
                     symbols, start_time, end_time, columns=["funding_rate"]
                 )
@@ -687,14 +691,14 @@ class NumpyExporter:
                         timestamp_dfs["fr_timestamp"] = fr_ts_df
 
                     metrics_dfs.append(fr_df)
-                    logger.info(f"   ✅ 资金费率: {len(fr_df)} 条记录")
+                    logger.info("fetch_funding_rate_data_complete", records=len(fr_df))
             except Exception as e:
-                logger.warning(f"   ⚠️ 资金费率获取失败: {e}")
+                logger.warning("fetch_funding_rate_data_failed", error=str(e))
 
         # 持仓量
         if metrics_config.get("open_interest"):
             try:
-                logger.info("获取持仓量数据...")
+                logger.info("fetch_open_interest_data_start")
                 oi_df_raw = await self.metrics_query.select_open_interests(
                     symbols, start_time, end_time, columns=["open_interest"]
                 )
@@ -721,16 +725,16 @@ class NumpyExporter:
                         timestamp_dfs["oi_timestamp"] = oi_ts_df
 
                     metrics_dfs.append(oi_df)
-                    logger.info(f"   ✅ 持仓量: {len(oi_df)} 条记录")
+                    logger.info("fetch_open_interest_data_complete", records=len(oi_df))
             except Exception as e:
-                logger.warning(f"   ⚠️ 持仓量获取失败: {e}")
+                logger.warning("fetch_open_interest_data_failed", error=str(e))
 
         # 多空比例
         lsr_config = metrics_config.get("long_short_ratio")
         if lsr_config:
             try:
                 ratio_type = lsr_config.get("ratio_type", "taker") if isinstance(lsr_config, dict) else "taker"
-                logger.info(f"获取多空比例数据 (类型: {ratio_type})...")
+                logger.info("fetch_long_short_ratio_data_start", ratio_type=ratio_type)
 
                 lsr_df_raw = await self.metrics_query.select_long_short_ratios(
                     symbols, start_time, end_time, ratio_type=ratio_type, columns=["long_short_ratio"]
@@ -758,17 +762,17 @@ class NumpyExporter:
                         timestamp_dfs["lsr_timestamp"] = lsr_ts_df
 
                     metrics_dfs.append(lsr_df)
-                    logger.info(f"   ✅ 多空比例: {len(lsr_df)} 条记录")
+                    logger.info("fetch_and_merge_metrics_success", metrics_df=len(lsr_df))
             except Exception as e:
-                logger.warning(f"   ⚠️ 多空比例获取失败: {e}")
-
+                logger.warning("fetch_and_merge_metrics_failed", error=str(e))
+        logger.info("fetch_and_merge_metrics_complete", metrics_dfs=len(metrics_dfs), timestamp_dfs=len(timestamp_dfs))
         if not metrics_dfs:
             logger.warning("没有 Metrics 数据可合并")
             return pd.DataFrame(), timestamp_dfs
 
         # 合并所有 metrics 数据
         merged_metrics = pd.concat(metrics_dfs, axis=1, join="outer")
-        logger.info(f"成功合并 {len(metrics_dfs)} 种 Metrics 数据")
+        logger.info("fetch_and_merge_metrics_complete", metrics_dfs=len(metrics_dfs))
 
         return merged_metrics, timestamp_dfs
 
@@ -809,6 +813,6 @@ class NumpyExporter:
 
         if columns_to_rename:
             df = df.rename(columns=columns_to_rename)
-            logger.debug(f"字段重命名: {len(columns_to_rename)} 个字段")
+            logger.debug("rename_fields_complete", fields=len(columns_to_rename))
 
         return df

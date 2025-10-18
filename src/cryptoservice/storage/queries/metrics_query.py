@@ -3,17 +3,19 @@
 专门处理指标数据（资金费率、持仓量、多空比例）的查询操作。
 """
 
-import logging
 from typing import TYPE_CHECKING
 
 import pandas as pd
+
+from cryptoservice.config.logging import get_logger
+from cryptoservice.utils.time_utils import date_to_timestamp_end, date_to_timestamp_start
 
 from .builder import QueryBuilder
 
 if TYPE_CHECKING:
     from ..connection import ConnectionPool
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class MetricsQuery:
@@ -81,7 +83,7 @@ class MetricsQuery:
         df = pd.DataFrame(rows, columns=query_columns)
         df = df.set_index(["symbol", "timestamp"])
 
-        logger.info(f"查询资金费率数据完成: {len(df)} 条记录")
+        logger.info("select_funding_rates_complete", records=len(df))
         return df
 
     async def select_open_interests(
@@ -144,7 +146,7 @@ class MetricsQuery:
         df = pd.DataFrame(rows, columns=query_columns)
         df = df.set_index(["symbol", "timestamp"])
 
-        logger.info(f"查询持仓量数据完成: {len(df)} 条记录")
+        logger.info("select_open_interests_complete", records=len(df))
         return df
 
     async def select_long_short_ratios(
@@ -212,7 +214,7 @@ class MetricsQuery:
         df = pd.DataFrame(rows, columns=query_columns)
         df = df.set_index(["symbol", "timestamp"])
 
-        logger.info(f"查询多空比例数据完成: {len(df)} 条记录")
+        logger.info("select_long_short_ratios_complete", records=len(df))
         return df
 
     async def get_metrics_symbols(self, data_type: str) -> list[str]:
@@ -321,26 +323,93 @@ class MetricsQuery:
         start_dt = pd.Timestamp(start_ts, unit="ms", tz="UTC")
         end_dt = pd.Timestamp(end_ts, unit="ms", tz="UTC")
 
-        time_range = pd.date_range(start=start_dt, end=end_dt, freq=f"{interval_hours}h", inclusive="left", tz="UTC")
-        full_timestamps = {int(ts.timestamp() * 1000) for ts in time_range}
+        # 修正：如果 end_dt 是某天的 00:00:00，需要包括那一天的完整数据
+        # 使用 time_utils 统一处理
+        if end_dt.hour == 0 and end_dt.minute == 0 and end_dt.second == 0:
+            date_str = end_dt.strftime("%Y-%m-%d")
+            query_end_ts = date_to_timestamp_end(date_str)
+            # 同时修正 end_dt 用于生成 time_range
+            query_end_dt = pd.Timestamp(query_end_ts, unit="ms", tz="UTC")
+        else:
+            query_end_ts = end_ts
+            query_end_dt = end_dt
 
-        # 查询现有的时间戳
-        sql, params = (
-            QueryBuilder.select(table_name, ["DISTINCT timestamp"])
-            .where("symbol = ?", symbol)
-            .where_between("timestamp", start_ts, end_ts)
-            .build()
+        # 使用修正后的结束时间生成完整的时间戳范围
+        freq_hours = interval_hours if interval_hours and interval_hours > 0 else 1
+        freq_delta = pd.to_timedelta(freq_hours, unit="h")
+        time_range = pd.date_range(start=start_dt, end=query_end_dt, freq=freq_delta, inclusive="left", tz="UTC")
+        expected_count = len(time_range)
+
+        # 快速检查：查询记录数（归一化到整秒，消除毫秒偏差）
+        count_sql = (
+            f"SELECT COUNT(DISTINCT timestamp / 1000) FROM {table_name} "  # noqa: S608
+            "WHERE symbol = ? AND timestamp >= ? AND timestamp < ?"
         )
 
         async with self.pool.get_connection() as conn:
-            cursor = await conn.execute(sql, params)
+            cursor = await conn.execute(count_sql, (symbol, start_ts, query_end_ts))
+            result = await cursor.fetchone()
+            actual_count = result[0] if result else 0
+
+        # 如果记录数严格等于预期数量，认为数据完整
+        if expected_count > 0 and actual_count == expected_count:
+            return []
+
+        # 数据不完整，详细检查缺失的时间戳
+        # 生成期望的时间戳（归一化到整秒）
+        full_timestamps = {int(ts.timestamp()) for ts in time_range}
+
+        # 查询现有的时间戳（归一化到整秒）
+        sql = (
+            f"SELECT DISTINCT timestamp / 1000 FROM {table_name} "  # noqa: S608
+            "WHERE symbol = ? AND timestamp >= ? AND timestamp < ?"
+        )
+
+        async with self.pool.get_connection() as conn:
+            cursor = await conn.execute(sql, (symbol, start_ts, query_end_ts))
             rows = await cursor.fetchall()
 
-        existing_timestamps = {row[0] for row in rows}
+        # 归一化已有的时间戳（去掉毫秒部分）
+        existing_timestamps = {int(row[0]) for row in rows}
 
-        # 计算缺失的时间戳
-        missing_timestamps = full_timestamps - existing_timestamps
-        return sorted(missing_timestamps)
+        # 计算缺失的时间戳（秒级）
+        missing_timestamps_sec = full_timestamps - existing_timestamps
+
+        # 转换回毫秒级时间戳
+        missing_timestamps = sorted([ts * 1000 for ts in missing_timestamps_sec])
+        return missing_timestamps
+
+    async def get_daily_metrics_status(self, symbol: str, date_str: str) -> dict[str, int]:
+        """获取指定日期指标数据的覆盖情况.
+
+        Args:
+            symbol: 交易对
+            date_str: 日期字符串 (YYYY-MM-DD)
+
+        Returns:
+            包含 open_interest 和 long_short_ratio 计数的字典
+        """
+        start_ts = date_to_timestamp_start(date_str)
+        end_ts = date_to_timestamp_end(date_str)
+
+        queries = {
+            "open_interest": (
+                "SELECT COUNT(*) FROM open_interests WHERE symbol = ? AND timestamp >= ? AND timestamp < ?"
+            ),
+            "long_short_ratio": (
+                "SELECT COUNT(*) FROM long_short_ratios WHERE symbol = ? AND timestamp >= ? AND timestamp < ?"
+            ),
+        }
+
+        results: dict[str, int] = {"open_interest": 0, "long_short_ratio": 0}
+
+        async with self.pool.get_connection() as conn:
+            for key, sql in queries.items():
+                cursor = await conn.execute(sql, (symbol, start_ts, end_ts))
+                row = await cursor.fetchone()
+                results[key] = row[0] if row else 0
+
+        return results
 
     async def get_metrics_summary(self, data_type: str, symbol: str | None = None) -> dict:
         """获取指标数据概要统计.

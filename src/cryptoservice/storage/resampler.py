@@ -4,14 +4,14 @@
 """
 
 import asyncio
-import logging
 from typing import Any
 
 import pandas as pd
 
+from cryptoservice.config.logging import get_logger
 from cryptoservice.models import Freq
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class DataResampler:
@@ -302,12 +302,12 @@ class DataResampler:
         if agg_strategy is None:
             agg_strategy = dict.fromkeys(metrics_df.columns, "last")
 
-        logger.info(f"开始重采样 Metrics 数据到 {target_freq.value}")
+        logger.info("resample_metrics_start", target_freq=target_freq.value)
 
         loop = asyncio.get_event_loop()
         result_df = await loop.run_in_executor(None, cls._resample_metrics_sync, metrics_df, pandas_freq, agg_strategy)
 
-        logger.info(f"Metrics 数据重采样完成: {len(metrics_df)} -> {len(result_df)} 条记录")
+        logger.info("resample_metrics_complete", original_records=len(metrics_df), resampled_records=len(result_df))
         return result_df
 
     @staticmethod
@@ -428,7 +428,7 @@ class DataResampler:
             logger.warning("Kline 数据为空，无法对齐")
             return pd.DataFrame()
 
-        logger.info(f"开始对齐 Metrics 数据到 Kline 时间点，方法: {method}")
+        logger.info("align_to_kline_timestamps_start", method=method)
 
         loop = asyncio.get_event_loop()
         if return_original_timestamps:
@@ -439,7 +439,11 @@ class DataResampler:
             result_df, original_ts_df = result
             assert isinstance(result_df, pd.DataFrame), "Expected DataFrame"  # noqa: S101
             assert isinstance(original_ts_df, pd.DataFrame), "Expected DataFrame"  # noqa: S101
-            logger.info(f"时间点对齐完成: {len(result_df)} 条记录（含原始timestamp）")
+            logger.info(
+                "align_to_kline_timestamps_complete",
+                original_records=len(result_df),
+                original_ts_records=len(original_ts_df),
+            )
             return result_df, original_ts_df
         else:
             result = await loop.run_in_executor(
@@ -631,7 +635,7 @@ class DataResampler:
             ...     align_method="asof",
             ... )
         """
-        logger.info("开始重采样并对齐 Metrics 数据")
+        logger.info("resample_and_align_start")
 
         # 步骤 1: 重采样到目标频率
         resampled = await cls.resample_metrics(metrics_df, target_freq, agg_strategy)
@@ -651,7 +655,12 @@ class DataResampler:
             aligned, original_ts = result
             assert isinstance(aligned, pd.DataFrame), "Expected DataFrame"  # noqa: S101
             assert isinstance(original_ts, pd.DataFrame), "Expected DataFrame"  # noqa: S101
-            logger.info("重采样并对齐完成（含原始timestamp）")
+            logger.info(
+                "resample_and_align_complete",
+                original_records=len(resampled),
+                resampled_records=len(aligned),
+                original_ts_records=len(original_ts),
+            )
             return aligned, original_ts
         else:
             result = await cls.align_to_kline_timestamps(resampled, kline_df, align_method, tolerance_ms)

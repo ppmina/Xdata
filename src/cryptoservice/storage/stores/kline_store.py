@@ -3,15 +3,15 @@
 专门处理K线数据的存储操作。
 """
 
-import logging
 from typing import TYPE_CHECKING
 
+from cryptoservice.config.logging import get_logger
 from cryptoservice.models import Freq, PerpetualMarketTicker
 
 if TYPE_CHECKING:
     from ..connection import ConnectionPool
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class KlineStore:

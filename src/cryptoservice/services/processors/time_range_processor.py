@@ -3,14 +3,14 @@
 专门处理自定义时间范围的验证、过滤和应用逻辑。
 """
 
-import logging
 from copy import deepcopy
 
 import pandas as pd
 
+from cryptoservice.config.logging import get_logger
 from cryptoservice.models import UniverseDefinition, UniverseSnapshot
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class TimeRangeProcessor:
@@ -144,8 +144,11 @@ class TimeRangeProcessor:
                 else:
                     # 自定义结束日期早于有效起始日期，跳过此快照
                     logger.info(
-                        f"   - 跳过快照 {snapshot.effective_date}: "
-                        f"自定义结束日期 {custom_end_date} 早于有效起始日期 {effective_start}"
+                        "skip_snapshot_time_range",
+                        snapshot=snapshot.effective_date,
+                        start=effective_start,
+                        end=effective_end,
+                        note=f"自定义结束日期 {custom_end_date} 早于有效起始日期 {effective_start}",
                     )
                     return None
 
@@ -205,9 +208,19 @@ class TimeRangeProcessor:
             # 如果时间范围有效，更新快照
             if effective_start != snapshot.start_date or effective_end != snapshot.end_date:
                 cls.update_snapshot_time_range(snapshot, effective_start, effective_end)
-                logger.info(f"   - 修改快照 {snapshot.effective_date}: {effective_start} 到 {effective_end}")
+                logger.info(
+                    "update_snapshot_time_range",
+                    snapshot=snapshot.effective_date,
+                    start=effective_start,
+                    end=effective_end,
+                )
             else:
-                logger.info(f"   - 保持快照 {snapshot.effective_date}: {effective_start} 到 {effective_end}")
+                logger.info(
+                    "keep_snapshot_time_range",
+                    snapshot=snapshot.effective_date,
+                    start=effective_start,
+                    end=effective_end,
+                )
 
             filtered_snapshots.append(snapshot)
 
@@ -248,16 +261,23 @@ class TimeRangeProcessor:
         # 深拷贝universe定义以避免修改原始数据
         modified_def = deepcopy(universe_def)
 
-        logger.info("🔧 应用自定义时间范围:")
-        logger.info(f"   - Universe原始范围: {universe_start} 到 {universe_end}")
-        logger.info(f"   - 自定义起始日期: {validated_start or '未指定（使用原始）'}")
-        logger.info(f"   - 自定义结束日期: {validated_end or '未指定（使用原始）'}")
+        logger.info(
+            "apply_custom_time_range",
+            universe_start=universe_start,
+            universe_end=universe_end,
+            custom_start_date=validated_start,
+            custom_end_date=validated_end,
+        )
 
         # 处理快照列表
         filtered_snapshots = cls.process_snapshots(modified_def, validated_start, validated_end)
 
         modified_def.snapshots = filtered_snapshots
 
-        logger.info(f"   - 过滤后快照数量: {len(filtered_snapshots)}/{len(universe_def.snapshots)}")
+        logger.info(
+            "apply_custom_time_range_complete",
+            filtered_snapshots=len(filtered_snapshots),
+            total_snapshots=len(universe_def.snapshots),
+        )
 
         return modified_def

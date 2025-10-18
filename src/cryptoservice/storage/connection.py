@@ -3,7 +3,6 @@
 高性能的异步SQLite连接池实现。
 """
 
-import logging
 import threading
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
@@ -11,6 +10,8 @@ from pathlib import Path
 
 import aiosqlite
 from aiosqlitepool import SQLiteConnectionPool
+
+from cryptoservice.config.logging import get_logger
 
 # --- 猴子补丁：强制aiosqlite创建的线程为守护线程 ---
 # aiosqlite在后台使用非守护线程，这可能会阻止应用程序正常退出。
@@ -26,7 +27,7 @@ def _new_init(self, *args, **kwargs):
 threading.Thread.__init__ = _new_init  # type: ignore[method-assign]
 # -----------------------------------------
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class ConnectionPool:
@@ -72,13 +73,13 @@ class ConnectionPool:
         if self._initialized:
             return
 
-        logger.info("初始化aiosqlitepool高性能连接池")
+        logger.info("pool_init_start", backend="aiosqlitepool")
         try:
             self._pool = await self._create_connection_pool()
             self._initialized = True
-            logger.info(f"连接池初始化完成: {self.db_path}")
+            logger.info("pool_init_complete", db_path=str(self.db_path))
         except Exception as e:
-            logger.error(f"连接池初始化失败: {e}")
+            logger.error("pool_init_error", error=str(e))
             raise
 
     async def _create_connection_pool(self) -> SQLiteConnectionPool:
@@ -125,7 +126,7 @@ class ConnectionPool:
             await self._pool.close()
             self._pool = None
         self._initialized = False
-        logger.info("连接池已关闭")
+        logger.info("pool_closed")
 
     @property
     def is_initialized(self) -> bool:

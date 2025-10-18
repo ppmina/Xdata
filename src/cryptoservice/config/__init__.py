@@ -9,7 +9,7 @@ setup_logging(
     environment=settings.LOG_ENVIRONMENT,
     log_level=settings.LOG_LEVEL,
     log_file=settings.LOG_FILE if settings.LOG_FILE else None,
-    enable_rich=settings.LOG_ENABLE_RICH,
+    use_colors=settings.LOG_ENABLE_RICH,  # 使用 use_colors 替代 enable_rich
 )
 
 __all__ = [

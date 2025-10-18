@@ -4,11 +4,12 @@
 """
 
 import asyncio
-import logging
 import threading
 import time
 
-logger = logging.getLogger(__name__)
+from cryptoservice.config.logging import get_logger
+
+logger = get_logger(__name__)
 
 
 class RateLimitManager:
