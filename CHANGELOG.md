@@ -2,6 +2,33 @@
 
 <!-- next-version -->
 
+## v1.14.3 (2025-10-18)
+
+### Fixes
+
+- refine downloader logging and concurrency handling
+
+
+
+## v1.14.2 (2025-10-14)
+
+### Features
+
+- new timestampe file and new resampler
+- add univ_dic2 and speed up lsr oi fr download and some bug fix
+
+### Fixes
+
+- remove error lock
+- release workflow file format error
+- release workflow file format error
+
+### Other Changes
+
+- Release/v1.14.0 ([#19](https://github.com/ppmina/Xdata/pull/19))
+
+
+
 ## v1.14.0 (2025-10-09)
 
 ### Fixes

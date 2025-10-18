@@ -93,9 +93,10 @@ jobs:
             exit 0
           fi
 
-          heading="## ${TAG}"
-          content=$(awk -v tag="$heading" '
-            $0 == tag {flag=1; next}
+          # Match heading with optional date suffix: ## v1.14.3 (2025-10-18) or ## v1.14.3
+          heading_pattern="^## ${TAG}( \\(|$)"
+          content=$(awk -v pattern="$heading_pattern" '
+            $0 ~ pattern {flag=1; next}
             /^## / && flag {exit}
             flag {print}
           ' CHANGELOG.md)
@@ -112,6 +113,19 @@ jobs:
             printf '%s\n' "$cleaned"
             printf 'EOF\n'
           } >> "$GITHUB_OUTPUT"
+
+      - name: Create GitHub Release
+        if: steps.publish.conclusion == 'success' && success()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.version.outputs.tag }}
+          CHANGELOG_CONTENT: ${{ steps.changelog.outputs.changelog }}
+        run: |
+          # Create release with changelog
+          gh release create "$TAG" \
+            --title "Release $TAG" \
+            --notes "$CHANGELOG_CONTENT" \
+            dist/*
 
       - name: Send Webhook Notification
         if: steps.publish.conclusion == 'success' && success()

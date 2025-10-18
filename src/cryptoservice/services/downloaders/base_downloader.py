@@ -66,22 +66,25 @@ class BaseDownloader(ABC):
                 # 特殊处理频率限制错误
                 if self.error_handler.is_rate_limit_error(e):
                     wait_time = self.rate_limit_manager.handle_rate_limit_error()
-                    logger.warning(f"🚫 频率限制，等待 {wait_time}秒后重试")
+                    logger.debug(f"触发频率限制，等待 {wait_time}秒后重试")
                     continue
 
                 # 处理不可重试的错误
                 if not self.error_handler.should_retry(e, backoff.attempt, retry_config.max_retries):
-                    logger.error(f"❌ 请求失败: {e}")
                     raise e
 
                 # 执行重试
-                logger.warning(f"🔄 重试 {backoff.attempt + 1}/{retry_config.max_retries}: {e}")
+                logger.debug(f"重试 {backoff.attempt + 1}/{retry_config.max_retries}: {e}")
                 backoff.wait()
 
     async def _handle_async_request_with_retry(
         self, request_func, *args, retry_config: RetryConfig | None = None, **kwargs
     ):
-        """带重试的异步请求处理."""
+        """带重试的异步请求处理.
+
+        注意：此方法只处理通用的重试逻辑，不包含业务相关的日志。
+        具体的错误日志应在各下载器中处理。
+        """
         if retry_config is None:
             retry_config = RetryConfig()
 
@@ -103,19 +106,16 @@ class BaseDownloader(ABC):
                 # 特殊处理频率限制错误
                 if self.error_handler.is_rate_limit_error(e):
                     wait_time = await self.async_rate_limit_manager.handle_rate_limit_error()
-                    logger.warning(f"get {kwargs.get('symbol')} 🚫 频率限制，等待 {wait_time}秒后重试")
+                    logger.debug(f"触发频率限制，等待 {wait_time}秒后重试")
                     await asyncio.sleep(wait_time)  # 额外等待
                     continue
 
                 # 处理不可重试的错误
                 if not self.error_handler.should_retry(e, backoff.attempt, retry_config.max_retries):
-                    logger.error(f"get {kwargs.get('symbol')} ❌ 请求失败: {e}")
                     raise e
 
                 # 执行重试
-                logger.warning(
-                    f"🔄 get {kwargs.get('symbol')} 重试 {backoff.attempt + 1}/{retry_config.max_retries}: {e}"
-                )
+                logger.debug(f"重试 {backoff.attempt + 1}/{retry_config.max_retries}: {e}")
                 await backoff.wait()
 
     def _record_failed_download(self, symbol: str, error: str, metadata: dict[str, Any] | None = None):

@@ -271,4 +271,4 @@ python demo/iterator_examples.py
 
 - [快速开始](quickstart.md)
 - [导出功能](export.md)
-- [API文档 - Database](api/data/storage_db.md)
+- [API文档 - Database](../api/data/storage_db.md)
