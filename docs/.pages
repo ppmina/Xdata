@@ -1,0 +1,7 @@
+# 根目录只定义顶部标签页的大分类
+# 这样顶部 tabs 只显示几个主要分类，详细文档在侧边栏
+arrange:
+  - index.md
+  - guides
+  - api
+  - advanced

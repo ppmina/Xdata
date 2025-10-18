@@ -93,9 +93,10 @@ jobs:
             exit 0
           fi
 
-          heading="## ${TAG}"
-          content=$(awk -v tag="$heading" '
-            $0 == tag {flag=1; next}
+          # Match heading with optional date suffix: ## v1.14.3 (2025-10-18) or ## v1.14.3
+          heading_pattern="^## ${TAG}( \\(|$)"
+          content=$(awk -v pattern="$heading_pattern" '
+            $0 ~ pattern {flag=1; next}
             /^## / && flag {exit}
             flag {print}
           ' CHANGELOG.md)

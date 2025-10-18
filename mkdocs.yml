@@ -1,7 +1,7 @@
 site_name: CryptoService
 site_description: 加密货币交易服务库
 site_author: Minnn
-repo_url: https://github.com/Mrzai/Xdata
+repo_url: https://github.com/ppmina/Xdata
 repo_name: cryptoservice
 
 theme:
@@ -51,6 +51,7 @@ markdown_extensions:
 
 plugins:
   - search
+  - awesome-pages
   - mkdocstrings:
       handlers:
         python:
@@ -78,14 +79,6 @@ extra:
     provider: google
     property: ${GOOGLE_ANALYTICS_KEY}
 
-nav:
-  - 首页: index.md
-  - 快速开始: quickstart.md
-  - Universe策略: universe.md
-  - 数据导出: export.md
-  - 异步迭代器: iterators.md
-  - 实时数据: websocket.md
-  - 配置管理: configuration.md
-  - API参考:
-    - 数据库操作: api/data/storage_db.md
-    - 市场数据服务: api/services/market_service.md
+# 使用 awesome-pages 插件自动发现文档
+# 通过 docs/.pages 和子目录的 .pages 文件控制导航顺序
+# nav 配置已移除，改用文件路由自动发现
