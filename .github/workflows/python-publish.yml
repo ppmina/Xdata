@@ -94,7 +94,7 @@ jobs:
           fi
 
           # Match heading with optional date suffix: ## v1.14.3 (2025-10-18) or ## v1.14.3
-          heading_pattern="^## ${TAG}( \\(|$)"
+          heading_pattern="^## ${TAG}( [(]|$)"
           content=$(awk -v pattern="$heading_pattern" '
             $0 ~ pattern {flag=1; next}
             /^## / && flag {exit}
