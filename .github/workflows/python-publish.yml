@@ -114,6 +114,19 @@ jobs:
             printf 'EOF\n'
           } >> "$GITHUB_OUTPUT"
 
+      - name: Create GitHub Release
+        if: steps.publish.conclusion == 'success' && success()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.version.outputs.tag }}
+          CHANGELOG_CONTENT: ${{ steps.changelog.outputs.changelog }}
+        run: |
+          # Create release with changelog
+          gh release create "$TAG" \
+            --title "Release $TAG" \
+            --notes "$CHANGELOG_CONTENT" \
+            dist/*
+
       - name: Send Webhook Notification
         if: steps.publish.conclusion == 'success' && success()
         uses: distributhor/workflow-webhook@v3
