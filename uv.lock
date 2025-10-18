@@ -311,7 +311,7 @@ toml = [
 
 [[package]]
 name = "cryptoservice"
-version = "1.14.0"
+version = "1.14.2"
 source = { editable = "." }
 dependencies = [
     { name = "aiosqlite" },
