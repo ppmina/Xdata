@@ -36,7 +36,8 @@ jobs:
             mkdocs-git-revision-date-localized-plugin \
             mkdocs-minify-plugin \
             mkdocs-gen-files \
-            mkdocs-literate-nav
+            mkdocs-literate-nav \
+            mkdocs-awesome-pages-plugin
 
       - name: Deploy documentation
         run: mkdocs gh-deploy --force
