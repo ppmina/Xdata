@@ -2,6 +2,14 @@
 
 <!-- next-version -->
 
+## v1.14.3 (2025-10-18)
+
+### Fixes
+
+- refine downloader logging and concurrency handling
+
+
+
 ## v1.14.2 (2025-10-14)
 
 ### Features
