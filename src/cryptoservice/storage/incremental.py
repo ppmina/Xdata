@@ -9,6 +9,7 @@ import pandas as pd
 
 from cryptoservice.config.logging import get_logger
 from cryptoservice.models import Freq
+from cryptoservice.utils import date_to_timestamp_end, date_to_timestamp_start, timestamp_to_date_str
 
 if TYPE_CHECKING:
     from .queries import KlineQuery, MetricsQuery
@@ -39,9 +40,7 @@ class IncrementalManager:
         self.kline_query = kline_query
         self.metrics_query = metrics_query
 
-    async def plan_kline_download(
-        self, symbols: list[str], start_date: str, end_date: str, freq: Freq
-    ) -> dict[str, dict[str, Any]]:
+    async def plan_kline_download(self, symbols: list[str], start_date: str, end_date: str, freq: Freq) -> dict[str, dict[str, Any]]:
         """制定K线数据增量下载计划.
 
         Args:
@@ -54,28 +53,19 @@ class IncrementalManager:
             {symbol: {"start_ts": int, "end_ts": int, "start_time": str, "end_time": str, "missing_count": int}}
         """
         if not symbols:
-            logger.warning("plan.skip", dataset="kline", reason="no_symbols")
+            logger.debug("K线增量计划跳过：未提供交易对。")
             return {}
 
-        logger.info(
-            "plan.start",
-            dataset="kline",
-            freq=freq.value,
-            symbols=len(symbols),
-            start=start_date,
-            end=end_date,
-        )
+        logger.debug(f"开始生成 K 线增量计划（频率 {freq.value}，范围 {start_date} ~ {end_date}，{len(symbols)} 个交易对）")
 
         plan: dict[str, dict[str, Any]] = {}
         step_ms = self._get_freq_milliseconds(freq)
 
         # 转换日期为时间戳（只转换一次边界值）
         # 使用 UTC 时区以保持与下载逻辑的一致性
-        start_ts = int(pd.Timestamp(start_date + " 00:00:00", tz="UTC").timestamp() * 1000)
-        # 结束时间设为第二天的00:00:00，以包含整个 end_date 当天
-        end_ts = int((pd.Timestamp(end_date, tz="UTC") + pd.Timedelta(days=1)).timestamp() * 1000)
+        start_ts = date_to_timestamp_start(start_date)
+        end_ts = date_to_timestamp_end(end_date)
 
-        # 为每个交易对检查缺失数据
         for symbol in symbols:
             try:
                 missing_timestamps = await self.kline_query.get_missing_timestamps(symbol, start_ts, end_ts, freq)
@@ -132,10 +122,14 @@ class IncrementalManager:
             top_examples = [f"{symbol}({count})" for symbol, count in preview[:3]]
             if top_examples:
                 log_kwargs["missing_examples"] = ", ".join(top_examples)
-        logger.info(
-            "plan.summary",
-            **log_kwargs,
-        )
+        if not plan:
+            logger.debug(f"K 线增量计划：全部 {len(symbols)} 个交易对数据已最新，无需下载。")
+        else:
+            example_text = log_kwargs.get("missing_examples")
+            if example_text:
+                logger.debug(f"K 线增量计划：{len(plan)} 个交易对存在缺失数据（示例：{example_text}）。")
+            else:
+                logger.debug(f"K 线增量计划：{len(plan)} 个交易对存在缺失数据。")
 
         return plan
 
@@ -156,21 +150,15 @@ class IncrementalManager:
             {symbol: {"start_date": str, "end_date": str, "missing_dates": list[str], "missing_count": int}}
         """
         if not symbols:
-            logger.warning("plan.skip", dataset="vision-metrics", reason="no_symbols")
+            logger.debug("Vision 指标增量计划跳过：未提供交易对。")
             return {}
 
         display_name = self._METRICS_LABELS["vision-metrics"]
-        logger.info(
-            "plan.start",
-            dataset="vision-metrics",
-            symbols=len(symbols),
-            start=start_date,
-            end=end_date,
-        )
+        logger.debug(f"开始生成 {display_name} 增量计划（范围 {start_date} ~ {end_date}，{len(symbols)} 个交易对）")
 
-        date_range = pd.date_range(start=start_date, end=end_date, freq="D")
+        date_range = pd.date_range(start=start_date, end=end_date, freq="D", tz="UTC")
         if date_range.empty:
-            logger.warning("[vision-metrics] 日期范围为空，无法生成增量计划")
+            logger.warning(f"{display_name} 增量计划失败：日期范围为空（{start_date} ~ {end_date}）。")
             return {}
 
         plan, complete_count = await self._collect_vision_plan(symbols, date_range)
@@ -196,10 +184,11 @@ class IncrementalManager:
             top_examples = [f"{symbol}({count})" for symbol, count in preview[:3]]
             if top_examples:
                 log_kwargs["missing_examples"] = ", ".join(top_examples)
-        logger.info(
-            "plan.summary",
-            **log_kwargs,
-        )
+        if not plan:
+            logger.debug(f"{display_name} 增量计划：所有数据已最新，无需下载。")
+        else:
+            missing_days = log_kwargs.get("missing_days", 0)
+            logger.debug(f"{display_name} 增量计划：{len(plan)} 个交易对缺少数据（缺失日期共 {missing_days} 天）。")
 
         return plan
 
@@ -286,34 +275,24 @@ class IncrementalManager:
             }
         """
         if not symbols:
-            logger.warning("plan.skip", dataset=data_type, reason="no_symbols")
+            logger.debug(f"{data_type} 增量计划跳过：未提供交易对。")
             return {}
 
         display_name = self._METRICS_LABELS.get(data_type, data_type)
-        logger.info(
-            "plan.start",
-            dataset=data_type,
-            display_name=display_name,
-            symbols=len(symbols),
-            start=start_date,
-            end=end_date,
-            interval_hours=interval_hours,
-        )
+        logger.debug(f"开始生成 {display_name} 增量计划（范围 {start_date} ~ {end_date}，间隔 {interval_hours:.1f} 小时，{len(symbols)} 个交易对）")
 
         plan: dict[str, dict[str, Any]] = {}
 
         # 转换日期为时间戳（使用 UTC 时区）
-        start_ts = int(pd.Timestamp(start_date, tz="UTC").timestamp() * 1000)
-        end_ts = int(pd.Timestamp(end_date, tz="UTC").timestamp() * 1000)
+        start_ts = date_to_timestamp_start(start_date)
+        end_ts = date_to_timestamp_end(end_date)
         interval_ms = self._hours_to_milliseconds(interval_hours)
         interval_hours_value = int(interval_hours) if interval_hours > 0 else 1
 
         # 为每个交易对检查缺失数据
         for symbol in symbols:
             try:
-                missing_timestamps = await self.metrics_query.get_missing_timestamps(
-                    data_type, symbol, start_ts, end_ts, interval_hours_value
-                )
+                missing_timestamps = await self.metrics_query.get_missing_timestamps(data_type, symbol, start_ts, end_ts, interval_hours_value)
                 if missing_timestamps:
                     segment = self._build_single_segment(
                         missing_timestamps,
@@ -368,10 +347,15 @@ class IncrementalManager:
             top_examples = [f"{symbol}({count})" for symbol, count in preview[:3]]
             if top_examples:
                 log_kwargs["missing_examples"] = ", ".join(top_examples)
-        logger.info(
-            "plan.summary",
-            **log_kwargs,
-        )
+        if not plan:
+            logger.debug(f"{display_name} 增量计划：全部 {len(symbols)} 个交易对数据已最新。")
+        else:
+            missing_points = log_kwargs.get("missing_days") or log_kwargs.get("missing_points")
+            example_text = log_kwargs.get("missing_examples")
+            if example_text:
+                logger.debug(f"{display_name} 增量计划：{len(plan)} 个交易对需要补齐数据（示例：{example_text}）。")
+            else:
+                logger.debug(f"{display_name} 增量计划：{len(plan)} 个交易对需要补齐数据（缺口数量 {missing_points}）。")
 
         return plan
 
@@ -450,9 +434,7 @@ class IncrementalManager:
         logger.info(f"覆盖率报告生成完成: 总体覆盖率 {report['summary']['overall_coverage']}%")
         return report
 
-    async def get_data_gaps(
-        self, symbol: str, start_date: str, end_date: str, freq: Freq, max_gap_hours: int = 24
-    ) -> list[dict]:
+    async def get_data_gaps(self, symbol: str, start_date: str, end_date: str, freq: Freq, max_gap_hours: int = 24) -> list[dict]:
         """获取数据间隙信息.
 
         Args:
@@ -478,7 +460,7 @@ class IncrementalManager:
 
         gaps = []
         freq_ms = self._get_freq_milliseconds(freq)
-        max_gap_ms = max_gap_hours * 60 * 60 * 1000
+        max_gap_ms = self._hours_to_milliseconds(max_gap_hours)
 
         # 检查间隙
         for i in range(1, len(timestamps)):
@@ -490,8 +472,8 @@ class IncrementalManager:
                 gap_info = {
                     "start_timestamp": timestamps[i - 1],
                     "end_timestamp": timestamps[i],
-                    "start_date": pd.Timestamp(timestamps[i - 1], unit="ms").strftime("%Y-%m-%d %H:%M:%S"),
-                    "end_date": pd.Timestamp(timestamps[i], unit="ms").strftime("%Y-%m-%d %H:%M:%S"),
+                    "start_date": timestamp_to_date_str(timestamps[i - 1]),
+                    "end_date": timestamp_to_date_str(timestamps[i]),
                     "gap_hours": round(gap_hours, 2),
                     "gap_periods": int(gap_ms // freq_ms) - 1,
                     "severity": "critical" if gap_ms > max_gap_ms else "minor",
@@ -639,9 +621,7 @@ class IncrementalManager:
 
                 if not time_range:
                     # 没有数据，高优先级
-                    priorities.append(
-                        {"symbol": symbol, "priority": "high", "reason": "no_data", "record_count": 0, "coverage": 0.0}
-                    )
+                    priorities.append({"symbol": symbol, "priority": "high", "reason": "no_data", "record_count": 0, "coverage": 0.0})
                 else:
                     # 计算覆盖率
                     expected_records = self._count_expected_records(start_date, end_date, freq)

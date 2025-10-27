@@ -113,9 +113,7 @@ class CategoryUtils:
             raise
 
     @staticmethod
-    def get_category_statistics(
-        symbols: list[str], categories: list[str], matrix: np.ndarray
-    ) -> dict[str, dict[str, Any]]:
+    def get_category_statistics(symbols: list[str], categories: list[str], matrix: np.ndarray) -> dict[str, dict[str, Any]]:
         """获取分类统计信息.
 
         Args:
@@ -232,14 +230,9 @@ class CategoryUtils:
                     logger.warning(f"分类 '{target_category}' 不存在")
 
             # 创建子集矩阵
-            if symbol_indices and category_indices:
-                subset_matrix = matrix[np.ix_(symbol_indices, category_indices)]
-            else:
-                subset_matrix = np.array([]).reshape(0, 0)
+            subset_matrix = matrix[np.ix_(symbol_indices, category_indices)] if symbol_indices and category_indices else np.array([]).reshape(0, 0)
 
-            logger.info(
-                f"创建子集矩阵: {len(valid_target_symbols)} symbols × {len(valid_target_categories)} categories"
-            )
+            logger.info(f"创建子集矩阵: {len(valid_target_symbols)} symbols × {len(valid_target_categories)} categories")
 
             return valid_target_symbols, valid_target_categories, subset_matrix
 

@@ -170,11 +170,8 @@ class UniverseSnapshot:
 
         # 计算使用周期
         usage_start_dt = effective_dt + pd.Timedelta(days=1)
-        if next_effective_date:
-            usage_end_dt = pd.to_datetime(next_effective_date)
-        else:
-            # 如果没有下一个重平衡日期，估算到下个月末
-            usage_end_dt = usage_start_dt + pd.offsets.MonthEnd(0)
+        # 如果没有下一个重平衡日期，估算到下个月末
+        usage_end_dt = pd.to_datetime(next_effective_date) if next_effective_date else usage_start_dt + pd.offsets.MonthEnd(0)
 
         # 计算所有时间戳（毫秒）
         calculated_t1_start_str = calculated_t1_start.strftime("%Y-%m-%d")
@@ -264,9 +261,7 @@ class UniverseSnapshot:
         calculated_t1_end_dt = pd.to_datetime(self.calculated_t1_end)
 
         # 计算实际的月数差
-        actual_months_diff = (effective_dt.year - calculated_t1_start_dt.year) * 12 + (
-            effective_dt.month - calculated_t1_start_dt.month
-        )
+        actual_months_diff = (effective_dt.year - calculated_t1_start_dt.year) * 12 + (effective_dt.month - calculated_t1_start_dt.month)
 
         # 计算实际天数
         actual_days = (calculated_t1_end_dt - calculated_t1_start_dt).days
@@ -323,9 +318,7 @@ class UniverseSnapshot:
             "start_date_ts": self.start_date_ts,
             "end_date_ts": self.end_date_ts,
             "effective_date": self.effective_date,
-            "period_duration_days": str(
-                (pd.to_datetime(self.calculated_t1_end) - pd.to_datetime(self.calculated_t1_start)).days
-            ),
+            "period_duration_days": str((pd.to_datetime(self.calculated_t1_end) - pd.to_datetime(self.calculated_t1_start)).days),
         }
 
     def get_usage_period_info(self) -> dict[str, str]:

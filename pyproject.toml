@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "cryptoservice"
-version = "1.15.1"
+version = "1.14.3"
 description = "A cryptocurrency trading info package"
 readme = "README.md"
 requires-python = ">=3.10,<3.13"
@@ -47,7 +47,7 @@ docs = [
 
 [tool.ruff]
 # 基本配置
-line-length = 120
+line-length = 160
 target-version = "py312"
 # 启用的规则：
 # E/F - PyFlakes 和 Pycodestyle 错误

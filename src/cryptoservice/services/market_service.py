@@ -29,7 +29,7 @@ from cryptoservice.models import (
 )
 from cryptoservice.storage.database import Database
 from cryptoservice.utils import DataConverter
-from cryptoservice.utils.logger import generate_run_id
+from cryptoservice.utils.run_id import generate_run_id
 
 # 导入新的模块
 from .downloaders import KlineDownloader, MetricsDownloader, VisionDownloader
@@ -91,17 +91,15 @@ class MarketDataService:
     async def get_perpetual_symbols(self, only_trading: bool = True, quote_asset: str = "USDT") -> list[str]:
         """获取当前市场上所有永续合约交易对."""
         try:
-            logger.info(f"获取当前永续合约交易对列表（筛选条件：{quote_asset}结尾）")
+            logger.debug("fetch_perpetual_symbols", quote_asset=quote_asset, only_trading=only_trading)
             futures_info = await self.client.futures_exchange_info()
             perpetual_symbols = [
                 symbol["symbol"]
                 for symbol in futures_info["symbols"]
-                if symbol["contractType"] == "PERPETUAL"
-                and (not only_trading or symbol["status"] == "TRADING")
-                and symbol["symbol"].endswith(quote_asset)
+                if symbol["contractType"] == "PERPETUAL" and (not only_trading or symbol["status"] == "TRADING") and symbol["symbol"].endswith(quote_asset)
             ]
 
-            logger.info(f"找到 {len(perpetual_symbols)} 个{quote_asset}永续合约交易对")
+            logger.debug("perpetual_symbols_fetched", count=len(perpetual_symbols))
             return perpetual_symbols
 
         except Exception as e:
@@ -137,10 +135,7 @@ class MarketDataService:
         try:
             summary: dict[str, Any] = {"snapshot_time": datetime.now(), "data": {}}
             tickers_result = await self.get_symbol_ticker()
-            if isinstance(tickers_result, list):
-                tickers = [ticker.to_dict() for ticker in tickers_result]
-            else:
-                tickers = [tickers_result.to_dict()]
+            tickers = [ticker.to_dict() for ticker in tickers_result] if isinstance(tickers_result, list) else [tickers_result.to_dict()]
             summary["data"] = tickers
 
             return summary
@@ -185,7 +180,7 @@ class MarketDataService:
             end_ts = self._date_to_timestamp_end(end_time.strftime("%Y-%m-%d"))
 
             market_type = "期货" if klines_type == HistoricalKlinesType.FUTURES else "现货"
-            logger.info(f"获取 {symbol} 的{market_type}历史数据 ({interval.value})")
+            logger.debug("fetch_historical_klines", symbol=symbol, market_type=market_type, interval=interval.value)
 
             ticker_class: type[SpotKlineTicker] | type[FuturesKlineTicker]
             # 根据klines_type选择API和返回类型
@@ -369,27 +364,18 @@ class MarketDataService:
             universe_def = UniverseDefinition.load_from_file(universe_file_obj)
 
             if custom_start_date or custom_end_date:
-                universe_def = TimeRangeProcessor.apply_custom_time_range(
-                    universe_def, custom_start_date, custom_end_date
-                )
+                universe_def = TimeRangeProcessor.apply_custom_time_range(universe_def, custom_start_date, custom_end_date)
 
             logger.info(
-                "run.start",
-                run=run_id,
-                snapshots=len(universe_def.snapshots),
-                interval=interval.value,
-                api_workers=max_api_workers,
-                vision_workers=max_vision_workers,
-                api_delay_s=api_request_delay,
-                vision_delay_s=vision_request_delay,
-                db_path=str(db_file_path),
-                download_market_metrics=download_market_metrics,
+                f"开始下载 Universe 数据：{len(universe_def.snapshots)} 个快照"
+                f"（频率 {interval.value}，API 并发 {max_api_workers}，"
+                f"Vision 并发 {max_vision_workers}，下载指标：{'是' if download_market_metrics else '否'}）。"
             )
 
             kline_download_results: list[IntegrityReport] = []
 
             for index, snapshot in enumerate(universe_def.snapshots, start=1):
-                logger.info(
+                logger.debug(
                     "snapshot.start",
                     run=run_id,
                     index=index,
@@ -415,7 +401,7 @@ class MarketDataService:
                 kline_download_results.append(kline_report)
 
                 if download_market_metrics:
-                    logger.info(
+                    logger.debug(
                         "metrics.start",
                         run=run_id,
                         snapshot=snapshot.effective_date,
@@ -431,7 +417,7 @@ class MarketDataService:
                         run_id=run_id,
                     )
 
-                logger.info(
+                logger.debug(
                     "snapshot.done",
                     run=run_id,
                     snapshot=snapshot.effective_date,
@@ -442,20 +428,10 @@ class MarketDataService:
             total_failures = sum(len(report.failed_symbols) for report in kline_download_results)
 
             logger.info(
-                "run.summary",
-                run=run_id,
-                snapshots=len(universe_def.snapshots),
-                kline_total_symbols=total_symbols,
-                kline_success=total_success,
-                kline_failures=total_failures,
-                db_path=str(db_file_path),
+                f"Universe 下载完成：{len(universe_def.snapshots)} 个快照，成功 {total_success}/{total_symbols}，失败 {total_failures}（写入 {db_file_path}）。"
             )
         except Exception as exc:
-            logger.error(
-                "run.error",
-                run=run_id,
-                error=str(exc),
-            )
+            logger.error(f"Universe 下载失败：{exc}")
             raise MarketDataFetchError(f"按周期下载universe数据失败: {exc}") from exc
 
     # ==================== Universe管理 ====================
@@ -505,9 +481,7 @@ class MarketDataService:
         """获取所有可能的分类标签."""
         return self.category_manager.get_all_categories()
 
-    def create_category_matrix(
-        self, symbols: list[str], categories: list[str] | None = None
-    ) -> tuple[list[str], list[str], list[list[int]]]:
+    def create_category_matrix(self, symbols: list[str], categories: list[str] | None = None) -> tuple[list[str], list[str], list[list[int]]]:
         """创建 symbols 和 categories 的对应矩阵."""
         categories_list = categories if categories is not None else []
         return self.category_manager.create_category_matrix(symbols, categories_list)
@@ -598,7 +572,7 @@ class MarketDataService:
             end_time = snapshot.end_date
 
             # 下载Vision数据（持仓量、多空比例）
-            logger.info(
+            logger.debug(
                 "vision.download.start",
                 run=run_id,
                 snapshot=snapshot.effective_date,
@@ -620,7 +594,7 @@ class MarketDataService:
             )
 
             # 下载Metrics API数据（资金费率）
-            logger.info(
+            logger.debug(
                 "funding.download.start",
                 run=run_id,
                 snapshot=snapshot.effective_date,
@@ -641,7 +615,7 @@ class MarketDataService:
                 incremental=incremental,
             )
 
-            logger.info(
+            logger.debug(
                 "metrics.snapshot_done",
                 run=run_id,
                 snapshot=snapshot.effective_date,

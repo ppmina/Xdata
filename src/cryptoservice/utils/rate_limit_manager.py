@@ -48,7 +48,11 @@ class RateLimitManager:
 
             if requests_this_minute >= self.max_requests_per_minute * 0.8:  # 达到80%限制时开始减速
                 additional_delay = 2.0
-                logger.warning(f"⚠️ 接近频率限制，增加延迟: {additional_delay}秒")
+                logger.warning(
+                    "rate_limit_near_threshold",
+                    window_requests=requests_this_minute,
+                    additional_delay=additional_delay,
+                )
             else:
                 additional_delay = 0
 
@@ -82,7 +86,10 @@ class RateLimitManager:
                 wait_time = 300  # 等待5分钟
 
             logger.warning(
-                f"🚫 频率限制错误 #{self.consecutive_errors}，等待 {wait_time}秒，调整延迟至 {self.current_delay:.2f}秒"
+                "rate_limit_error",
+                consecutive_errors=self.consecutive_errors,
+                wait_seconds=wait_time,
+                delay_seconds=round(self.current_delay, 2),
             )
 
             # 重置请求计数
@@ -97,7 +104,10 @@ class RateLimitManager:
             if self.consecutive_errors > 0:
                 self.consecutive_errors = max(0, self.consecutive_errors - 1)
                 if self.consecutive_errors == 0:
-                    logger.info(f"✅ 恢复正常，当前延迟: {self.current_delay:.2f}秒")
+                    logger.info(
+                        "rate_limit_recovered",
+                        delay_seconds=round(self.current_delay, 2),
+                    )
 
 
 class AsyncRateLimitManager:
@@ -136,7 +146,11 @@ class AsyncRateLimitManager:
             additional_delay = 0
             if requests_this_minute >= self.max_requests_per_minute * 0.8:  # 达到80%限制时开始减速
                 additional_delay = 2.0
-                logger.warning(f"⚠️ 接近频率限制，增加延迟: {additional_delay}秒")
+                logger.warning(
+                    "rate_limit_near_threshold",
+                    window_requests=requests_this_minute,
+                    additional_delay=additional_delay,
+                )
 
             # 计算需要等待的时间
             time_since_last = current_time - self.last_request_time
@@ -169,7 +183,10 @@ class AsyncRateLimitManager:
                 wait_time = 300.0  # 等待5分钟
 
             logger.warning(
-                f"🚫 频率限制错误 #{self.consecutive_errors}，等待 {wait_time}秒，调整延迟至 {self.current_delay:.2f}秒"
+                "rate_limit_error",
+                consecutive_errors=self.consecutive_errors,
+                wait_seconds=wait_time,
+                delay_seconds=round(self.current_delay, 2),
             )
 
             # 重置请求计数
@@ -184,4 +201,7 @@ class AsyncRateLimitManager:
             if self.consecutive_errors > 0:
                 self.consecutive_errors = max(0, self.consecutive_errors - 1)
                 if self.consecutive_errors == 0:
-                    logger.info(f"✅ 恢复正常，当前延迟: {self.current_delay:.2f}秒")
+                    logger.info(
+                        "rate_limit_recovered",
+                        delay_seconds=round(self.current_delay, 2),
+                    )

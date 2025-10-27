@@ -79,10 +79,7 @@ class TimeRangeProcessor:
             universe_start_dt = pd.to_datetime(universe_start)
 
             if custom_start_dt < universe_start_dt:
-                raise ValueError(
-                    f"自定义起始日期 {validated_start} 早于universe起始日期 {universe_start}。"
-                    f"自定义时间范围必须在universe时间范围内。"
-                )
+                raise ValueError(f"自定义起始日期 {validated_start} 早于universe起始日期 {universe_start}。自定义时间范围必须在universe时间范围内。")
 
         # 验证自定义结束日期
         validated_end = None
@@ -92,10 +89,7 @@ class TimeRangeProcessor:
             universe_end_dt = pd.to_datetime(universe_end)
 
             if custom_end_dt > universe_end_dt:
-                raise ValueError(
-                    f"自定义结束日期 {validated_end} 晚于universe结束日期 {universe_end}。"
-                    f"自定义时间范围必须在universe时间范围内。"
-                )
+                raise ValueError(f"自定义结束日期 {validated_end} 晚于universe结束日期 {universe_end}。自定义时间范围必须在universe时间范围内。")
 
         return validated_start, validated_end
 
@@ -129,10 +123,7 @@ class TimeRangeProcessor:
                     effective_start = custom_start_date
                 else:
                     # 自定义起始日期晚于快照结束，跳过此快照
-                    logger.info(
-                        f"   - 跳过快照 {snapshot.effective_date}: "
-                        f"自定义起始日期 {custom_start_date} 晚于快照结束日期 {snapshot.end_date}"
-                    )
+                    logger.debug(f"跳过快照 {snapshot.effective_date}：自定义起始日期 {custom_start_date} 晚于快照结束日期 {snapshot.end_date}")
                     return None
 
         # 处理自定义结束日期
@@ -143,13 +134,7 @@ class TimeRangeProcessor:
                     effective_end = custom_end_date
                 else:
                     # 自定义结束日期早于有效起始日期，跳过此快照
-                    logger.info(
-                        "skip_snapshot_time_range",
-                        snapshot=snapshot.effective_date,
-                        start=effective_start,
-                        end=effective_end,
-                        note=f"自定义结束日期 {custom_end_date} 早于有效起始日期 {effective_start}",
-                    )
+                    logger.debug(f"跳过快照 {snapshot.effective_date}：自定义结束日期 {custom_end_date} 早于有效起始日期 {effective_start}")
                     return None
 
         return effective_start, effective_end
@@ -208,19 +193,9 @@ class TimeRangeProcessor:
             # 如果时间范围有效，更新快照
             if effective_start != snapshot.start_date or effective_end != snapshot.end_date:
                 cls.update_snapshot_time_range(snapshot, effective_start, effective_end)
-                logger.info(
-                    "update_snapshot_time_range",
-                    snapshot=snapshot.effective_date,
-                    start=effective_start,
-                    end=effective_end,
-                )
+                logger.debug(f"快照 {snapshot.effective_date} 时间范围已调整为 {effective_start} ~ {effective_end}")
             else:
-                logger.info(
-                    "keep_snapshot_time_range",
-                    snapshot=snapshot.effective_date,
-                    start=effective_start,
-                    end=effective_end,
-                )
+                logger.debug(f"快照 {snapshot.effective_date} 保持原始时间范围 {effective_start} ~ {effective_end}")
 
             filtered_snapshots.append(snapshot)
 
@@ -251,9 +226,7 @@ class TimeRangeProcessor:
             return universe_def
 
         # 验证自定义时间范围
-        validated_start, validated_end = cls.validate_custom_time_range(
-            universe_def, custom_start_date, custom_end_date
-        )
+        validated_start, validated_end = cls.validate_custom_time_range(universe_def, custom_start_date, custom_end_date)
 
         # 获取原始时间边界用于日志
         universe_start, universe_end = cls.get_universe_time_bounds(universe_def)
@@ -261,23 +234,13 @@ class TimeRangeProcessor:
         # 深拷贝universe定义以避免修改原始数据
         modified_def = deepcopy(universe_def)
 
-        logger.info(
-            "apply_custom_time_range",
-            universe_start=universe_start,
-            universe_end=universe_end,
-            custom_start_date=validated_start,
-            custom_end_date=validated_end,
-        )
+        logger.info(f"已应用自定义时间范围：{validated_start} ~ {validated_end}（Universe 原范围 {universe_start} ~ {universe_end}）。")
 
         # 处理快照列表
         filtered_snapshots = cls.process_snapshots(modified_def, validated_start, validated_end)
 
         modified_def.snapshots = filtered_snapshots
 
-        logger.info(
-            "apply_custom_time_range_complete",
-            filtered_snapshots=len(filtered_snapshots),
-            total_snapshots=len(universe_def.snapshots),
-        )
+        logger.info(f"已更新 Universe 快照：保留 {len(filtered_snapshots)}/{len(universe_def.snapshots)} 个快照。")
 
         return modified_def

@@ -68,7 +68,12 @@ class DataValidator:
             issue_count = len(issues)
             total_count = len(data)
             if issue_count > total_count * 0.1:  # 超过10%的数据有问题
-                logger.warning(f"⚠️ {symbol} 数据质量问题: {issue_count}/{total_count} 条记录异常")
+                logger.warning(
+                    "data_quality_issue",
+                    symbol=symbol,
+                    invalid_records=issue_count,
+                    total_records=total_count,
+                )
                 self.validation_errors.extend(issues[:5])  # 保存前5个错误
 
         return valid_data
@@ -128,25 +133,37 @@ class DataValidator:
                 valid_oi = self._validate_open_interest_list(oi_data, issues)
                 validated_data["open_interest"] = valid_oi
                 if len(valid_oi) < len(oi_data) * 0.5:
-                    logger.warning(f"⚠️ {symbol}: 持仓量数据质量较低，有效记录 {len(valid_oi)}/{len(oi_data)}")
+                    logger.warning(
+                        "open_interest_quality_low",
+                        symbol=symbol,
+                        valid_records=len(valid_oi),
+                        total_records=len(oi_data),
+                    )
             if lsr_data := data.get("long_short_ratio"):
                 valid_lsr = self._validate_long_short_ratio_list(lsr_data, issues)
                 validated_data["long_short_ratio"] = valid_lsr
                 if len(valid_lsr) < len(lsr_data) * 0.5:
-                    logger.warning(f"⚠️ {symbol}: 多空比例数据质量较低，有效记录 {len(valid_lsr)}/{len(lsr_data)}")
+                    logger.warning(
+                        "long_short_ratio_quality_low",
+                        symbol=symbol,
+                        valid_records=len(valid_lsr),
+                        total_records=len(lsr_data),
+                    )
             if issues:
-                logger.debug(f"📋 {symbol}: 数据验证发现 {len(issues)} 个问题")
+                logger.debug("metrics_validation_issues", symbol=symbol, issues_found=len(issues))
                 self.validation_errors.extend(issues[:3])
             if not validated_data["open_interest"] and not validated_data["long_short_ratio"]:
-                logger.warning(f"⚠️ {symbol}: 没有有效的metrics数据")
+                logger.warning("metrics_validation_empty", symbol=symbol)
                 return None
             logger.debug(
-                f"✅ {symbol}: 数据验证通过 - 持仓量: {len(validated_data['open_interest'])}, \
-                    多空比例: {len(validated_data['long_short_ratio'])}"
+                "metrics_validation_passed",
+                symbol=symbol,
+                open_interest=len(validated_data["open_interest"]),
+                long_short_ratio=len(validated_data["long_short_ratio"]),
             )
             return validated_data
         except Exception as e:
-            logger.warning(f"❌ {symbol}: 数据验证失败 - {e}")
+            logger.warning("metrics_validation_failed", symbol=symbol, error=str(e))
             return data
 
     async def _check_sample_data_quality(
@@ -187,9 +204,7 @@ class DataValidator:
                         completeness = actual_points / expected_points if expected_points > 0 else 0
                         if completeness < 0.8:
                             quality_issues += 1
-                            detailed_issues.append(
-                                f"{symbol}: 数据完整性{completeness:.1%} ({actual_points}/{expected_points})"
-                            )
+                            detailed_issues.append(f"{symbol}: 数据完整性{completeness:.1%} ({actual_points}/{expected_points})")
                     else:
                         quality_issues += 1
                         detailed_issues.append(f"{symbol}: 无法读取已下载的数据")
@@ -214,13 +229,11 @@ class DataValidator:
     ) -> IntegrityReport:
         """创建数据完整性报告."""
         try:
-            logger.info("🔍 执行数据完整性检查...")
+            logger.info("integrity_check_started")
             total_symbols = len(symbols)
             success_count = len(successful_symbols)
             basic_quality_score = success_count / total_symbols if total_symbols > 0 else 0
-            quality_issues, detailed_issues = await self._check_sample_data_quality(
-                successful_symbols, start_time, end_time, interval, db_file_path
-            )
+            quality_issues, detailed_issues = await self._check_sample_data_quality(successful_symbols, start_time, end_time, interval, db_file_path)
             if successful_symbols:
                 sample_size = min(5, len(successful_symbols))
                 quality_penalty = (quality_issues / sample_size) * 0.3 if sample_size > 0 else 0
@@ -251,7 +264,7 @@ class DataValidator:
                 recommendations=recommendations,
             )
         except Exception as e:
-            logger.warning(f"⚠️ 完整性检查失败: {e}")
+            logger.warning("integrity_check_failed", error=str(e))
             return IntegrityReport(
                 total_symbols=len(symbols),
                 successful_symbols=len(successful_symbols),
