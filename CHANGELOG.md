@@ -2,6 +2,34 @@
 
 <!-- next-version -->
 
+## v1.16.0 (2025-10-27)
+
+### Features
+
+- new timestampe file and new resampler
+- add univ_dic2 and speed up lsr oi fr download and some bug fix
+
+### Fixes
+
+- docs depencies
+- release workflow
+- docs depencies
+- publish changelog
+- release workflow file format error
+- release workflow file format error
+
+### Refactors
+
+- logging config
+- migrate logging system from RichHandler to structlog
+
+### Other Changes
+
+- Release/v1.14.3 ([#20](https://github.com/ppmina/Xdata/pull/20))
+- Release/v1.14.0 ([#19](https://github.com/ppmina/Xdata/pull/19))
+
+
+
 ## v1.15.1 (2025-10-19)
 
 ### Features
