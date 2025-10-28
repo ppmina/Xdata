@@ -383,14 +383,18 @@ class MetricsQuery:
             end_ts: 结束时间戳（毫秒）
 
         Returns:
-            如果需要下载返回 [start_ts]，否则返回空列表
+            如果需要下载返回 [start_ts, end_ts]，否则返回空列表
         """
+        if start_ts >= end_ts:
+            # 边界相同，直接返回单个起点以触发一次补全
+            return [start_ts]
+
         # 查询现有数据的时间范围
         time_range = await self.get_metrics_time_range("funding_rate", symbol)
 
         if not time_range:
-            # 没有数据，需要下载
-            return [start_ts]
+            # 没有任何历史数据时，下载整个请求区间
+            return [start_ts, end_ts]
 
         earliest_ts = time_range["earliest_timestamp"]
         latest_ts = time_range["latest_timestamp"]
@@ -400,8 +404,11 @@ class MetricsQuery:
         if earliest_ts <= start_ts and latest_ts >= end_ts:
             return []
 
-        # 否则需要下载（返回起始时间戳作为标记）
-        return [start_ts]
+        # 否则需要下载整个请求区间，确保规划覆盖完整范围
+        segment_start = min(start_ts, end_ts)
+        segment_end = max(start_ts, end_ts)
+
+        return [segment_start, segment_end]
 
     async def get_daily_metrics_status(self, symbol: str, date_str: str) -> dict[str, int]:
         """获取指定日期指标数据的覆盖情况.
