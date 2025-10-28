@@ -68,6 +68,14 @@ class Settings(BaseSettings):
         default=True,
         description="是否启用Rich格式化（开发环境推荐）",
     )
+    LOG_PROFILE: str = Field(
+        default="default",
+        description="日志配置预设，例如 default 或 cli_demo",
+    )
+    LOG_VERBOSE: bool = Field(
+        default=False,
+        description="是否启用详细调试日志",
+    )
 
     def get_proxy_config(self) -> dict[str, str]:
         """获取代理配置.

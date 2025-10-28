@@ -32,9 +32,7 @@ class MetricsQuery:
         """
         self.pool = connection_pool
 
-    async def select_funding_rates(
-        self, symbols: list[str], start_time: str, end_time: str, columns: list[str] | None = None
-    ) -> pd.DataFrame:
+    async def select_funding_rates(self, symbols: list[str], start_time: str, end_time: str, columns: list[str] | None = None) -> pd.DataFrame:
         """查询资金费率数据.
 
         Args:
@@ -121,11 +119,7 @@ class MetricsQuery:
         time_condition, time_params = QueryBuilder.build_time_filter(start_time, end_time)
         symbol_condition, symbol_params = QueryBuilder.build_symbol_filter(symbols)
 
-        builder = (
-            QueryBuilder.select("open_interests", query_columns)
-            .where(time_condition, *time_params)
-            .where(symbol_condition, *symbol_params)
-        )
+        builder = QueryBuilder.select("open_interests", query_columns).where(time_condition, *time_params).where(symbol_condition, *symbol_params)
 
         if interval:
             builder = builder.where("interval = ?", interval)
@@ -186,11 +180,7 @@ class MetricsQuery:
         time_condition, time_params = QueryBuilder.build_time_filter(start_time, end_time)
         symbol_condition, symbol_params = QueryBuilder.build_symbol_filter(symbols)
 
-        builder = (
-            QueryBuilder.select("long_short_ratios", query_columns)
-            .where(time_condition, *time_params)
-            .where(symbol_condition, *symbol_params)
-        )
+        builder = QueryBuilder.select("long_short_ratios", query_columns).where(time_condition, *time_params).where(symbol_condition, *symbol_params)
 
         if period:
             builder = builder.where("period = ?", period)
@@ -294,9 +284,7 @@ class MetricsQuery:
             "latest_date": result[4],
         }
 
-    async def get_missing_timestamps(
-        self, data_type: str, symbol: str, start_ts: int, end_ts: int, interval_hours: int = 8
-    ) -> list[int]:
+    async def get_missing_timestamps(self, data_type: str, symbol: str, start_ts: int, end_ts: int, interval_hours: int = 8) -> list[int]:
         """获取指标数据缺失的时间戳.
 
         Args:
@@ -309,6 +297,10 @@ class MetricsQuery:
         Returns:
             缺失的时间戳列表
         """
+        # 资金费率特殊处理：不按固定频率检查，只检查时间范围覆盖
+        if data_type == "funding_rate":
+            return await self._check_funding_rate_missing(symbol, start_ts, end_ts)
+
         table_map = {
             "funding_rate": "funding_rates",
             "open_interest": "open_interests",
@@ -379,6 +371,45 @@ class MetricsQuery:
         missing_timestamps = sorted([ts * 1000 for ts in missing_timestamps_sec])
         return missing_timestamps
 
+    async def _check_funding_rate_missing(self, symbol: str, start_ts: int, end_ts: int) -> list[int]:
+        """检查资金费率缺失情况（不依赖固定频率）.
+
+        资金费率是事件数据，频率不固定（4h、8h或其他），所以不能按固定间隔检查。
+        只检查时间范围是否有数据覆盖，如果完全覆盖则返回空列表。
+
+        Args:
+            symbol: 交易对
+            start_ts: 开始时间戳（毫秒）
+            end_ts: 结束时间戳（毫秒）
+
+        Returns:
+            如果需要下载返回 [start_ts, end_ts]，否则返回空列表
+        """
+        if start_ts >= end_ts:
+            # 边界相同，直接返回单个起点以触发一次补全
+            return [start_ts]
+
+        # 查询现有数据的时间范围
+        time_range = await self.get_metrics_time_range("funding_rate", symbol)
+
+        if not time_range:
+            # 没有任何历史数据时，下载整个请求区间
+            return [start_ts, end_ts]
+
+        earliest_ts = time_range["earliest_timestamp"]
+        latest_ts = time_range["latest_timestamp"]
+
+        # 检查是否需要扩展下载范围
+        # 如果数据库中的数据完全覆盖请求范围，则不需要下载
+        if earliest_ts <= start_ts and latest_ts >= end_ts:
+            return []
+
+        # 否则需要下载整个请求区间，确保规划覆盖完整范围
+        segment_start = min(start_ts, end_ts)
+        segment_end = max(start_ts, end_ts)
+
+        return [segment_start, segment_end]
+
     async def get_daily_metrics_status(self, symbol: str, date_str: str) -> dict[str, int]:
         """获取指定日期指标数据的覆盖情况.
 
@@ -393,12 +424,8 @@ class MetricsQuery:
         end_ts = date_to_timestamp_end(date_str)
 
         queries = {
-            "open_interest": (
-                "SELECT COUNT(*) FROM open_interests WHERE symbol = ? AND timestamp >= ? AND timestamp < ?"
-            ),
-            "long_short_ratio": (
-                "SELECT COUNT(*) FROM long_short_ratios WHERE symbol = ? AND timestamp >= ? AND timestamp < ?"
-            ),
+            "open_interest": ("SELECT COUNT(*) FROM open_interests WHERE symbol = ? AND timestamp >= ? AND timestamp < ?"),
+            "long_short_ratio": ("SELECT COUNT(*) FROM long_short_ratios WHERE symbol = ? AND timestamp >= ? AND timestamp < ?"),
         }
 
         results: dict[str, int] = {"open_interest": 0, "long_short_ratio": 0}

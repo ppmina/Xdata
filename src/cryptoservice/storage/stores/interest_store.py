@@ -46,9 +46,7 @@ class InterestStore:
                 item.time if hasattr(item, "time") else item.timestamp,
                 getattr(item, "interval", "5m"),  # 默认5分钟间隔
                 float(item.open_interest),
-                float(item.open_interest_value)
-                if hasattr(item, "open_interest_value") and item.open_interest_value
-                else None,
+                float(item.open_interest_value) if hasattr(item, "open_interest_value") and item.open_interest_value else None,
             )
             records.append(record)
 
@@ -89,9 +87,7 @@ class InterestStore:
         logger.info(f"持仓量数据插入完成: {total_inserted} 条记录")
         return total_inserted
 
-    async def delete_by_time_range(
-        self, symbols: list[str], start_time: str, end_time: str, interval: str | None = None
-    ) -> int:
+    async def delete_by_time_range(self, symbols: list[str], start_time: str, end_time: str, interval: str | None = None) -> int:
         """按时间范围删除数据.
 
         Args:
@@ -106,15 +102,9 @@ class InterestStore:
         import pandas as pd
 
         # 转换时间格式
-        if isinstance(start_time, str) and not start_time.isdigit():
-            start_ts = int(pd.Timestamp(start_time).timestamp() * 1000)
-        else:
-            start_ts = int(start_time)
+        start_ts = int(pd.Timestamp(start_time).timestamp() * 1000) if isinstance(start_time, str) and not start_time.isdigit() else int(start_time)
 
-        if isinstance(end_time, str) and not end_time.isdigit():
-            end_ts = int(pd.Timestamp(end_time).timestamp() * 1000)
-        else:
-            end_ts = int(end_time)
+        end_ts = int(pd.Timestamp(end_time).timestamp() * 1000) if isinstance(end_time, str) and not end_time.isdigit() else int(end_time)
 
         conditions = ["timestamp BETWEEN ? AND ?"]
         params: list[Any] = [start_ts, end_ts]

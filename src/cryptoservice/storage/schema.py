@@ -125,7 +125,7 @@ class DatabaseSchema:
         Args:
             connection_pool: 数据库连接池
         """
-        logger.info("create_all_tables_start")
+        logger.debug("create_all_tables_start")
 
         async with connection_pool.get_connection() as conn:
             for table_config in cls.ALL_TABLES:
@@ -144,7 +144,7 @@ class DatabaseSchema:
             # 提交事务
             await conn.commit()
 
-        logger.info("create_all_tables_complete")
+        logger.debug("create_all_tables_complete")
 
     @classmethod
     async def drop_all_tables(cls, connection_pool: "ConnectionPool") -> None:

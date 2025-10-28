@@ -116,9 +116,7 @@ class NumpyExporter:
 
         logger.info("export_klines_complete", path=output_path)
 
-    async def _export_by_dates(
-        self, df: pd.DataFrame, output_path: Path, freq: Freq, timestamp_dfs: dict[str, pd.DataFrame] | None = None
-    ) -> None:
+    async def _export_by_dates(self, df: pd.DataFrame, output_path: Path, freq: Freq, timestamp_dfs: dict[str, pd.DataFrame] | None = None) -> None:
         """按日期分组导出数据.
 
         Args:
@@ -197,9 +195,7 @@ class NumpyExporter:
         if timestamp_dfs:
             await self._export_timestamps(timestamp_dfs, day_mask, output_path, freq, date_str)
 
-    async def _export_timestamps(
-        self, timestamp_dfs: dict[str, pd.DataFrame], day_mask: pd.Series, output_path: Path, freq: Freq, date_str: str
-    ) -> None:
+    async def _export_timestamps(self, timestamp_dfs: dict[str, pd.DataFrame], day_mask: pd.Series, output_path: Path, freq: Freq, date_str: str) -> None:
         """导出 timestamp 数据为单个合并的 .npy 文件.
 
         将多个 timestamp 按约定顺序合并：kline, oi/lsr, fr
@@ -311,9 +307,7 @@ class NumpyExporter:
 
             await loop.run_in_executor(None, save_symbols)
 
-    async def _export_single_feature(
-        self, day_data: pd.DataFrame, feature: str, output_path: Path, freq: Freq, date_str: str
-    ) -> None:
+    async def _export_single_feature(self, day_data: pd.DataFrame, feature: str, output_path: Path, freq: Freq, date_str: str) -> None:
         """导出单个特征的数据.
 
         Args:
@@ -417,9 +411,7 @@ class NumpyExporter:
 
         logger.info("export_with_custom_features_complete", path=output_path)
 
-    async def export_summary_info(
-        self, symbols: list[str], start_time: str, end_time: str, freq: Freq, output_path: Path
-    ) -> dict[str, Any]:
+    async def export_summary_info(self, symbols: list[str], start_time: str, end_time: str, freq: Freq, output_path: Path) -> dict[str, Any]:
         """导出数据概要信息.
 
         Args:
@@ -568,10 +560,7 @@ class NumpyExporter:
             kline_df = await self.kline_query.select_by_time_range(symbols, start_time, end_time, source_freq)
 
             if kline_df.empty:
-                error_msg = (
-                    f"数据库中不存在频率为 {source_freq.value} 的 K线数据。"
-                    f"请先下载该频率的数据，或更改 source_freq 参数。"
-                )
+                error_msg = f"数据库中不存在频率为 {source_freq.value} 的 K线数据。请先下载该频率的数据，或更改 source_freq 参数。"
                 logger.error(error_msg)
                 raise ValueError(error_msg)
 
@@ -596,9 +585,7 @@ class NumpyExporter:
             timestamp_dfs["kline_timestamp"] = kline_timestamps
 
         if include_metrics and self.metrics_query and not combined_df.empty:
-            metrics_df, metrics_timestamps = await self._fetch_and_merge_metrics(
-                combined_df, symbols, start_time, end_time, export_freq, metrics_config
-            )
+            metrics_df, metrics_timestamps = await self._fetch_and_merge_metrics(combined_df, symbols, start_time, end_time, export_freq, metrics_config)
             if not metrics_df.empty:
                 # 合并到 combined_df
                 combined_df = pd.concat([combined_df, metrics_df], axis=1, join="outer")
@@ -664,9 +651,7 @@ class NumpyExporter:
         if metrics_config.get("funding_rate"):
             try:
                 logger.info("fetch_funding_rate_data_start")
-                fr_df_raw = await self.metrics_query.select_funding_rates(
-                    symbols, start_time, end_time, columns=["funding_rate"]
-                )
+                fr_df_raw = await self.metrics_query.select_funding_rates(symbols, start_time, end_time, columns=["funding_rate"])
                 if not fr_df_raw.empty:
                     # 重采样并对齐到 kline 时间点，同时获取原始 timestamp
                     result = await self.resampler.resample_and_align(
@@ -685,9 +670,7 @@ class NumpyExporter:
                     # 保存原始 timestamp
                     if not fr_original_ts.empty:
                         # 转换为与特征数据相同的格式
-                        fr_ts_df = pd.DataFrame(
-                            {"timestamp": fr_original_ts["original_timestamp"]}, index=fr_original_ts.index
-                        )
+                        fr_ts_df = pd.DataFrame({"timestamp": fr_original_ts["original_timestamp"]}, index=fr_original_ts.index)
                         timestamp_dfs["fr_timestamp"] = fr_ts_df
 
                     metrics_dfs.append(fr_df)
@@ -699,9 +682,7 @@ class NumpyExporter:
         if metrics_config.get("open_interest"):
             try:
                 logger.info("fetch_open_interest_data_start")
-                oi_df_raw = await self.metrics_query.select_open_interests(
-                    symbols, start_time, end_time, columns=["open_interest"]
-                )
+                oi_df_raw = await self.metrics_query.select_open_interests(symbols, start_time, end_time, columns=["open_interest"])
                 if not oi_df_raw.empty:
                     # 重采样并对齐，同时获取原始 timestamp
                     result = await self.resampler.resample_and_align(
@@ -719,9 +700,7 @@ class NumpyExporter:
 
                     # 保存原始 timestamp
                     if not oi_original_ts.empty:
-                        oi_ts_df = pd.DataFrame(
-                            {"timestamp": oi_original_ts["original_timestamp"]}, index=oi_original_ts.index
-                        )
+                        oi_ts_df = pd.DataFrame({"timestamp": oi_original_ts["original_timestamp"]}, index=oi_original_ts.index)
                         timestamp_dfs["oi_timestamp"] = oi_ts_df
 
                     metrics_dfs.append(oi_df)
@@ -756,9 +735,7 @@ class NumpyExporter:
 
                     # 保存原始 timestamp
                     if not lsr_original_ts.empty:
-                        lsr_ts_df = pd.DataFrame(
-                            {"timestamp": lsr_original_ts["original_timestamp"]}, index=lsr_original_ts.index
-                        )
+                        lsr_ts_df = pd.DataFrame({"timestamp": lsr_original_ts["original_timestamp"]}, index=lsr_original_ts.index)
                         timestamp_dfs["lsr_timestamp"] = lsr_ts_df
 
                     metrics_dfs.append(lsr_df)

@@ -10,7 +10,7 @@ from cryptoservice.config import RetryConfig
 from cryptoservice.config.logging import get_logger
 from cryptoservice.models import Freq
 from cryptoservice.services import MarketDataService
-from cryptoservice.utils.cli_helper import print_summary, print_progress_header
+from cryptoservice.utils.cli_helper import print_progress_header, print_summary
 
 load_dotenv()
 
@@ -44,7 +44,7 @@ RETRY_CONFIG = (
 INCREMENTAL = True  # 是否启用增量下载模式（只下载缺失的数据）
 
 # 自定义时间范围配置 (可选)
-CUSTOM_START_DATE = "2024-10-01" # 自定义起始日期，例如: "2024-02-01"，必须在universe时间范围内
+CUSTOM_START_DATE = "2024-10-01"  # 自定义起始日期，例如: "2024-02-01"，必须在universe时间范围内
 CUSTOM_END_DATE = "2024-10-31"  # 自定义结束日期，例如: "2024-06-30"，必须在universe时间范围内
 
 # 新特征配置
@@ -74,20 +74,24 @@ async def main():
     # 创建服务并作为上下文管理器使用
     try:
         print_progress_header(
-                "Universe 数据下载",
-                details={
-                    "Universe 文件": UNIVERSE_FILE,
-                    "数据库路径": DB_PATH,
-                    "数据频率": INTERVAL.value,
-                    "增量模式": "是" if INCREMENTAL else "否",
-                    "下载指标": "是" if DOWNLOAD_MARKET_METRICS else "否",
-                    "API 并发数": MAX_API_WORKERS,
-                    "Vision 并发数": MAX_VISION_WORKERS,
-                },
-            )
+            "Universe 数据下载",
+            details={
+                "Universe 文件": UNIVERSE_FILE,
+                "数据库路径": DB_PATH,
+                "数据频率": INTERVAL.value,
+                "增量模式": "是" if INCREMENTAL else "否",
+                "下载指标": "是" if DOWNLOAD_MARKET_METRICS else "否",
+                "API 并发数": MAX_API_WORKERS,
+                "Vision 并发数": MAX_VISION_WORKERS,
+            },
+        )
         async with await MarketDataService.create(api_key=api_key, api_secret=api_secret) as service:
             # 显示自定义时间范围信息
-            logger.info("custom_time_range", start=CUSTOM_START_DATE or "use_universe_default", end=CUSTOM_END_DATE or "use_universe_default", note="must_be_within_universe_range")
+            logger.debug(
+                "custom_time_range",
+                start=CUSTOM_START_DATE or "use_universe_default",
+                end=CUSTOM_END_DATE or "use_universe_default",
+            )
 
             await service.download_universe_data(
                 universe_file=UNIVERSE_FILE,
@@ -106,7 +110,7 @@ async def main():
                 custom_end_date=CUSTOM_END_DATE,
             )
 
-            logger.info("download_universe_complete")
+            logger.info("Universe 数据下载任务完成。")
 
         # 显示下载总结
         print_summary(
@@ -122,7 +126,7 @@ async def main():
         )
 
     except Exception as e:
-        logger.error("download_universe_failed", error=str(e))
+        logger.error(f"Universe 数据下载失败：{e}")
         print_summary(
             title="数据下载失败",
             status="failed",

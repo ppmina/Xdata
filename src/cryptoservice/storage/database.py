@@ -71,13 +71,13 @@ class Database:
         await self.schema.create_all_tables(self.pool)
         self._initialized = True
 
-        logger.info("database_initialized", db_path=str(self.db_path))
+        logger.debug("database_initialized", db_path=str(self.db_path))
 
     async def close(self):
         """关闭数据库."""
         await self.pool.close()
         self._initialized = False
-        logger.info("database_closed")
+        logger.debug("database_closed")
 
     # === 上下文管理器 ===
     async def __aenter__(self):
@@ -105,9 +105,7 @@ class Database:
             await self.initialize()
         return await self.kline_store.insert(klines, freq, batch_size)
 
-    async def select_klines(
-        self, symbols: list[str], start_time: str, end_time: str, freq: Freq, columns: list[str] | None = None
-    ) -> pd.DataFrame:
+    async def select_klines(self, symbols: list[str], start_time: str, end_time: str, freq: Freq, columns: list[str] | None = None) -> pd.DataFrame:
         """查询K线数据.
 
         Args:
@@ -183,9 +181,7 @@ class Database:
             await self.initialize()
         return await self.ratio_store.insert(data, batch_size)
 
-    async def select_funding_rates(
-        self, symbols: list[str], start_time: str, end_time: str, columns: list[str]
-    ) -> pd.DataFrame:
+    async def select_funding_rates(self, symbols: list[str], start_time: str, end_time: str, columns: list[str]) -> pd.DataFrame:
         """查询资金费率数据.
 
         Args:
@@ -249,14 +245,10 @@ class Database:
         """
         if not self._initialized:
             await self.initialize()
-        return await self.metrics_query.select_long_short_ratios(
-            symbols, start_time, end_time, period, ratio_type, columns
-        )
+        return await self.metrics_query.select_long_short_ratios(symbols, start_time, end_time, period, ratio_type, columns)
 
     # === 增量下载支持 ===
-    async def plan_kline_download(
-        self, symbols: list[str], start_date: str, end_date: str, freq: Freq
-    ) -> dict[str, dict[str, int | str]]:
+    async def plan_kline_download(self, symbols: list[str], start_date: str, end_date: str, freq: Freq) -> dict[str, dict[str, int | str]]:
         """制定K线数据增量下载计划.
 
         Args:
@@ -336,9 +328,7 @@ class Database:
         """
         if not self._initialized:
             await self.initialize()
-        await self.numpy_exporter.export_klines(
-            symbols, start_time, end_time, freq, output_path, target_freq, chunk_days
-        )
+        await self.numpy_exporter.export_klines(symbols, start_time, end_time, freq, output_path, target_freq, chunk_days)
 
     async def export_to_csv(
         self,
@@ -510,9 +500,7 @@ class Database:
         for symbol in symbols:
             yield symbol
 
-    async def iter_klines_by_symbol(
-        self, symbols: list[str], start_time: str, end_time: str, freq: Freq, columns: list[str] | None = None
-    ):
+    async def iter_klines_by_symbol(self, symbols: list[str], start_time: str, end_time: str, freq: Freq, columns: list[str] | None = None):
         """按交易对迭代K线数据.
 
         每次迭代返回一个交易对的所有K线数据。

@@ -66,7 +66,7 @@ def create_output_path(universe_config, snapshot_id: int, start_date: str, end_d
 
 async def main():
     """主函数 - 展示如何使用导出功能."""
-    logger.info("export_start", action="starting_export")
+    logger.info(f"开始导出数据：来源 {UNIVERSE_FILE}，输出目录 {EXPORT_BASE_PATH}。")
 
     # 构建导出特征列表
     features = []
@@ -77,8 +77,8 @@ async def main():
         metrics_features = ["fr", "oi", "lsr"]
         features.extend(metrics_features)
 
-    logger.info(
-        "export_config",
+    logger.debug(
+        "导出配置",
         universe_file=UNIVERSE_FILE,
         db_path=DB_PATH,
         export_path=EXPORT_BASE_PATH,
@@ -88,19 +88,19 @@ async def main():
     )
 
     if CUSTOM_START_DATE or CUSTOM_END_DATE:
-        logger.info("custom_time_range", start=CUSTOM_START_DATE, end=CUSTOM_END_DATE)
+        logger.debug(f"使用自定义导出范围：{CUSTOM_START_DATE} ~ {CUSTOM_END_DATE}")
 
     try:
         # 1. 加载 Universe 定义
-        logger.info("loading_universe", file=UNIVERSE_FILE)
+        logger.debug(f"加载 Universe 定义：{UNIVERSE_FILE}")
         universe_def = UniverseDefinition.load_from_file(UNIVERSE_FILE)
-        logger.info("universe_loaded", snapshots=len(universe_def.snapshots))
+        logger.debug(f"已加载 {len(universe_def.snapshots)} 个快照")
 
         # 2. 初始化数据库
-        logger.info("initializing_database", db_path=DB_PATH)
+        logger.debug(f"初始化数据库：{DB_PATH}")
         db = Database(DB_PATH)
         await db.initialize()
-        logger.info("database_initialized")
+        logger.debug("数据库准备完成")
 
         try:
             # 3. 处理每个快照
@@ -114,19 +114,14 @@ async def main():
                 start_date = CUSTOM_START_DATE or snapshot.start_date
                 end_date = CUSTOM_END_DATE or snapshot.end_date
 
-                logger.info(
-                    "processing_snapshot",
-                    index=i + 1,
-                    total=len(universe_def.snapshots),
-                    start_date=start_date,
-                    end_date=end_date,
-                    symbols_count=len(snapshot.symbols),
-                    symbols_sample=snapshot.symbols[:5],
+                logger.debug(
+                    f"处理快照 {i + 1}/{len(universe_def.snapshots)}：{snapshot.effective_date}" \
+                    f"（{start_date} ~ {end_date}，{len(snapshot.symbols)} 个交易对）"
                 )
 
                 # 创建输出路径
                 output_path = create_output_path(universe_def.config, i, start_date, end_date)
-                logger.info("output_path_created", path=str(output_path))
+                logger.debug(f"输出目录：{output_path}")
 
                 # 4. 使用统一的导出接口
                 try:
@@ -154,18 +149,15 @@ async def main():
                         total_json_files += len(json_files)
                         total_size_mb += size_mb
 
-                        logger.info(
-                            "export_stats",
-                            npy_files=len(npy_files),
-                            json_files=len(json_files),
-                            total_size_mb=f"{size_mb:.1f}",
+                        logger.debug(
+                            f"导出统计：NPY={len(npy_files)}，JSON={len(json_files)}，总体积 {size_mb:.1f} MB"
                         )
 
                     success_count += 1
-                    logger.info("snapshot_export_complete", snapshot_index=i + 1)
+                    logger.debug(f"快照 {i + 1} 导出完成。")
 
                 except Exception as e:
-                    logger.error("snapshot_export_failed", snapshot_index=i + 1, error=str(e), exc_info=True)
+                    logger.error(f"快照 {i + 1} 导出失败：{e}", exc_info=True)
 
             # 5. 显示执行总结
             failed_count = len(universe_def.snapshots) - success_count
@@ -181,6 +173,8 @@ async def main():
 
         finally:
             await db.close()
+
+            logger.info("数据导出任务完成。")
 
             # 显示总结
             print_summary(
@@ -202,7 +196,7 @@ async def main():
             )
 
     except Exception as e:
-        logger.error("export_failed", error=str(e), exc_info=True)
+        logger.error(f"数据导出失败：{e}", exc_info=True)
         raise
 
 

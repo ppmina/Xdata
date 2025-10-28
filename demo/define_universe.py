@@ -75,7 +75,7 @@ async def main():
             },
         )
 
-        logger.info("define_universe_start")
+        logger.info("开始定义 Universe。")
 
         universe_def = await service.define_universe(
             start_date=START_DATE,
@@ -93,7 +93,7 @@ async def main():
             quote_asset=QUOTE_ASSET,
         )
 
-        logger.info("define_universe_complete", output_path=OUTPUT_PATH)
+        logger.info(f"Universe 定义完成，结果已保存至 {OUTPUT_PATH}。")
 
         # 统计快照信息
         total_snapshots = len(universe_def.snapshots)
@@ -115,7 +115,7 @@ async def main():
         )
 
     except Exception as e:
-        logger.error("define_universe_failed", error=str(e))
+        logger.error(f"Universe 定义失败：{e}")
         print_summary(
             title="Universe 定义失败",
             status="failed",

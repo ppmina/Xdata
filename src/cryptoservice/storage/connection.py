@@ -73,11 +73,11 @@ class ConnectionPool:
         if self._initialized:
             return
 
-        logger.info("pool_init_start", backend="aiosqlitepool")
+        logger.debug("pool_init_start", backend="aiosqlitepool")
         try:
             self._pool = await self._create_connection_pool()
             self._initialized = True
-            logger.info("pool_init_complete", db_path=str(self.db_path))
+            logger.debug("pool_init_complete", db_path=str(self.db_path))
         except Exception as e:
             logger.error("pool_init_error", error=str(e))
             raise
@@ -126,7 +126,7 @@ class ConnectionPool:
             await self._pool.close()
             self._pool = None
         self._initialized = False
-        logger.info("pool_closed")
+        logger.debug("pool_closed")
 
     @property
     def is_initialized(self) -> bool:

@@ -13,7 +13,7 @@ from cryptoservice.config.logging import get_logger
 from cryptoservice.exceptions import MarketDataFetchError
 from cryptoservice.models import Freq, FundingRate, LongShortRatio, OpenInterest
 from cryptoservice.storage.database import Database as AsyncMarketDB
-from cryptoservice.utils.logger import generate_run_id
+from cryptoservice.utils.run_id import generate_run_id
 from cryptoservice.utils.time_utils import date_to_timestamp_end, date_to_timestamp_start, timestamp_to_datetime
 
 from .base_downloader import BaseDownloader
@@ -34,6 +34,18 @@ class MetricsDownloader(BaseDownloader):
         super().__init__(client, request_delay)
         self.db: AsyncMarketDB | None = None
         self._run_id: str | None = None
+
+    @staticmethod
+    def _plan_examples(plan_dict: dict[str, dict[str, Any]]) -> str | None:
+        if not plan_dict:
+            return None
+        ranked = sorted(
+            ((symbol, int(info.get("missing_count", 0))) for symbol, info in plan_dict.items()),
+            key=lambda item: item[1],
+            reverse=True,
+        )
+        top = [f"{symbol}({count})" for symbol, count in ranked[:3] if count > 0]
+        return ", ".join(top) if top else None
 
     async def download_funding_rate_batch(  # noqa: C901
         self,
@@ -56,78 +68,28 @@ class MetricsDownloader(BaseDownloader):
                 self.db = AsyncMarketDB(db_path)
             await self.db.initialize()
 
-            logger.info(
-                "download.start",
-                run=run,
-                dataset="funding_rate",
-                symbols=len(symbols),
-                start=start_time,
-                end=end_time,
-                max_workers=max_workers,
-                incremental=incremental,
-            )
+            logger.info(f"开始检查资金费率数据：{len(symbols)} 个交易对（{start_time} ~ {end_time}）。")
 
             symbol_plans: dict[str, dict[str, Any]] = {}
 
             if incremental:
-                logger.info(
-                    "download.incremental_start",
-                    run=run,
-                    dataset="funding_rate",
-                    symbols=len(symbols),
-                    start=start_time,
-                    end=end_time,
-                )
+                logger.debug(f"资金费率增量模式：准备分析缺失区间（{len(symbols)} 个交易对）。")
 
-                missing_plan_8h = await self.db.plan_metrics_download(
+                # 使用新的增量计划方法，不依赖固定频率
+                symbol_plans = await self.db.plan_metrics_download(
                     symbols=symbols,
                     start_date=start_time,
                     end_date=end_time,
                     data_type="funding_rate",
-                    interval_hours=8,
+                    interval_hours=0,  # 对于 funding_rate，这个参数会被忽略
                 )
 
-                missing_plan_4h = await self.db.plan_metrics_download(
-                    symbols=symbols,
-                    start_date=start_time,
-                    end_date=end_time,
-                    data_type="funding_rate",
-                    interval_hours=4,
-                )
-
-                complete_8h = set(symbols) - set(missing_plan_8h.keys())
-                complete_4h = set(symbols) - set(missing_plan_4h.keys())
-                complete_symbols = complete_8h | complete_4h
-                symbols_to_download = list(set(symbols) - complete_symbols)
-
-                logger.info(
-                    "download.incremental_summary",
-                    run=run,
-                    dataset="funding_rate",
-                    complete_8h=len(complete_8h),
-                    complete_4h=len(complete_4h),
-                    needing=len(symbols_to_download),
-                    total=len(symbols),
-                )
-
-                if not symbols_to_download:
-                    logger.info(
-                        "download.summary",
-                        run=run,
-                        dataset="funding_rate",
-                        status="skipped",
-                        reason="plan_empty",
-                    )
+                if not symbol_plans:
+                    logger.info("资金费率数据已是最新状态，跳过下载。")
                     return
 
-                symbol_plans = {}
-                for symbol in symbols_to_download:
-                    plan_8h = missing_plan_8h.get(symbol)
-                    plan_4h = missing_plan_4h.get(symbol)
-                    selected_plan = plan_8h or plan_4h
-                    if selected_plan is not None:
-                        symbol_plans[symbol] = selected_plan
-                symbols = symbols_to_download
+                symbols = list(symbol_plans.keys())
+                logger.info(f"资金费率增量计划：{len(symbol_plans)} 个交易对需要补齐数据。")
 
             total_records = 0
             semaphore = asyncio.Semaphore(max_workers)
@@ -155,11 +117,7 @@ class MetricsDownloader(BaseDownloader):
                         if plan and plan.get("start_ts") is not None and plan.get("end_ts") is not None:
                             ranges = [(int(plan["start_ts"]), int(plan["end_ts"]))]
                         else:
-                            ranges = [
-                                (start_ts, end_ts)
-                                for start_ts, end_ts in default_range
-                                if start_ts is not None and end_ts is not None
-                            ]
+                            ranges = [(s_ts, e_ts) for s_ts, e_ts in default_range if s_ts is not None and e_ts is not None]
 
                         total_inserted_symbol = 0
 
@@ -222,7 +180,7 @@ class MetricsDownloader(BaseDownloader):
                                 rows=total_inserted_symbol,
                             )
 
-                    except Exception as exc:  # noqa: BLE001
+                    except Exception as exc:
                         logger.warning(
                             "download.symbol_error",
                             run=run,
@@ -249,28 +207,14 @@ class MetricsDownloader(BaseDownloader):
 
             success_count = len(symbols) - len(self.failed_downloads)
             failed_count = len(self.failed_downloads)
-            success_rate = (success_count / len(symbols) * 100) if symbols else 0
             elapsed_ms = int((time.perf_counter() - started_at) * 1000)
 
             logger.info(
-                "download.summary",
-                run=run,
-                dataset="funding_rate",
-                symbols=len(symbols),
-                succeeded=success_count,
-                failed=failed_count,
-                success_rate=f"{success_rate:.1f}",
-                total_records=total_records,
-                elapsed_ms=elapsed_ms,
+                f"资金费率下载完成：成功 {success_count}/{len(symbols)}，写入 {total_records} 条记录，失败 {failed_count} 个交易对（耗时 {elapsed_ms} ms）。"
             )
 
         except Exception as exc:  # noqa: BLE001
-            logger.error(
-                "download.error",
-                run=run,
-                dataset="funding_rate",
-                error=str(exc),
-            )
+            logger.error(f"资金费率下载失败：{exc}")
             raise MarketDataFetchError(f"批量下载资金费率失败: {exc}") from exc
 
     async def download_open_interest_batch(  # noqa: C901
@@ -297,7 +241,7 @@ class MetricsDownloader(BaseDownloader):
             incremental: 是否启用增量下载（默认True）
         """
         try:
-            logger.info("download_batch_start", dataset="open_interest")
+            logger.info(f"开始下载持仓量数据：{len(symbols)} 个交易对（频率 {interval.value}）。")
 
             if self.db is None:
                 self.db = AsyncMarketDB(db_path)
@@ -307,7 +251,7 @@ class MetricsDownloader(BaseDownloader):
             symbol_plans: dict[str, dict[str, Any]] = {}
 
             if incremental:
-                logger.info("incremental_mode_enabled", dataset="open_interest", action="analyzing_data")
+                logger.debug("incremental_mode_enabled", dataset="open_interest", action="analyzing_data")
                 # 根据interval计算时间间隔（小时）
                 interval_hours_map = {
                     Freq.m5: 5 / 60,
@@ -334,10 +278,10 @@ class MetricsDownloader(BaseDownloader):
                 # 过滤出需要下载的交易对
                 symbols_to_download = list(missing_plan.keys())
                 if not symbols_to_download:
-                    logger.info("download_complete", dataset="open_interest", action="skipping")
+                    logger.info("持仓量数据已是最新状态，跳过下载。")
                     return
                 else:
-                    logger.info(
+                    logger.debug(
                         "incremental_summary",
                         dataset="open_interest",
                         needed=len(symbols_to_download),
@@ -346,6 +290,12 @@ class MetricsDownloader(BaseDownloader):
                     symbol_plans = missing_plan
                     # 使用需要下载的交易对列表替换原始列表
                     symbols = symbols_to_download
+
+                    examples = self._plan_examples(symbol_plans)
+                    if examples:
+                        logger.info(f"持仓量增量计划：{len(symbol_plans)} 个交易对需要补齐数据（示例：{examples}）。")
+                    else:
+                        logger.info(f"持仓量增量计划：{len(symbol_plans)} 个交易对需要补齐数据。")
 
             total_records = 0
             semaphore = asyncio.Semaphore(max_workers)
@@ -367,11 +317,7 @@ class MetricsDownloader(BaseDownloader):
                         if plan and plan.get("start_ts") is not None and plan.get("end_ts") is not None:
                             ranges = [(int(plan["start_ts"]), int(plan["end_ts"]))]
                         else:
-                            ranges = [
-                                (start_ts, end_ts)
-                                for start_ts, end_ts in default_range
-                                if start_ts is not None and end_ts is not None
-                            ]
+                            ranges = [(start_ts, end_ts) for start_ts, end_ts in default_range if start_ts is not None and end_ts is not None]
 
                         inserted_symbol = 0
 
@@ -397,7 +343,7 @@ class MetricsDownloader(BaseDownloader):
                             inserted_symbol += inserted
                             async with lock:
                                 total_records += inserted
-                            logger.info(
+                            logger.debug(
                                 "range_stored",
                                 dataset="open_interest",
                                 symbol=symbol,
@@ -433,23 +379,14 @@ class MetricsDownloader(BaseDownloader):
             # 完整性检查
             success_count = len(symbols) - len(self.failed_downloads)
             failed_count = len(self.failed_downloads)
-            success_rate = (success_count / len(symbols) * 100) if len(symbols) > 0 else 0
 
-            logger.info(
-                "download_summary",
-                dataset="open_interest",
-                total_symbols=len(symbols),
-                succeeded=success_count,
-                failed=failed_count,
-                success_rate=f"{success_rate:.1f}",
-                total_records=total_records,
-            )
+            logger.info(f"持仓量下载完成：成功 {success_count}/{len(symbols)}，写入 {total_records} 条记录，失败 {failed_count} 个交易对。")
 
             if failed_count > 0:
-                logger.warning("download_failures", dataset="open_interest", hint="use get_failed_downloads()")
+                logger.warning("部分持仓量数据下载失败，可调用 get_failed_downloads() 查看详情。")
 
         except Exception as e:
-            logger.error("download_batch_error", dataset="open_interest", error=str(e))
+            logger.error(f"持仓量下载失败：{e}")
             raise MarketDataFetchError(f"批量下载持仓量失败: {e}") from e
 
     async def download_long_short_ratio_batch(  # noqa: C901
@@ -478,7 +415,7 @@ class MetricsDownloader(BaseDownloader):
             incremental: 是否启用增量下载（默认True）
         """
         try:
-            logger.info("download_batch_start", dataset="long_short_ratio", ratio_type=ratio_type)
+            logger.info(f"开始下载多空比例数据（{ratio_type} 类型）：{len(symbols)} 个交易对。")
 
             if self.db is None:
                 self.db = AsyncMarketDB(db_path)
@@ -488,7 +425,7 @@ class MetricsDownloader(BaseDownloader):
             symbol_plans: dict[str, dict[str, Any]] = {}
 
             if incremental:
-                logger.info("incremental_mode_enabled", dataset="long_short_ratio", action="analyzing_data")
+                logger.debug("incremental_mode_enabled", dataset="long_short_ratio", action="analyzing_data")
                 # 解析period转换为小时数
                 period_hours_map = {
                     "5m": 5 / 60,
@@ -514,12 +451,10 @@ class MetricsDownloader(BaseDownloader):
                 # 过滤出需要下载的交易对
                 symbols_to_download = list(missing_plan.keys())
                 if not symbols_to_download:
-                    logger.info(
-                        "download_complete", dataset="long_short_ratio", ratio_type=ratio_type, action="skipping"
-                    )
+                    logger.info("多空比例数据已是最新状态，跳过下载。")
                     return
                 else:
-                    logger.info(
+                    logger.debug(
                         "incremental_summary",
                         dataset="long_short_ratio",
                         ratio_type=ratio_type,
@@ -529,6 +464,12 @@ class MetricsDownloader(BaseDownloader):
                     symbol_plans = missing_plan
                     # 使用需要下载的交易对列表替换原始列表
                     symbols = symbols_to_download
+
+                    examples = self._plan_examples(symbol_plans)
+                    if examples:
+                        logger.info(f"多空比例增量计划：{len(symbol_plans)} 个交易对需要补齐数据（示例：{examples}）。")
+                    else:
+                        logger.info(f"多空比例增量计划：{len(symbol_plans)} 个交易对需要补齐数据。")
 
             total_records = 0
             semaphore = asyncio.Semaphore(max_workers)
@@ -550,11 +491,7 @@ class MetricsDownloader(BaseDownloader):
                         if plan and plan.get("start_ts") is not None and plan.get("end_ts") is not None:
                             ranges = [(int(plan["start_ts"]), int(plan["end_ts"]))]
                         else:
-                            ranges = [
-                                (start_ts, end_ts)
-                                for start_ts, end_ts in default_range
-                                if start_ts is not None and end_ts is not None
-                            ]
+                            ranges = [(start_ts, end_ts) for start_ts, end_ts in default_range if start_ts is not None and end_ts is not None]
 
                         inserted_symbol = 0
 
@@ -581,7 +518,7 @@ class MetricsDownloader(BaseDownloader):
                             inserted_symbol += inserted
                             async with lock:
                                 total_records += inserted
-                            logger.info(
+                            logger.debug(
                                 "range_stored",
                                 dataset="long_short_ratio",
                                 symbol=symbol,
@@ -618,24 +555,14 @@ class MetricsDownloader(BaseDownloader):
             # 完整性检查
             success_count = len(symbols) - len(self.failed_downloads)
             failed_count = len(self.failed_downloads)
-            success_rate = (success_count / len(symbols) * 100) if len(symbols) > 0 else 0
 
-            logger.info(
-                "download_summary",
-                dataset="long_short_ratio",
-                ratio_type=ratio_type,
-                total_symbols=len(symbols),
-                succeeded=success_count,
-                failed=failed_count,
-                success_rate=f"{success_rate:.1f}",
-                total_records=total_records,
-            )
+            logger.info(f"多空比例下载完成（{ratio_type}）：成功 {success_count}/{len(symbols)}，写入 {total_records} 条记录，失败 {failed_count} 个交易对。")
 
             if failed_count > 0:
-                logger.warning("download_failures", dataset="long_short_ratio", hint="use get_failed_downloads()")
+                logger.warning("部分多空比例数据下载失败，可调用 get_failed_downloads() 查看详情。")
 
         except Exception as e:
-            logger.error("download_batch_error", dataset="long_short_ratio", error=str(e))
+            logger.error(f"多空比例下载失败：{e}")
             raise MarketDataFetchError(f"批量下载多空比例失败: {e}") from e
 
     async def download_funding_rate(
@@ -644,7 +571,6 @@ class MetricsDownloader(BaseDownloader):
         start_time: str | None = None,
         end_time: str | None = None,
         limit: int = 100,
-        *,
         start_ts: int | None = None,
         end_ts: int | None = None,
     ) -> list[FundingRate]:

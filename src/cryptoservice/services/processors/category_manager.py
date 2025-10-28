@@ -40,12 +40,7 @@ class CategoryManager:
         """获取当前所有交易对的分类信息."""
         try:
             # 检查缓存
-            if (
-                use_cache
-                and self.categories_cache
-                and self.cache_timestamp
-                and (datetime.now() - self.cache_timestamp).seconds < 3600
-            ):
+            if use_cache and self.categories_cache and self.cache_timestamp and (datetime.now() - self.cache_timestamp).seconds < 3600:
                 return self.categories_cache
 
             logger.info("获取 Binance 交易对分类信息...")
@@ -97,9 +92,7 @@ class CategoryManager:
             logger.error(f"获取分类标签失败: {e}")
             raise
 
-    def create_category_matrix(
-        self, symbols: list[str], categories: list[str] | None = None
-    ) -> tuple[list[str], list[str], list[list[int]]]:
+    def create_category_matrix(self, symbols: list[str], categories: list[str] | None = None) -> tuple[list[str], list[str], list[list[int]]]:
         """创建 symbols 和 categories 的对应矩阵."""
         try:
             # 获取当前分类信息
@@ -184,9 +177,11 @@ class CategoryManager:
             # 加载universe定义
             universe_def = UniverseDefinition.load_from_file(universe_file_obj)
 
-            logger.info("🏷️ 开始为 universe 下载分类信息:")
-            logger.info(f"   - Universe快照数: {len(universe_def.snapshots)}")
-            logger.info(f"   - 输出目录: {output_path_obj}")
+            logger.info(
+                "category_download_started",
+                snapshots=len(universe_def.snapshots),
+                output_dir=str(output_path_obj),
+            )
 
             # 收集所有交易对
             all_symbols = set()
@@ -194,15 +189,21 @@ class CategoryManager:
                 all_symbols.update(snapshot.symbols)
 
             all_symbols_list = sorted(all_symbols)
-            logger.info(f"   - 总交易对数: {len(all_symbols_list)}")
+            logger.debug("category_symbol_pool", symbols=len(all_symbols_list))
 
             # 获取当前分类信息（用于所有历史数据）
             current_date = datetime.now().strftime("%Y-%m-%d")
-            logger.info(f"   📅 获取 {current_date} 的分类信息（用于填充历史数据）")
+            logger.debug("category_fetch_reference", current_date=current_date)
 
             # 为每个快照日期保存分类矩阵
             for i, snapshot in enumerate(universe_def.snapshots):
-                logger.info(f"   📅 处理快照 {i + 1}/{len(universe_def.snapshots)}: {snapshot.effective_date}")
+                logger.debug(
+                    "category_snapshot_processing",
+                    snapshot_index=i + 1,
+                    total=len(universe_def.snapshots),
+                    effective_date=snapshot.effective_date,
+                    symbols=len(snapshot.symbols),
+                )
 
                 # 使用快照的有效日期
                 snapshot_date = snapshot.effective_date
@@ -214,17 +215,17 @@ class CategoryManager:
                     date_str=snapshot_date,
                 )
 
-                logger.info(f"       ✅ 保存了 {len(snapshot.symbols)} 个交易对的分类信息")
+                logger.debug("category_snapshot_saved", symbols=len(snapshot.symbols))
 
             # 也保存一个当前分类的完整矩阵（包含所有交易对，用作参考）
-            logger.info(f"   📅 保存当前分类参考矩阵 (获取于 {current_date})")
+            logger.debug("category_reference_saved", current_date=current_date)
             self.save_category_matrix_csv(
                 output_path=output_path_obj,
                 symbols=all_symbols_list,
                 date_str=f"reference_{current_date}",
             )
 
-            logger.info("✅ 所有分类信息下载和保存完成")
+            logger.info("category_download_completed", output_dir=str(output_path_obj))
 
         except Exception as e:
             logger.error(f"为 universe 下载分类信息失败: {e}")

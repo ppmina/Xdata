@@ -67,9 +67,7 @@ class ParquetExporter:
 
         logger.info(f"Parquet数据导出完成: {output_path}")
 
-    def _process_parquet_export(
-        self, df: pd.DataFrame, output_path: Path, compression: Literal["snappy", "gzip", "brotli", "lz4", "zstd"]
-    ) -> None:
+    def _process_parquet_export(self, df: pd.DataFrame, output_path: Path, compression: Literal["snappy", "gzip", "brotli", "lz4", "zstd"]) -> None:
         """处理Parquet导出（同步）.
 
         Args:

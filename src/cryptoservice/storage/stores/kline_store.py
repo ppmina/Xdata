@@ -138,15 +138,9 @@ class KlineStore:
         import pandas as pd
 
         # 转换时间格式
-        if isinstance(start_time, str) and not start_time.isdigit():
-            start_ts = int(pd.Timestamp(start_time).timestamp() * 1000)
-        else:
-            start_ts = int(start_time)
+        start_ts = int(pd.Timestamp(start_time).timestamp() * 1000) if isinstance(start_time, str) and not start_time.isdigit() else int(start_time)
 
-        if isinstance(end_time, str) and not end_time.isdigit():
-            end_ts = int(pd.Timestamp(end_time).timestamp() * 1000)
-        else:
-            end_ts = int(end_time)
+        end_ts = int(pd.Timestamp(end_time).timestamp() * 1000) if isinstance(end_time, str) and not end_time.isdigit() else int(end_time)
 
         placeholders = ",".join("?" * len(symbols))
         delete_sql = f"""

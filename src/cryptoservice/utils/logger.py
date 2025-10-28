@@ -1,12 +1,11 @@
-"""日志工具模块.
+"""控制台输出辅助工具.
 
-提供 Rich 控制台辅助输出等工具。
-日志记录请使用 cryptoservice.config.logging.get_logger()
+提供 Rich 面板/表格等辅助输出，保留 generate_run_id 以兼容旧导入。
+常规日志记录请使用 ``cryptoservice.config.logging.get_logger``。
 """
 
 from __future__ import annotations
 
-import uuid
 from collections.abc import Mapping
 from typing import Any
 
@@ -15,13 +14,25 @@ from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
 
-console = Console()
+from .run_id import generate_run_id
+
+__all__ = [
+    "generate_run_id",
+    "print_info",
+    "print_dict",
+    "print_table",
+    "print_error",
+]
+
+_console: Console | None = None
 
 
-def generate_run_id(prefix: str | None = None) -> str:
-    """生成短格式的 run id."""
-    token = uuid.uuid4().hex[:12]
-    return f"{prefix}-{token}" if prefix else token
+def _get_console() -> Console:
+    """延迟创建 Console 实例，避免在非 CLI 场景提前初始化 Rich。."""
+    global _console
+    if _console is None:
+        _console = Console()
+    return _console
 
 
 def _stringify(value: Any) -> str:
@@ -39,7 +50,7 @@ def _stringify(value: Any) -> str:
 def print_info(message: str, title: str | None = None, style: str = "green") -> None:
     """使用 Rich 打印信息面板."""
     panel = Panel(Text(message, style=style), title=title, border_style=style)
-    console.print(panel)
+    _get_console().print(panel)
 
 
 def print_dict(data: Mapping[str, Any], title: str | None = None) -> None:
@@ -52,8 +63,8 @@ def print_dict(data: Mapping[str, Any], title: str | None = None) -> None:
         table.add_row(str(key), _stringify(value))
 
     if title:
-        console.print(f"\n[bold]{title}[/bold]")
-    console.print(table)
+        _get_console().print(f"\n[bold]{title}[/bold]")
+    _get_console().print(table)
 
 
 def _handle_dict_data(data: list[Mapping[str, Any]], headers: list[str] | None, table: Table) -> None:
@@ -96,10 +107,10 @@ def print_table(data: list[Any], title: str | None = None, headers: list[str] | 
         _handle_list_data(data, headers, table)
 
     if title:
-        console.print(f"\n[bold]{title}[/bold]")
-    console.print(table)
+        _get_console().print(f"\n[bold]{title}[/bold]")
+    _get_console().print(table)
 
 
 def print_error(error: str) -> None:
     """打印错误信息到控制台."""
-    console.print(f"[bold red]Error:[/bold red] {error}")
+    _get_console().print(f"[bold red]Error:[/bold red] {error}")

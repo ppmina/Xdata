@@ -39,12 +39,12 @@ class BinanceClientFactory:
                 # 获取代理配置
                 proxies = settings.get_proxy_config()
                 if proxies:
-                    logger.info("client_create_with_proxy", proxies=proxies)
+                    logger.debug("使用代理创建 Binance 同步客户端", proxies=proxies)
                     cls._instance = Client(api_key, api_secret, proxies=proxies)
+                    logger.info("Binance 同步客户端已就绪（已启用代理）。")
                 else:
                     cls._instance = Client(api_key, api_secret)
-
-                logger.info("client_create_success", client_type="sync")
+                    logger.info("Binance 同步客户端已就绪。")
             except Exception as e:
                 logger.error("client_create_error", client_type="sync", error=str(e))
                 raise MarketDataError(f"Failed to initialize Binance client: {e}") from e
@@ -73,26 +73,24 @@ class BinanceClientFactory:
                 https_proxy = None
 
                 if proxies:
-                    logger.info("proxy_config", proxies=proxies)
+                    logger.debug("检测到代理配置", proxies=proxies)
 
                     # 使用 HTTPS 代理
                     if "https" in proxies:
                         https_proxy = proxies["https"]
-                        logger.info("using_https_proxy", proxy=https_proxy)
+                        logger.debug("使用 HTTPS 代理连接 Binance", proxy=https_proxy)
                     # 如果只有 HTTP 代理，也用作 HTTPS
                     elif "http" in proxies:
                         https_proxy = proxies["http"]
-                        logger.info("using_http_as_https_proxy", proxy=https_proxy)
+                        logger.debug("使用 HTTP 代理连接 Binance", proxy=https_proxy)
 
                 # 创建 AsyncClient
                 if https_proxy:
-                    cls._async_instance = await AsyncClient.create(
-                        api_key=api_key, api_secret=api_secret, https_proxy=https_proxy
-                    )
-                    logger.info("client_create_success", client_type="async", with_proxy=True)
+                    cls._async_instance = await AsyncClient.create(api_key=api_key, api_secret=api_secret, https_proxy=https_proxy)
+                    logger.info("Binance 异步客户端已就绪（已启用代理）。")
                 else:
                     cls._async_instance = await AsyncClient.create(api_key=api_key, api_secret=api_secret)
-                    logger.info("client_create_success", client_type="async", with_proxy=False)
+                    logger.info("Binance 异步客户端已就绪。")
 
             except Exception as e:
                 logger.error("client_create_error", client_type="async", error=str(e))
@@ -121,7 +119,7 @@ class BinanceClientFactory:
             finally:
                 cls._async_instance = None
 
-        logger.info("client_session_closed", client_type="async")
+        logger.debug("Binance 异步客户端连接已关闭。")
 
     @classmethod
     def get_client(cls) -> Client | None:

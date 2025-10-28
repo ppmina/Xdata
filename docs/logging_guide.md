@@ -72,11 +72,16 @@ logger.error("api_failed",
 - `LOG_LEVEL`: DEBUG/INFO/WARNING/ERROR/CRITICAL
 - `LOG_FILE`: 日志文件路径（可选）
 - `LOG_ENABLE_RICH`: 是否启用颜色（对应 `use_colors` 参数）
+- `LOG_PROFILE`: 日志预设（`default` / `cli_demo`）
+- `LOG_VERBOSE`: 是否开启调试输出（布尔值）
+
+在 CLI 场景下还可以通过环境变量 `CRYPTO_LOG_VERBOSE=1` 临时打开调试日志，或设置
+`CRYPTO_LOG_COLORS=1` 在 `cli_demo` 预设下重新启用彩色输出。
 
 ### 手动配置
 
 ```python
-from cryptoservice.config.logging import setup_logging, Environment, LogLevel
+from cryptoservice.config.logging import setup_logging, Environment, LogLevel, LogProfile
 
 # 开发环境
 setup_logging(
@@ -90,6 +95,13 @@ setup_logging(
     environment=Environment.PRODUCTION,
     log_level=LogLevel.INFO,
     log_file="logs/app.log"
+)
+
+# CLI 演示脚本
+setup_logging(
+    profile=LogProfile.CLI_DEMO,
+    log_level=LogLevel.INFO,
+    use_colors=False,
 )
 ```
 

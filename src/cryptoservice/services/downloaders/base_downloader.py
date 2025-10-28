@@ -77,9 +77,7 @@ class BaseDownloader(ABC):
                 logger.debug(f"重试 {backoff.attempt + 1}/{retry_config.max_retries}: {e}")
                 backoff.wait()
 
-    async def _handle_async_request_with_retry(
-        self, request_func, *args, retry_config: RetryConfig | None = None, **kwargs
-    ):
+    async def _handle_async_request_with_retry(self, request_func, *args, retry_config: RetryConfig | None = None, **kwargs):
         """带重试的异步请求处理.
 
         注意：此方法只处理通用的重试逻辑，不包含业务相关的日志。

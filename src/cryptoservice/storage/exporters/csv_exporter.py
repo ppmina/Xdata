@@ -85,9 +85,7 @@ class CsvExporter:
         df_reset["datetime"] = pd.to_datetime(df_reset["timestamp"], unit="ms")
 
         # 重新排序列，将datetime放在前面
-        columns = ["symbol", "datetime", "timestamp"] + [
-            col for col in df_reset.columns if col not in ["symbol", "datetime", "timestamp"]
-        ]
+        columns = ["symbol", "datetime", "timestamp"] + [col for col in df_reset.columns if col not in ["symbol", "datetime", "timestamp"]]
         df_reset = df_reset[columns]
 
         # 分块保存大文件

@@ -20,7 +20,7 @@ from cryptoservice.models import (
     PerpetualMarketTicker,
 )
 from cryptoservice.storage.database import Database as AsyncMarketDB
-from cryptoservice.utils.logger import generate_run_id
+from cryptoservice.utils.run_id import generate_run_id
 
 from .base_downloader import BaseDownloader
 
@@ -155,7 +155,7 @@ class KlineDownloader(BaseDownloader):
         plan_ranges: dict[str, list[tuple[str, str]]] = {}
 
         if incremental:
-            logger.info(
+            logger.debug(
                 "download.incremental_start",
                 run=run,
                 dataset="kline",
@@ -173,14 +173,7 @@ class KlineDownloader(BaseDownloader):
 
             symbols_to_download = list(missing_plan.keys())
             if not symbols_to_download:
-                logger.info(
-                    "download.summary",
-                    run=run,
-                    dataset="kline",
-                    status="skipped",
-                    reason="plan_empty",
-                    total_symbols=len(symbols),
-                )
+                logger.info(f"K 线数据已是最新状态：{len(symbols)} 个交易对无需下载。")
                 return IntegrityReport(
                     total_symbols=len(symbols),
                     successful_symbols=len(symbols),
@@ -199,7 +192,7 @@ class KlineDownloader(BaseDownloader):
                 ]
                 for symbol, plan_info in missing_plan.items()
             }
-            logger.info(
+            logger.debug(
                 "download.plan_selected",
                 run=run,
                 dataset="kline",
@@ -218,12 +211,9 @@ class KlineDownloader(BaseDownloader):
         semaphore = asyncio.Semaphore(max_workers)
 
         logger.info(
-            "download.start",
-            run=run,
-            dataset="kline",
+            "kline_download_started",
             symbols=len(symbols),
             interval=interval.value,
-            max_workers=max_workers,
             incremental=incremental,
         )
 
@@ -244,13 +234,9 @@ class KlineDownloader(BaseDownloader):
 
         elapsed_ms = int((time.perf_counter() - started_at) * 1000)
         logger.info(
-            "download.summary",
-            run=run,
-            dataset="kline",
-            symbols=len(symbols),
-            succeeded=len(successful_symbols),
-            failed=len(failed_symbols),
-            elapsed_ms=elapsed_ms,
+            "kline_download_complete",
+            summary=f"{len(successful_symbols)}/{len(symbols)} symbols, {len(failed_symbols)} failed",
+            duration_ms=elapsed_ms,
         )
 
         return IntegrityReport(
@@ -326,9 +312,7 @@ class KlineDownloader(BaseDownloader):
                     missing_periods.append(
                         {
                             "symbol": symbol,
-                            "period": (
-                                f"{self._format_timestamp(overall_start)} - {self._format_timestamp(overall_end)}"
-                            ),
+                            "period": (f"{self._format_timestamp(overall_start)} - {self._format_timestamp(overall_end)}"),
                             "reason": "no_data",
                         }
                     )
@@ -431,7 +415,12 @@ class KlineDownloader(BaseDownloader):
             issue_count = len(issues)
             total_count = len(data)
             if issue_count > total_count * 0.1:  # 超过10%的数据有问题
-                logger.warning(f"⚠️ {symbol} 数据质量问题: {issue_count}/{total_count} 条记录异常")
+                logger.warning(
+                    "kline_data_quality_issue",
+                    symbol=symbol,
+                    invalid_records=issue_count,
+                    total_records=total_count,
+                )
 
         return valid_data
 

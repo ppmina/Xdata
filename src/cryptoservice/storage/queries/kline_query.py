@@ -32,9 +32,7 @@ class KlineQuery:
         """
         self.pool = connection_pool
 
-    async def select_by_time_range(
-        self, symbols: list[str], start_time: str, end_time: str, freq: Freq, columns: list[str] | None = None
-    ) -> pd.DataFrame:
+    async def select_by_time_range(self, symbols: list[str], start_time: str, end_time: str, freq: Freq, columns: list[str] | None = None) -> pd.DataFrame:
         """按时间范围查询K线数据.
 
         Args:
@@ -101,9 +99,7 @@ class KlineQuery:
         logger.info("select_by_time_range_complete", records=len(df))
         return df
 
-    async def select_by_timestamp_range(
-        self, symbols: list[str], start_ts: int, end_ts: int, freq: Freq, columns: list[str] | None = None
-    ) -> pd.DataFrame:
+    async def select_by_timestamp_range(self, symbols: list[str], start_ts: int, end_ts: int, freq: Freq, columns: list[str] | None = None) -> pd.DataFrame:
         """按时间戳范围查询K线数据.
 
         Args:
@@ -140,12 +136,7 @@ class KlineQuery:
 
         for symbol in symbols:
             sql, params = (
-                QueryBuilder.select("klines")
-                .where("symbol = ?", symbol)
-                .where("freq = ?", freq.value)
-                .order_by("timestamp DESC")
-                .limit(limit)
-                .build()
+                QueryBuilder.select("klines").where("symbol = ?", symbol).where("freq = ?", freq.value).order_by("timestamp DESC").limit(limit).build()
             )
 
             async with self.pool.get_connection() as conn:
@@ -192,12 +183,7 @@ class KlineQuery:
             交易对列表
         """
         if freq:
-            sql, params = (
-                QueryBuilder.select("klines", ["DISTINCT symbol"])
-                .where("freq = ?", freq.value)
-                .order_by("symbol")
-                .build()
-            )
+            sql, params = QueryBuilder.select("klines", ["DISTINCT symbol"]).where("freq = ?", freq.value).order_by("symbol").build()
         else:
             sql, params = QueryBuilder.select("klines", ["DISTINCT symbol"]).order_by("symbol").build()
 
@@ -217,9 +203,7 @@ class KlineQuery:
             频率列表
         """
         if symbol:
-            sql, params = (
-                QueryBuilder.select("klines", ["DISTINCT freq"]).where("symbol = ?", symbol).order_by("freq").build()
-            )
+            sql, params = QueryBuilder.select("klines", ["DISTINCT freq"]).where("symbol = ?", symbol).order_by("freq").build()
         else:
             sql, params = QueryBuilder.select("klines", ["DISTINCT freq"]).order_by("freq").build()
 

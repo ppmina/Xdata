@@ -432,9 +432,7 @@ class DataResampler:
 
         loop = asyncio.get_event_loop()
         if return_original_timestamps:
-            result = await loop.run_in_executor(
-                None, cls._align_timestamps_sync, metrics_df, kline_df, method, tolerance_ms, return_original_timestamps
-            )
+            result = await loop.run_in_executor(None, cls._align_timestamps_sync, metrics_df, kline_df, method, tolerance_ms, return_original_timestamps)
             assert isinstance(result, tuple), "Expected tuple when return_original_timestamps=True"  # noqa: S101
             result_df, original_ts_df = result
             assert isinstance(result_df, pd.DataFrame), "Expected DataFrame"  # noqa: S101
@@ -446,9 +444,7 @@ class DataResampler:
             )
             return result_df, original_ts_df
         else:
-            result = await loop.run_in_executor(
-                None, cls._align_timestamps_sync, metrics_df, kline_df, method, tolerance_ms, False
-            )
+            result = await loop.run_in_executor(None, cls._align_timestamps_sync, metrics_df, kline_df, method, tolerance_ms, False)
             # 当 return_original_timestamps=False 时，返回值是 DataFrame
             assert isinstance(result, pd.DataFrame), "Expected DataFrame when return_original_timestamps=False"  # noqa: S101
             logger.info(f"时间点对齐完成: {len(result)} 条记录")
@@ -544,9 +540,7 @@ class DataResampler:
                     aligned = aligned.reset_index()
 
                     if return_original_timestamps:
-                        aligned["_original_timestamp"] = metrics_ts_map.reindex(
-                            kline_timestamps, method="nearest", tolerance=tolerance_ms
-                        ).values
+                        aligned["_original_timestamp"] = metrics_ts_map.reindex(kline_timestamps, method="nearest", tolerance=tolerance_ms).values
 
                 else:
                     raise ValueError(f"不支持的对齐方法: {method}")
@@ -648,9 +642,7 @@ class DataResampler:
 
         # 步骤 2: 对齐到 kline 时间点
         if return_original_timestamps:
-            result = await cls.align_to_kline_timestamps(
-                resampled, kline_df, align_method, tolerance_ms, return_original_timestamps=True
-            )
+            result = await cls.align_to_kline_timestamps(resampled, kline_df, align_method, tolerance_ms, return_original_timestamps=True)
             assert isinstance(result, tuple), "Expected tuple when return_original_timestamps=True"  # noqa: S101
             aligned, original_ts = result
             assert isinstance(aligned, pd.DataFrame), "Expected DataFrame"  # noqa: S101
