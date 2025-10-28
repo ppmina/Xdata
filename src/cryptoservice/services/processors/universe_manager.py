@@ -50,9 +50,7 @@ class UniverseManager:
             output_path_obj = self._validate_and_prepare_path(
                 output_path,
                 is_file=True,
-                file_name=(
-                    f"universe_{start_date}_{end_date}_{t1_months}_{t2_months}_{t3_months}_{top_k or top_ratio}.json"
-                ),
+                file_name=(f"universe_{start_date}_{end_date}_{t1_months}_{t2_months}_{t3_months}_{top_k or top_ratio}.json"),
             )
 
             # 标准化日期格式
@@ -104,8 +102,7 @@ class UniverseManager:
                 calculated_t1_start = self._subtract_months(calculated_t1_end, t1_months)
 
                 logger.info(
-                    f"周期 {i + 1}: 基准日期={calculated_t1_end} (重新平衡日期前{delay_days}天), "
-                    f"T1数据期间={calculated_t1_start} 到 {calculated_t1_end}"
+                    f"周期 {i + 1}: 基准日期={calculated_t1_end} (重新平衡日期前{delay_days}天), T1数据期间={calculated_t1_start} 到 {calculated_t1_end}"
                 )
 
                 # 获取符合条件的交易对和它们的mean daily amount
@@ -126,9 +123,7 @@ class UniverseManager:
                     usage_t1_start=rebalance_date,
                     usage_t1_end=min(
                         end_date,
-                        (pd.to_datetime(rebalance_date, utc=True) + pd.DateOffset(months=t1_months)).strftime(
-                            "%Y-%m-%d"
-                        ),
+                        (pd.to_datetime(rebalance_date, utc=True) + pd.DateOffset(months=t1_months)).strftime("%Y-%m-%d"),
                     ),
                     calculated_t1_start=calculated_t1_start,
                     calculated_t1_end=calculated_t1_end,
@@ -249,19 +244,13 @@ class UniverseManager:
     ) -> tuple[list[str], dict[str, float]]:
         """计算指定日期的universe."""
         try:
-            actual_symbols = await self._get_available_symbols_for_period(
-                calculated_t1_start, calculated_t1_end, quote_asset
-            )
+            actual_symbols = await self._get_available_symbols_for_period(calculated_t1_start, calculated_t1_end, quote_asset)
             cutoff_date = self._subtract_months(calculated_t1_end, t3_months)
-            eligible_symbols = [
-                symbol for symbol in actual_symbols if await self._symbol_exists_before_date(symbol, cutoff_date)
-            ]
+            eligible_symbols = [symbol for symbol in actual_symbols if await self._symbol_exists_before_date(symbol, cutoff_date)]
             if not eligible_symbols:
                 logger.warning(f"日期 {calculated_t1_start} 到 {calculated_t1_end}: 没有找到符合条件的交易对")
                 return [], {}
-            mean_amounts = await self._fetch_and_calculate_mean_amounts(
-                eligible_symbols, calculated_t1_start, calculated_t1_end, api_delay_seconds
-            )
+            mean_amounts = await self._fetch_and_calculate_mean_amounts(eligible_symbols, calculated_t1_start, calculated_t1_end, api_delay_seconds)
             if not mean_amounts:
                 logger.warning("无法通过API获取数据，返回空的universe")
                 return [], {}
@@ -270,18 +259,12 @@ class UniverseManager:
             logger.error(f"计算日期 {calculated_t1_start} 到 {calculated_t1_end} 的universe时出错: {e}")
             return [], {}
 
-    async def _get_available_symbols_for_period(
-        self, start_date: str, end_date: str, quote_asset: str = "USDT"
-    ) -> list[str]:
+    async def _get_available_symbols_for_period(self, start_date: str, end_date: str, quote_asset: str = "USDT") -> list[str]:
         """获取指定时间段内实际可用的永续合约交易对."""
         try:
             # 先获取当前所有永续合约作为候选
-            candidate_symbols = await self.market_service.get_perpetual_symbols(
-                only_trading=True, quote_asset=quote_asset
-            )
-            logger.info(
-                f"检查 {len(candidate_symbols)} 个{quote_asset}候选交易对在 {start_date} 到 {end_date} 期间的可用性..."
-            )
+            candidate_symbols = await self.market_service.get_perpetual_symbols(only_trading=True, quote_asset=quote_asset)
+            logger.info(f"检查 {len(candidate_symbols)} 个{quote_asset}候选交易对在 {start_date} 到 {end_date} 期间的可用性...")
 
             available_symbols = []
             batch_size = 50
@@ -294,18 +277,14 @@ class UniverseManager:
 
                 # 显示进度
                 processed = min(i + batch_size, len(candidate_symbols))
-                logger.info(
-                    f"已检查 {processed}/{len(candidate_symbols)} 个交易对，找到 {len(available_symbols)} 个可用交易对"
-                )
+                logger.info(f"已检查 {processed}/{len(candidate_symbols)} 个交易对，找到 {len(available_symbols)} 个可用交易对")
 
                 # 避免API频率限制
                 import time
 
                 time.sleep(0.1)
 
-            logger.info(
-                f"在 {start_date} 到 {end_date} 期间找到 {len(available_symbols)} 个可用的{quote_asset}永续合约交易对"
-            )
+            logger.info(f"在 {start_date} 到 {end_date} 期间找到 {len(available_symbols)} 个可用的{quote_asset}永续合约交易对")
             return available_symbols
 
         except Exception as e:

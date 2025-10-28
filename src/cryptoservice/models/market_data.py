@@ -50,9 +50,7 @@ class FundingRate:
             funding_rate=Decimal(str(data["fundingRate"])),
             mark_price=Decimal(str(data["markPrice"])) if "markPrice" in data else None,
             index_price=(Decimal(str(data["indexPrice"])) if "indexPrice" in data else None),
-            estimated_settle_price=(
-                Decimal(str(data["estimatedSettlePrice"])) if "estimatedSettlePrice" in data else None
-            ),
+            estimated_settle_price=(Decimal(str(data["estimatedSettlePrice"])) if "estimatedSettlePrice" in data else None),
             last_funding_rate=(Decimal(str(data["lastFundingRate"])) if "lastFundingRate" in data else None),
             next_funding_time=(int(data["nextFundingTime"]) if "nextFundingTime" in data else None),
             interest_rate=(Decimal(str(data["interestRate"])) if "interestRate" in data else None),
@@ -116,9 +114,7 @@ class OpenInterest:
             symbol=data["symbol"],
             open_interest=Decimal(str(data["sumOpenInterest"])),
             time=int(data["timestamp"]),
-            open_interest_value=(
-                Decimal(str(data["sumOpenInterestValue"])) if "sumOpenInterestValue" in data else None
-            ),
+            open_interest_value=(Decimal(str(data["sumOpenInterestValue"])) if "sumOpenInterestValue" in data else None),
         )
 
     def to_dict(self) -> dict[str, Any]:

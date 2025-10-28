@@ -33,10 +33,9 @@ class Tool:
         }
         step = mapping[freq]
 
-        sample_time = [
-            (datetime(1, 1, 1) + timedelta(seconds=s)).strftime("%H:%M:%S.%f")
-            for s in list(range(step, 2400 * 36 + step, step))
-        ][:-1] + ["24:00:00.000000"]
+        sample_time = [(datetime(1, 1, 1) + timedelta(seconds=s)).strftime("%H:%M:%S.%f") for s in list(range(step, 2400 * 36 + step, step))][:-1] + [
+            "24:00:00.000000"
+        ]
         return sample_time
 
     @staticmethod
