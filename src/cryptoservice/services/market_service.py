@@ -318,7 +318,6 @@ class MarketDataService:
         self,
         universe_file: Path | str,
         db_path: Path | str,
-        long_short_ratio_types: list[str],
         retry_config: RetryConfig,
         api_request_delay: float,
         vision_request_delay: float,

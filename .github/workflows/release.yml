@@ -1,0 +1,87 @@
+name: release
+on:
+  push:
+    tags: ["v*"]
+permissions:
+  id-token: write     # OIDC for PyPI Trusted Publishing
+  contents: read
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+      - uses: astral-sh/setup-uv@v4
+        with:
+          python-version: "3.12"
+      - run: uv build
+      - uses: actions/upload-artifact@v4
+        with: { name: dist, path: dist/* }
+  publish:
+    name: Upload release to PyPI
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: pypi
+      url: https://pypi.org/p/cryptoservice
+    permissions:
+      id-token: write  # IMPORTANT: this permission is mandatory for trusted publishing
+    steps:
+      - uses: actions/download-artifact@v4
+        with: { name: dist, path: dist }
+      - uses: pypa/gh-action-pypi-publish@release/v1
+        with: { skip-existing: true }
+  notes:
+    needs: publish
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write   # allow committing CHANGELOG.md back to main
+    env:
+      TAG_NAME: ${{ github.ref_name }}   # e.g. v1.16.3
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+
+      - uses: astral-sh/setup-uv@v4
+        with:
+          python-version: "3.12"
+
+      - name: Generate release notes (draft via towncrier)
+        run: |
+          VER="${TAG_NAME#v}"
+          echo "VER=$VER" >> "$GITHUB_ENV"
+          uvx towncrier build --draft --version "$VER" > RELEASE_BODY.md
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ env.TAG_NAME }}
+          body_path: RELEASE_BODY.md
+          draft: false
+
+      - name: Update CHANGELOG.md on main and remove fragments
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git fetch origin main
+          git checkout main
+          git pull
+          uvx towncrier build --yes --version "$VER"
+          git add CHANGELOG.md
+          git commit -m "chore: update CHANGELOG for v$VER [skip ci]" || echo "No changes to commit"
+          git push origin main
+
+      - name: Notify Feishu
+        env:
+          FEISHU_WEBHOOK: ${{ secrets.WEBHOOK_URL }}
+        run: |
+          python - <<'PY'
+          import json, os, urllib.request
+          content = open("RELEASE_BODY.md","r",encoding="utf-8").read()
+          text = f"发布 {os.environ.get('TAG_NAME')} 到 PyPI\\n\\n{content}"
+          body = {"msg_type":"text","content":{"text": text}}
+          req = urllib.request.Request(os.environ["FEISHU_WEBHOOK"],
+                                       data=json.dumps(body).encode(),
+                                       headers={'Content-Type':'application/json'})
+          urllib.request.urlopen(req).read()
+          PY
