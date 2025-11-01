@@ -96,6 +96,7 @@ def _update_text_file(path: Path, pattern: re.Pattern[str], replacement: Replace
 
 
 def update_pyproject(version: str) -> None:
+    """Update ``pyproject.toml`` with the provided version."""
     pattern = re.compile(r'(?m)^(version\s*=\s*")([^\"]+)(")')
 
     def replacement(match: Match[str]) -> str:
@@ -105,6 +106,7 @@ def update_pyproject(version: str) -> None:
 
 
 def update_package_init(version: str) -> None:
+    """Update ``src/cryptoservice/__init__.py`` with the provided version."""
     pattern = re.compile(r'(?m)^(__version__\s*=\s*")([^\"]+)(")')
 
     def replacement(match: Match[str]) -> str:
@@ -114,13 +116,13 @@ def update_package_init(version: str) -> None:
 
 
 def _run_git_command(args: list[str], *, allow_failure: bool = False) -> str:
+    """Execute a git command relative to the repository root."""
     try:
-        completed = subprocess.run(
+        completed = subprocess.run(  # noqa: S603
             args,
             cwd=REPO_ROOT,
             check=True,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
+            capture_output=True,
             text=True,
         )
     except (OSError, subprocess.CalledProcessError) as exc:
@@ -230,6 +232,7 @@ def _render_changelog_block(version: str, sections: list[tuple[str, list[str]]],
 
 
 def update_changelog(version: str, *, skip: bool) -> None:
+    """Regenerate the ``CHANGELOG.md`` section for the given version."""
     if skip:
         return
 
@@ -249,24 +252,23 @@ def update_changelog(version: str, *, skip: bool) -> None:
         new_text = version_pattern.sub(block, text, count=1)
     else:
         marker = "<!-- next-version -->"
-        if marker in text:
-            new_text = text.replace(marker, f"{marker}\n\n{block}", 1)
-        else:
-            new_text = f"{text.rstrip()}\n\n{block}"
+        new_text = text.replace(marker, f"{marker}\n\n{block}", 1) if marker in text else f"{text.rstrip()}\n\n{block}"
 
     CHANGELOG.write_text(new_text, encoding="utf-8")
 
 
 def ensure_clean_worktree() -> None:
+    """Verify that the working tree has no pending changes."""
     status = _run_git_command(["git", "status", "--porcelain"])
     if status.strip():
         raise ReleasePreparationError("Working tree is not clean. Commit or stash changes before using --auto.")
 
 
 def ensure_tag_absent(version: str) -> None:
+    """Ensure the release tag does not already exist."""
     tag = f"v{version}"
-    result = subprocess.run(
-        ["git", "rev-parse", "--verify", "--quiet", tag],
+    result = subprocess.run(  # noqa: S603
+        ["git", "rev-parse", "--verify", "--quiet", tag],  # noqa: S607
         cwd=REPO_ROOT,
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
@@ -277,8 +279,9 @@ def ensure_tag_absent(version: str) -> None:
 
 
 def ensure_branch_absent(branch: str) -> None:
-    result = subprocess.run(
-        ["git", "show-ref", "--verify", "--quiet", f"refs/heads/{branch}"],
+    """Ensure the release branch does not already exist."""
+    result = subprocess.run(  # noqa: S603
+        ["git", "show-ref", "--verify", "--quiet", f"refs/heads/{branch}"],  # noqa: S607
         cwd=REPO_ROOT,
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
@@ -289,8 +292,9 @@ def ensure_branch_absent(branch: str) -> None:
 
 
 def ensure_branch_exists(branch: str) -> None:
-    result = subprocess.run(
-        ["git", "show-ref", "--verify", "--quiet", f"refs/heads/{branch}"],
+    """Ensure the base branch exists locally."""
+    result = subprocess.run(  # noqa: S603
+        ["git", "show-ref", "--verify", "--quiet", f"refs/heads/{branch}"],  # noqa: S607
         cwd=REPO_ROOT,
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
@@ -301,15 +305,17 @@ def ensure_branch_exists(branch: str) -> None:
 
 
 def current_branch() -> str:
+    """Return the currently checked-out git branch."""
     return _run_git_command(["git", "rev-parse", "--abbrev-ref", "HEAD"])
 
 
 def run_tests(skip: bool) -> None:
+    """Run the project's pytest suite unless ``skip`` is enabled."""
     if skip:
         return
 
     try:
-        subprocess.run(["pytest"], cwd=REPO_ROOT, check=True)
+        subprocess.run(["pytest"], cwd=REPO_ROOT, check=True)  # noqa: S603,S607
     except FileNotFoundError as exc:  # pragma: no cover - environment dependent
         raise ReleasePreparationError("pytest executable not found in PATH.") from exc
     except subprocess.CalledProcessError as exc:  # pragma: no cover - runtime behaviour
@@ -317,6 +323,7 @@ def run_tests(skip: bool) -> None:
 
 
 def stage_and_commit(version: str, include_changelog: bool) -> None:
+    """Stage release artifacts and create the release commit."""
     files = [PYPROJECT, PACKAGE_INIT]
     if include_changelog and CHANGELOG.exists():
         files.append(CHANGELOG)
@@ -336,6 +343,7 @@ def stage_and_commit(version: str, include_changelog: bool) -> None:
 
 
 def tag_release(version: str) -> None:
+    """Create an annotated git tag for the release."""
     tag = f"v{version}"
     ensure_tag_absent(version)
     _run_git_command(["git", "tag", tag])
@@ -343,6 +351,7 @@ def tag_release(version: str) -> None:
 
 
 def push_release(version: str, remote: str, branch: str) -> None:
+    """Push the release branch and tag to the configured remote."""
     tag = f"v{version}"
     _run_git_command(["git", "push", remote, branch])
     _run_git_command(["git", "push", remote, tag])
@@ -350,6 +359,7 @@ def push_release(version: str, remote: str, branch: str) -> None:
 
 
 def parse_args(argv: list[str]) -> argparse.Namespace:
+    """Parse CLI arguments for the release helper."""
     parser = argparse.ArgumentParser(description="Prepare project files for a new release.")
     parser.add_argument("version", help="Semantic version (X.Y.Z)")
     parser.add_argument(
@@ -391,6 +401,7 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
 
 
 def main(argv: list[str]) -> int:
+    """CLI entrypoint for the release helper script."""
     args = parse_args(argv)
     try:
         if args.push and not args.auto:
@@ -434,8 +445,7 @@ def main(argv: list[str]) -> int:
             print(f"Release v{args.version} committed and pushed to {args.remote} (branch {release_branch}).")
         else:
             print(
-                "Release commit and tag created locally. Push when ready: "
-                f"git push {args.remote} {release_branch} && git push {args.remote} v{args.version}."
+                f"Release commit and tag created locally. Push when ready: git push {args.remote} {release_branch} && git push {args.remote} v{args.version}."
             )
     else:
         print(f"Version set to {args.version}. Remember to review CHANGELOG.md before committing.")

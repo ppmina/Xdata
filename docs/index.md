@@ -1,16 +1,16 @@
 # CryptoService
 
-一个专业的加密货币市场数据服务库，专注于Binance数据的获取、存储和分析。
+一个专业的加密货币市场数据服务库，专注于 Binance 数据的获取、存储和分析。
 
 ## ✨ 主要特性
 
-- **💹 异步高性能**: 全面支持async/await，高效处理大量数据
-- **📊 完整数据**: 现货、永续合约、历史K线、实时WebSocket
-- **🎯 Universe策略**: 动态交易对选择和重平衡
-- **💾 智能存储**: SQLite数据库 + 文件导出，支持增量更新
+- **💹 异步高性能**: 全面支持 async/await，高效处理大量数据
+- **📊 完整数据**: 现货、永续合约、历史 K 线、实时 WebSocket
+- **🎯 Universe 策略**: 动态交易对选择和重平衡
+- **💾 智能存储**: SQLite 数据库 + 文件导出，支持增量更新
 - **🔧 开箱即用**: 完整的类型提示、错误处理和重试机制
 
-## 🚀 5分钟上手
+## 🚀 5 分钟上手
 
 ### 安装
 
@@ -48,24 +48,28 @@ asyncio.run(main())
 
 ## 📖 核心功能
 
-### 🎯 [Universe策略](guides/universe.md)
+### 🎯 [Universe 策略](guides/universe.md)
+
 动态选择交易对，根据成交量等指标定期重平衡投资组合。
 
 ### 📥 [数据下载](guides/quickstart.md)
-批量下载历史K线、资金费率、持仓量等市场指标数据。
+
+批量下载历史 K 线、资金费率、持仓量等市场指标数据。
 
 ### 📤 [数据导出](guides/export.md)
-将数据导出为NumPy、CSV、Parquet格式，便于分析和机器学习。
+
+将数据导出为 NumPy、CSV、Parquet 格式，便于分析和机器学习。
 
 ### 🌐 [实时数据](guides/websocket.md)
-WebSocket接收Binance实时行情数据流。
+
+WebSocket 接收 Binance 实时行情数据流。
 
 ## 🔗 快速导航
 
-- **[快速开始](guides/quickstart.md)** - 5分钟上手指南
-- **[Universe策略](guides/universe.md)** - 动态交易对选择
+- **[快速开始](guides/quickstart.md)** - 5 分钟上手指南
+- **[Universe 策略](guides/universe.md)** - 动态交易对选择
 - **[数据导出](guides/export.md)** - 导出数据进行分析
-- **[实时数据](guides/websocket.md)** - WebSocket实时行情
+- **[实时数据](guides/websocket.md)** - WebSocket 实时行情
 
 ## 🛠️ 开发环境
 
