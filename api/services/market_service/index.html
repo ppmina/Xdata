@@ -13,7 +13,7 @@
       
       
       
-        <link rel="prev" href="../../../guides/configuration/">
+        <link rel="prev" href="../../../guides/engineering_plan/">
       
       
         <link rel="next" href="../../data/storage_db/">
@@ -440,6 +440,8 @@
       
         
       
+        
+      
     
     
     
@@ -604,6 +606,29 @@
   
   <span class="md-ellipsis">
     配置指南
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../guides/engineering_plan/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Xdata Python 库工程化指导与迭代规划（uv + hatch-vcs + Towncrier）
     
   </span>
   
@@ -1592,8 +1617,8 @@
 <div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">cryptoservice.services</span><span class="w"> </span><span class="kn">import</span> <span class="n">MarketDataService</span>
 <a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>
 <a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="n">service</span> <span class="o">=</span> <span class="n">MarketDataService</span><span class="p">(</span>
-<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>    <span class="n">api_key</span><span class="o">=</span><span class="s2">&quot;your_api_key&quot;</span><span class="p">,</span>
-<a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a>    <span class="n">api_secret</span><span class="o">=</span><span class="s2">&quot;your_api_secret&quot;</span>
+<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>    <span class="n">api_key</span><span class="o">=</span><span class="s2">&quot;your_api_key&quot;</span><span class="p">,</span>  <span class="c1"># pragma: allowlist secret</span>
+<a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a>    <span class="n">api_secret</span><span class="o">=</span><span class="s2">&quot;your_api_secret&quot;</span>  <span class="c1"># pragma: allowlist secret</span>
 <a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a><span class="p">)</span>
 </code></pre></div></p>
 <h2 id="_2">📊 实时行情方法</h2>

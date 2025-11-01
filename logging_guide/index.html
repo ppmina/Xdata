@@ -436,6 +436,8 @@
       
         
       
+        
+      
     
     
     
@@ -600,6 +602,29 @@
   
   <span class="md-ellipsis">
     配置指南
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../guides/engineering_plan/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Xdata Python 库工程化指导与迭代规划（uv + hatch-vcs + Towncrier）
     
   </span>
   
@@ -1597,7 +1622,12 @@
 </ul>
 <h3 id="_6">生产环境</h3>
 <p>纯 JSON 格式，便于日志系统采集：</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="p">{</span><span class="nt">&quot;version&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;1.14.3&quot;</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;event&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;application_started&quot;</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;level&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;info&quot;</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;timestamp&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;2025-10-19 02:36:51&quot;</span><span class="p">}</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="p">{</span>
+<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="w">  </span><span class="nt">&quot;version&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;1.14.3&quot;</span><span class="p">,</span>
+<a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a><span class="w">  </span><span class="nt">&quot;event&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;application_started&quot;</span><span class="p">,</span>
+<a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a><span class="w">  </span><span class="nt">&quot;level&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;info&quot;</span><span class="p">,</span>
+<a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a><span class="w">  </span><span class="nt">&quot;timestamp&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;2025-10-19 02:36:51&quot;</span>
+<a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a><span class="p">}</span>
 </code></pre></div>
 <h3 id="_7">测试环境</h3>
 <p>简洁格式，无颜色：</p>
@@ -1718,21 +1748,23 @@
 </code></pre></div>
 <h2 id="_16">常见问题</h2>
 <h3 id="q">Q: 为什么我的日志没有颜色？</h3>
-<p>A: 检查以下几点：
-1. 确保 <code>environment=Environment.DEVELOPMENT</code>
-2. 确保 <code>use_colors=True</code>
-3. 确保终端支持 ANSI 颜色</p>
+<p>A: 检查以下几点：</p>
+<ol>
+<li>确保 <code>environment=Environment.DEVELOPMENT</code></li>
+<li>确保 <code>use_colors=True</code></li>
+<li>确保终端支持 ANSI 颜色</li>
+</ol>
 <h3 id="q_1">Q: 如何禁用文件位置信息？</h3>
 <p>A: 文件位置信息是调试的关键，建议保留。如需禁用，可以在 <code>_build_processors</code> 中移除 <code>_add_caller_info</code>。</p>
 <h3 id="q_2">Q: 生产环境应该用什么配置？</h3>
-<p>A: 推荐配置：
+<p>A: 推荐配置：</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a><span class="n">setup_logging</span><span class="p">(</span>
 <a id="__codelineno-10-2" name="__codelineno-10-2" href="#__codelineno-10-2"></a>    <span class="n">environment</span><span class="o">=</span><span class="n">Environment</span><span class="o">.</span><span class="n">PRODUCTION</span><span class="p">,</span>
 <a id="__codelineno-10-3" name="__codelineno-10-3" href="#__codelineno-10-3"></a>    <span class="n">log_level</span><span class="o">=</span><span class="n">LogLevel</span><span class="o">.</span><span class="n">INFO</span><span class="p">,</span>  <span class="c1"># 不要用 DEBUG</span>
 <a id="__codelineno-10-4" name="__codelineno-10-4" href="#__codelineno-10-4"></a>    <span class="n">log_file</span><span class="o">=</span><span class="s2">&quot;logs/app.log&quot;</span><span class="p">,</span>
 <a id="__codelineno-10-5" name="__codelineno-10-5" href="#__codelineno-10-5"></a>    <span class="n">use_colors</span><span class="o">=</span><span class="kc">False</span>  <span class="c1"># JSON 不需要颜色</span>
 <a id="__codelineno-10-6" name="__codelineno-10-6" href="#__codelineno-10-6"></a><span class="p">)</span>
-</code></pre></div></p>
+</code></pre></div>
 <h2 id="_17">参考</h2>
 <ul>
 <li><a href="https://www.structlog.org/">structlog 文档</a></li>
