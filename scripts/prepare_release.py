@@ -363,9 +363,23 @@ def tag_release(version: str) -> None:
 def push_release(version: str, remote: str, branch: str) -> None:
     """Push the release branch and tag to the configured remote."""
     tag = f"v{version}"
-    _run_git_command(["git", "push", remote, branch])
+    _run_git_command(["git", "push", "--set-upstream", remote, branch])
     _run_git_command(["git", "push", remote, tag])
     print(f"Pushed {branch} and {tag} to {remote}.")
+
+
+def prepare_release_branch(base: str, release_branch: str) -> None:
+    """Validate that we are already on the expected release branch for --auto."""
+    current = current_branch()
+    if current == release_branch:
+        return
+    if current == base:
+        raise ReleasePreparationError(
+            f"--auto expects you to work directly on '{release_branch}'.\n"
+            f"Please create/switch to it first, e.g.:\n"
+            f"  git switch -c {release_branch} {base}"
+        )
+    raise ReleasePreparationError(f"--auto must be run from '{release_branch}' (current branch: {current}).")
 
 
 def parse_args(argv: list[str]) -> argparse.Namespace:
@@ -427,14 +441,7 @@ def main(argv: list[str]) -> int:
             ensure_clean_worktree()
             ensure_tag_absent(args.version)
             ensure_branch_exists(args.base)
-
-            current = current_branch()
-            if current != args.base:
-                _run_git_command(["git", "checkout", args.base])
-                ensure_clean_worktree()
-
-            ensure_branch_absent(release_branch)
-            _run_git_command(["git", "checkout", "-b", release_branch])
+            prepare_release_branch(args.base, release_branch)
 
         update_pyproject(args.version)
         update_package_init(args.version)
