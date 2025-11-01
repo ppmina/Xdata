@@ -97,6 +97,11 @@ def _update_text_file(path: Path, pattern: re.Pattern[str], replacement: Replace
 
 def update_pyproject(version: str) -> None:
     """Update ``pyproject.toml`` with the provided version."""
+    text = PYPROJECT.read_text(encoding="utf-8")
+    if re.search(r'dynamic\s*=\s*\[[^\]]*"version"[^\]]*\]', text):
+        print("pyproject.toml uses dynamic versioning (hatch-vcs); skipping direct version write.")
+        return
+
     pattern = re.compile(r'(?m)^(version\s*=\s*")([^\"]+)(")')
 
     def replacement(match: Match[str]) -> str:
