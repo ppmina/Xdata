@@ -389,7 +389,6 @@ class MarketDataService:
         Args:
             universe_file: Path to the universe definition file
             db_path: Path to the database file where data will be stored
-            long_short_ratio_types: List of long-short ratio data types to download
             retry_config: Custom retry configuration, overrides max_retries
             api_request_delay: Delay in seconds between API requests
             vision_request_delay: Delay in seconds between Vision requests
