@@ -25,7 +25,7 @@
 
 ### Chores
 
-- fix **init** version auto update
+- fix __init__ version auto update
 - update uv lock
 
 ### Other Changes
