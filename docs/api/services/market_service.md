@@ -17,8 +17,8 @@ MarketDataService 是 CryptoService 的核心服务类，提供完整的加密�
 from cryptoservice.services import MarketDataService
 
 service = MarketDataService(
-    api_key="your_api_key",
-    api_secret="your_api_secret"
+    api_key="your_api_key",  # pragma: allowlist secret
+    api_secret="your_api_secret"  # pragma: allowlist secret
 )
 ```
 

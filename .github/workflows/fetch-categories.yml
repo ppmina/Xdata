@@ -1,7 +1,7 @@
 name: Fetch Daily Categories
 
 on:
-  schedule:          # UTC 03:00 ≈ 北京时间上午 11:00
+  schedule: # UTC 03:00 ≈ 北京时间上午 11:00
     - cron: "0 3 * * *"
   workflow_dispatch: # 允许手动触发
 

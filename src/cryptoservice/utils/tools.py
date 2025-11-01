@@ -11,15 +11,18 @@ class Tool:
 
     @staticmethod
     def get_timestamp() -> int:
-        """返回当前时间戳（秒为单位）."""
+        """Return the current Unix timestamp in seconds."""
         return int(time.time())
 
     @staticmethod
     def gen_sample_time(freq: Freq) -> list[str]:
-        """生成样例时间.
+        """Generate a list of sample time labels for the given frequency.
 
-        - For CN: start time 9:15 end time 15:00
-        - For CRYPTO: start time 9:15 end time 15:00.
+        Args:
+            freq: Kline frequency to convert into HH:MM:SS labels.
+
+        Returns:
+            A list of formatted timestamps (24-hour clock with microseconds).
         """
         mapping = {
             Freq.s1: 1,
@@ -40,7 +43,14 @@ class Tool:
 
     @staticmethod
     def get_sample_time(freq: Freq = Freq.M1) -> list[str]:
-        """Get sample time."""
+        """Return cached sample times for a frequency, falling back to generated values.
+
+        Args:
+            freq: Frequency enum to convert (defaults to 1-minute).
+
+        Returns:
+            List of string timestamps for the requested frequency.
+        """
         match freq:
             case Freq.s1:
                 return Tool.gen_sample_time(Freq.s1)

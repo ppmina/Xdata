@@ -13,7 +13,7 @@ from dotenv import load_dotenv
 
 from cryptoservice import MarketDataService
 from cryptoservice.config.logging import get_logger
-from cryptoservice.utils.cli_helper import print_summary, print_progress_header
+from cryptoservice.utils.cli_helper import print_progress_header, print_summary
 
 load_dotenv()
 

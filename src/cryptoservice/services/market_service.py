@@ -57,7 +57,18 @@ class MarketDataService:
 
     @classmethod
     async def create(cls, api_key: str, api_secret: str) -> "MarketDataService":
-        """异步创建MarketDataService实例."""
+        """异步创建MarketDataService实例.
+
+        Args:
+            api_key: Binance API Key.
+            api_secret: Binance API Secret.
+
+        Returns:
+            已初始化的市场数据服务实例。
+
+        Raises:
+            MarketDataError: 当客户端初始化失败时抛出。
+        """
         client = await BinanceClientFactory.create_async_client(api_key, api_secret)
         return cls(client)
 
@@ -74,7 +85,17 @@ class MarketDataService:
     # ==================== 基础市场数据API ====================
 
     async def get_symbol_ticker(self, symbol: str | None = None) -> SymbolTicker | list[SymbolTicker]:
-        """获取单个或所有交易对的行情数据."""
+        """获取单个或所有交易对的行情数据.
+
+        Args:
+            symbol: 具体交易对，若为 ``None`` 则返回全部交易对 24 小时行情。
+
+        Returns:
+            单个 ``SymbolTicker`` 或交易对列表的 ``SymbolTicker`` 集合。
+
+        Raises:
+            MarketDataFetchError: 请求失败或交易对无效时抛出。
+        """
         try:
             ticker = await self.client.get_symbol_ticker(symbol=symbol)
             if not ticker:
@@ -89,7 +110,18 @@ class MarketDataService:
             raise MarketDataFetchError(f"Failed to fetch ticker: {e}") from e
 
     async def get_perpetual_symbols(self, only_trading: bool = True, quote_asset: str = "USDT") -> list[str]:
-        """获取当前市场上所有永续合约交易对."""
+        """获取当前市场上所有永续合约交易对.
+
+        Args:
+            only_trading: 仅返回当前处于 TRADING 状态的交易对。
+            quote_asset: 过滤的计价货币（默认 ``USDT``）。
+
+        Returns:
+            满足条件的合约符号列表。
+
+        Raises:
+            MarketDataFetchError: 当请求 Binance 失败时抛出。
+        """
         try:
             logger.debug("fetch_perpetual_symbols", quote_asset=quote_asset, only_trading=only_trading)
             futures_info = await self.client.futures_exchange_info()
@@ -112,7 +144,19 @@ class MarketDataService:
         sort_by: SortBy = SortBy.QUOTE_VOLUME,
         quote_asset: str | None = None,
     ) -> list[DailyMarketTicker]:
-        """获取前N个交易对."""
+        """获取前 N 个交易对.
+
+        Args:
+            limit: 返回的交易对数量上限。
+            sort_by: 排序字段。
+            quote_asset: 指定计价货币过滤。
+
+        Returns:
+            排序后的 ``DailyMarketTicker`` 列表。
+
+        Raises:
+            MarketDataFetchError: 请求 Binance 失败时抛出。
+        """
         try:
             tickers = await self.client.get_ticker()
             market_tickers = [DailyMarketTicker.from_binance_ticker(t) for t in tickers]
@@ -131,7 +175,17 @@ class MarketDataService:
             raise MarketDataFetchError(f"Failed to get top coins: {e}") from e
 
     async def get_market_summary(self, interval: Freq = Freq.d1) -> dict[str, Any]:
-        """获取市场概览."""
+        """获取市场概览.
+
+        Args:
+            interval: 聚合频率，默认按天。
+
+        Returns:
+            包含快照时间和行情数据的字典。
+
+        Raises:
+            MarketDataFetchError: 当行情请求失败时抛出。
+        """
         try:
             summary: dict[str, Any] = {"snapshot_time": datetime.now(), "data": {}}
             tickers_result = await self.get_symbol_ticker()

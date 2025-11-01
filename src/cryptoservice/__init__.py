@@ -1,6 +1,13 @@
 """Cryptocurrency trading bot package."""
 
-__version__ = "1.16.1"
+from importlib import metadata
+
+try:
+    __version__ = metadata.version("cryptoservice")
+except metadata.PackageNotFoundError:
+    # Package is not installed; fallback helps during local development.
+    __version__ = "0.0.0"
+
 __author__ = "Minnn"
 
 # 可以在这里导出常用的模块，使得用户可以直接从包根导入

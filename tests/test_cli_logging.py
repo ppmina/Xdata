@@ -19,7 +19,6 @@ def reset_logging():
 
 def test_cli_profile_filters_debug(caplog: pytest.LogCaptureFixture) -> None:
     """CLI 预设下默认不输出调试日志."""
-
     setup_logging(profile=LogProfile.CLI_DEMO, log_level=LogLevel.INFO, use_colors=False)
     logger = get_logger("tests.cli")
 
@@ -35,7 +34,6 @@ def test_cli_profile_filters_debug(caplog: pytest.LogCaptureFixture) -> None:
 
 def test_cli_profile_verbose_enables_debug(caplog: pytest.LogCaptureFixture) -> None:
     """开启 verbose 后可以看到调试日志."""
-
     setup_logging(profile=LogProfile.CLI_DEMO, verbose=True, use_colors=False)
     logger = get_logger("tests.cli.verbose")
 
