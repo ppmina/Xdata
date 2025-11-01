@@ -112,6 +112,11 @@ def update_pyproject(version: str) -> None:
 
 def update_package_init(version: str) -> None:
     """Update ``src/cryptoservice/__init__.py`` with the provided version."""
+    text = PACKAGE_INIT.read_text(encoding="utf-8")
+    if "metadata.version" in text:
+        print("__init__.py uses importlib.metadata for version discovery; skipping direct version write.")
+        return
+
     pattern = re.compile(r'(?m)^(__version__\s*=\s*")([^\"]+)(")')
 
     def replacement(match: Match[str]) -> str:
