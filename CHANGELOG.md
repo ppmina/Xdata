@@ -11,6 +11,7 @@
 
 ### Fixes
 
+- fix pre release script
 - docs depencies
 - release workflow
 - docs depencies
@@ -24,7 +25,7 @@
 
 ### Chores
 
-- fix __init__ version auto update
+- fix **init** version auto update
 - update uv lock
 
 ### Other Changes
@@ -33,8 +34,6 @@
 - Release/v1.16.1 ([#22](https://github.com/ppmina/Xdata/pull/22))
 - Release/v1.14.3 ([#20](https://github.com/ppmina/Xdata/pull/20))
 - Release/v1.14.0 ([#19](https://github.com/ppmina/Xdata/pull/19))
-
-
 
 ## v1.16.2 (2025-10-28)
 
@@ -62,8 +61,6 @@
 - Release/v1.14.3 ([#20](https://github.com/ppmina/Xdata/pull/20))
 - Release/v1.14.0 ([#19](https://github.com/ppmina/Xdata/pull/19))
 
-
-
 ## v1.16.1 (2025-10-27)
 
 ### Features
@@ -90,8 +87,6 @@
 - Release/v1.14.3 ([#20](https://github.com/ppmina/Xdata/pull/20))
 - Release/v1.14.0 ([#19](https://github.com/ppmina/Xdata/pull/19))
 
-
-
 ## v1.15.1 (2025-10-19)
 
 ### Features
@@ -114,15 +109,11 @@
 - Release/v1.14.3 ([#20](https://github.com/ppmina/Xdata/pull/20))
 - Release/v1.14.0 ([#19](https://github.com/ppmina/Xdata/pull/19))
 
-
-
 ## v1.14.3 (2025-10-18)
 
 ### Fixes
 
 - refine downloader logging and concurrency handling
-
-
 
 ## v1.14.2 (2025-10-14)
 
@@ -140,8 +131,6 @@
 ### Other Changes
 
 - Release/v1.14.0 ([#19](https://github.com/ppmina/Xdata/pull/19))
-
-
 
 ## v1.14.0 (2025-10-09)
 
@@ -163,8 +152,6 @@
 - release workflow file format error
 - release workflow file format error
 
-
-
 ## v1.12.1 (2025-10-02)
 
 ### Fixes
@@ -176,15 +163,11 @@
 - update infra lock
 - update infra
 
-
-
 ## v1.11.1 (2025-10-01)
 
 ### Other Changes
 
 - Develop ([#18](https://github.com/Mrzai/Xdata/pull/18))
-
-
 
 ## v1.11.0 (2025-08-04)
 
@@ -224,7 +207,6 @@
 - Improve proxy handling and logging in Binance client
   ([`e9bcf35`](https://github.com/ppmina/Xdata/commit/e9bcf3581971a0dfef2e3e179b8e1d55adb208ad))
 
-
 ## v1.10.0 (2025-08-03)
 
 ### Bug Fixes
@@ -245,7 +227,6 @@
   ([#15](https://github.com/ppmina/Xdata/pull/15),
   [`d0c0905`](https://github.com/ppmina/Xdata/commit/d0c09052c1b575405b576585278269ebd15c4b0c))
 
-
 ## v1.9.0 (2025-07-15)
 
 ### Features
@@ -253,7 +234,6 @@
 - Add four market features(oi, lsratio, funding rate, category)
   ([#14](https://github.com/ppmina/Xdata/pull/14),
   [`11f3eb3`](https://github.com/ppmina/Xdata/commit/11f3eb3e4457731f734e311373211112e97ea0e1))
-
 
 ## v1.8.0 (2025-07-14)
 
@@ -293,7 +273,6 @@
 - New feature( universe define and download data) ([#11](https://github.com/ppmina/Xdata/pull/11),
   [`41dea5e`](https://github.com/ppmina/Xdata/commit/41dea5e650bb742aab88e3ac107f532b081ec750))
 
-
 ## v1.7.0 (2025-06-15)
 
 ### Bug Fixes
@@ -328,7 +307,6 @@
 - New feature( universe define and download data) ([#10](https://github.com/ppmina/Xdata/pull/10),
   [`886fc11`](https://github.com/ppmina/Xdata/commit/886fc11b2acca7ce63ba6d10f75bab3f2af68c06))
 
-
 ## v1.6.0 (2025-06-12)
 
 ### Bug Fixes
@@ -359,14 +337,12 @@
 - New feature( universe define and download data) ([#9](https://github.com/ppmina/Xdata/pull/9),
   [`99f0d7d`](https://github.com/ppmina/Xdata/commit/99f0d7d571531f70c263b4a908abf2aada9c2078))
 
-
 ## v0.5.0 (2025-03-22)
 
 ### Features
 
 - Add feature sybmols' date check.
   ([`3d03d3d`](https://github.com/ppmina/Xdata/commit/3d03d3d1d3e78f222393fe6e5af8ba0708b7b1ea))
-
 
 ## v0.4.1 (2025-03-11)
 
@@ -380,7 +356,6 @@
 
 - Fix docs
   ([`0884b0f`](https://github.com/ppmina/Xdata/commit/0884b0fc0108795506965efacae87bd955caa43d))
-
 
 ## v0.4.0 (2025-02-14)
 
@@ -400,7 +375,6 @@
 - Add sql support
   ([`cdf88d9`](https://github.com/ppmina/Xdata/commit/cdf88d9ed324b95542a66894032630ebd6184f94))
 
-
 ## v0.3.4 (2025-01-15)
 
 ### Bug Fixes
@@ -411,14 +385,12 @@
 - Fix ci bugs
   ([`810f98b`](https://github.com/ppmina/Xdata/commit/810f98bf20bbba94780b31253ee471fcd84248a3))
 
-
 ## v0.3.3 (2025-01-02)
 
 ### Bug Fixes
 
 - Ci webhook test
   ([`1587c53`](https://github.com/ppmina/Xdata/commit/1587c532e6d55f53d9c322cfc22ead0ad1e51af0))
-
 
 ## v0.3.2 (2025-01-02)
 
@@ -427,9 +399,7 @@
 - Ci webhook test
   ([`d4a452b`](https://github.com/ppmina/Xdata/commit/d4a452b8c11fe5f2526a1c595b9689cc4a14c894))
 
-
 ## v0.3.1 (2025-01-02)
-
 
 ## v0.3.0 (2025-01-02)
 
@@ -443,7 +413,6 @@
 - New type infomation
   ([`7467b2a`](https://github.com/ppmina/Xdata/commit/7467b2a56efbc25d965d31103159900f9faa13ed))
 
-
 ## v0.2.4 (2025-01-02)
 
 ### Bug Fixes
@@ -451,9 +420,7 @@
 - Import issue
   ([`1cdcb95`](https://github.com/ppmina/Xdata/commit/1cdcb954662a24dfe1de88a840409e7352b6ab37))
 
-
 ## v0.2.3 (2025-01-02)
-
 
 ## v0.2.2 (2024-12-31)
 
@@ -465,14 +432,12 @@
 - Type issue
   ([`1c1f0f7`](https://github.com/ppmina/Xdata/commit/1c1f0f7095b26d4794532587828701bd8492ea7b))
 
-
 ## v0.2.1 (2024-12-31)
 
 ### Bug Fixes
 
 - Type issue
   ([`e94be3d`](https://github.com/ppmina/Xdata/commit/e94be3d718e2e03d1b141800acf8b70997716e37))
-
 
 ## v0.2.0 (2024-12-31)
 
@@ -487,7 +452,6 @@
 
 - New thing
   ([`2d26c85`](https://github.com/ppmina/Xdata/commit/2d26c85339df374be4ad1fa87481646cfbb5a90d))
-
 
 ## v0.1.1 (2025-01-01)
 
