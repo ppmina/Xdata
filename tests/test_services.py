@@ -311,9 +311,7 @@ async def test_concurrent_downloading():
     mock_client = AsyncMock()
 
     # 设置mock返回数据
-    mock_client.get_klines.return_value = [
-        [1, "50000", "51000", "49000", "50500", "100", 2, "5050000", 1000, "60", "3030000", "0"]
-    ]
+    mock_client.get_klines.return_value = [[1, "50000", "51000", "49000", "50500", "100", 2, "5050000", 1000, "60", "3030000", "0"]]
 
     downloader = KlineDownloader(mock_client, request_delay=0.001)
 

@@ -9,7 +9,7 @@ from pathlib import Path
 from cryptoservice.config.logging import get_logger
 from cryptoservice.models import Freq, UniverseDefinition
 from cryptoservice.storage import Database
-from cryptoservice.utils.cli_helper import print_summary, print_completion_stats
+from cryptoservice.utils.cli_helper import print_summary
 
 logger = get_logger(__name__)
 
@@ -115,8 +115,7 @@ async def main():
                 end_date = CUSTOM_END_DATE or snapshot.end_date
 
                 logger.debug(
-                    f"处理快照 {i + 1}/{len(universe_def.snapshots)}：{snapshot.effective_date}" \
-                    f"（{start_date} ~ {end_date}，{len(snapshot.symbols)} 个交易对）"
+                    f"处理快照 {i + 1}/{len(universe_def.snapshots)}：{snapshot.effective_date}（{start_date} ~ {end_date}，{len(snapshot.symbols)} 个交易对）"
                 )
 
                 # 创建输出路径
@@ -141,17 +140,13 @@ async def main():
                     if output_path.exists():
                         npy_files = list(output_path.rglob("*.npy"))
                         json_files = list(output_path.rglob("*.json"))
-                        size_mb = sum(f.stat().st_size for f in output_path.rglob("*") if f.is_file()) / (
-                            1024 * 1024
-                        )
+                        size_mb = sum(f.stat().st_size for f in output_path.rglob("*") if f.is_file()) / (1024 * 1024)
 
                         total_npy_files += len(npy_files)
                         total_json_files += len(json_files)
                         total_size_mb += size_mb
 
-                        logger.debug(
-                            f"导出统计：NPY={len(npy_files)}，JSON={len(json_files)}，总体积 {size_mb:.1f} MB"
-                        )
+                        logger.debug(f"导出统计：NPY={len(npy_files)}，JSON={len(json_files)}，总体积 {size_mb:.1f} MB")
 
                     success_count += 1
                     logger.debug(f"快照 {i + 1} 导出完成。")

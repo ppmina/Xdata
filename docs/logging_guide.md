@@ -51,7 +51,12 @@ logger.error("api_failed",
 纯 JSON 格式，便于日志系统采集：
 
 ```json
-{"version": "1.14.3", "event": "application_started", "level": "info", "timestamp": "2025-10-19 02:36:51"}
+{
+  "version": "1.14.3",
+  "event": "application_started",
+  "level": "info",
+  "timestamp": "2025-10-19 02:36:51"
+}
 ```
 
 ### 测试环境
@@ -207,6 +212,7 @@ logger.info("download_start", symbol=symbol)
 ### Q: 为什么我的日志没有颜色？
 
 A: 检查以下几点：
+
 1. 确保 `environment=Environment.DEVELOPMENT`
 2. 确保 `use_colors=True`
 3. 确保终端支持 ANSI 颜色
@@ -218,6 +224,7 @@ A: 文件位置信息是调试的关键，建议保留。如需禁用，可以�
 ### Q: 生产环境应该用什么配置？
 
 A: 推荐配置：
+
 ```python
 setup_logging(
     environment=Environment.PRODUCTION,

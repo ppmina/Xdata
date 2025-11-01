@@ -1,13 +1,14 @@
 [build-system]
-requires = ["hatchling"]
+requires = ["hatchling", "hatch-vcs"]
 build-backend = "hatchling.build"
 
 [project]
 name = "cryptoservice"
-version = "1.16.2"
+dynamic = ["version"]
 description = "A cryptocurrency trading info package"
 readme = "README.md"
-requires-python = ">=3.10,<3.13"
+license = { text = "MIT" }
+requires-python = ">=3.11,<3.14"
 dependencies = [
     "python-binance>=1.0.27",
     "pyyaml>=6.0.2",
@@ -112,10 +113,73 @@ ignore_missing_imports = true
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 python_files = ["test_*.py"]
+asyncio_mode = "auto"
 addopts = "-v --cov=src/cryptoservice --cov-report=term-missing"
+
+[tool.coverage.run]
+source = ["src/cryptoservice"]
+omit = [
+    "src/cryptoservice/services/downloaders/*",
+    "src/cryptoservice/services/processors/*",
+    "src/cryptoservice/models/universe.py",
+]
+
+[tool.coverage.report]
+exclude_lines = ["pragma: no cover", "if __name__ == .__main__.:"]
+
+[tool.hatch.version]
+source = "vcs"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/cryptoservice"]
+include = ["src/cryptoservice/py.typed"]
+
+[tool.hatch.build.targets.sdist]
+include = ["src/cryptoservice/py.typed"]
+
+
+[tool.towncrier]
+directory = "changes"
+filename = "CHANGELOG.md"
+start_string = "<!-- towncrier release notes start -->"
+title_format = "## {version} ({project_date})"
+issue_format = "#{issue}"
+
+[[tool.towncrier.type]]
+directory = "feature"
+name = "Features"
+showcontent = true
+
+[[tool.towncrier.type]]
+directory = "fix"
+name = "Fixes"
+showcontent = true
+
+[[tool.towncrier.type]]
+directory = "perf"
+name = "Performance"
+showcontent = true
+
+[[tool.towncrier.type]]
+directory = "refactor"
+name = "Refactors"
+showcontent = true
+
+[[tool.towncrier.type]]
+directory = "docs"
+name = "Docs"
+showcontent = true
+
+[[tool.towncrier.type]]
+directory = "breaking"
+name = "Breaking Changes"
+showcontent = true
+
+[[tool.towncrier.type]]
+directory = "chore"
+name = "Chores"
+showcontent = true
+
 
 [dependency-groups]
 dev = [
@@ -128,6 +192,7 @@ dev = [
     "mkdocs-material>=9.6.14",
     "mkdocstrings[python]>=0.29.1",
     "mypy>=1.16.0",
+    "pre-commit>=3.8.0",
     "pandas-stubs>=2.2.3.250527",
     "pytest-asyncio>=1.1.0",
     "ruff>=0.11.12",

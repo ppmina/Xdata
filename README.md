@@ -44,6 +44,33 @@ async def main():
 asyncio.run(main())
 ```
 
+## 📋 完整工作流程演示
+
+`demo/` 目录提供了完整的端到端工作流程示例，从定义交易宇宙到数据分析的全流程：
+
+```bash
+# 步骤1: 定义交易宇宙（筛选符合条件的交易对）
+python demo/define_universe.py
+
+# 步骤2: 下载历史数据到数据库（增量模式）
+python demo/download_data.py
+
+# 步骤3: 导出数据到numpy/CSV格式
+python demo/export_data.py
+
+# 额外: WebSocket实时数据流
+python demo/websocket.py
+```
+
+### 演示脚本说明
+
+- **define_universe.py**: 定义加密货币交易宇宙，根据成交量、存续期等条件筛选交易对
+- **download_data.py**: 批量下载历史K线数据和市场指标（资金费率、持仓量、多空比例）
+- **export_data.py**: 导出数据为numpy数组格式，便于量化分析和机器学习
+- **websocket.py**: WebSocket客户端示例，展示实时数据流处理
+
+详细使用说明请参考 [`demo/README.md`](demo/README.md)
+
 ## 🛠️ 开发环境
 
 ```bash

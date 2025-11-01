@@ -1,0 +1,31 @@
+name: Pre-PR Check
+on:
+  push: { branches: ["main"] }
+  pull_request:
+permissions: { contents: read }
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.11", "3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v4
+        with:
+          version: "latest"
+      - name: Install Python ${{ matrix.python-version }}
+        run: uv python install ${{ matrix.python-version }}
+      - name: Sync dependencies
+        run: uv sync --group dev --group test --python ${{ matrix.python-version }}
+      - name: Run pre-commit hooks
+        if: matrix.python-version == '3.12'
+        run: uv run --python ${{ matrix.python-version }} pre-commit run --all-files
+      - name: Ruff format
+        run: uv run --python ${{ matrix.python-version }} ruff format --check .
+      - name: Ruff lint
+        run: uv run --python ${{ matrix.python-version }} ruff check .
+      - name: Mypy
+        run: uv run --python ${{ matrix.python-version }} mypy src
+      - name: Pytest
+        run: uv run --python ${{ matrix.python-version }} pytest -q

@@ -227,9 +227,7 @@ async def test_kline_query_select(kline_query_with_data):
     query = kline_query_with_data
 
     # 测试按时间范围查询
-    df = await query.select_by_time_range(
-        symbols=["BTCUSDT"], start_time="2021-01-01", end_time="2021-01-02", freq=Freq.h1
-    )
+    df = await query.select_by_time_range(symbols=["BTCUSDT"], start_time="2021-01-01", end_time="2021-01-02", freq=Freq.h1)
 
     assert not df.empty
     assert len(df) == 1
@@ -244,9 +242,7 @@ async def test_kline_query_count(kline_query_with_data):
     query = kline_query_with_data
 
     # 测试计数查询（使用实际存在的方法）
-    df_count = await query.select_by_time_range(
-        symbols=["BTCUSDT"], start_time="2021-01-01", end_time="2021-01-02", freq=Freq.h1
-    )
+    df_count = await query.select_by_time_range(symbols=["BTCUSDT"], start_time="2021-01-01", end_time="2021-01-02", freq=Freq.h1)
     count = len(df_count)
 
     assert count == 1
