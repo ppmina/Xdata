@@ -132,10 +132,9 @@ source = "vcs"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/cryptoservice"]
-include = ["src/cryptoservice/py.typed"]
 
 [tool.hatch.build.targets.sdist]
-include = ["src/cryptoservice/py.typed"]
+include = ["src/cryptoservice"]
 
 
 [tool.towncrier]
