@@ -111,7 +111,6 @@ jobs:
             dist/*
 
       - name: Notify webhook
-        if: secrets.WEBHOOK_URL != ''
         env:
           WEBHOOK_URL: ${{ secrets.WEBHOOK_URL }}
         run: |
