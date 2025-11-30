@@ -242,10 +242,17 @@ class NumpyExporter:
                     logger.debug("没有 timestamp 数据可导出")
                     return
 
-                # 合并所有 timestamp 列
-                # 格式：按列拼接，每一列代表一种类型
-                # 最终形状：(n_symbols, sum_of_timestamps)
-                merged_array = np.concatenate(list(merged_columns.values()), axis=1)
+                # 收集要合并的 timestamp 数组，保持 ordered_keys 的顺序
+                # 类似于 list.append (push) 的方式，先收集再合并，比逐步 concatenate 更高效且安全
+                ts_arrays = []
+                for ts_name in ordered_keys:
+                    if ts_name in merged_columns:
+                        ts_arrays.append(merged_columns[ts_name])
+
+                # 使用 np.stack 在 axis=0 维度堆叠
+                # 最终形状：(n_types, n_symbols, T)
+                # 注意：ts_array 本身是 (n_symbols, T)，stack 后变成 (n_types, n_symbols, T)
+                merged_array = np.stack(ts_arrays, axis=0)
 
                 # 将 NaN 替换为 0（表示数据不存在），并转换为 int64
                 # 0 不是有效的 timestamp，下游可以用它来识别缺失数据

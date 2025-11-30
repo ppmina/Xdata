@@ -28,7 +28,7 @@ EXPORT_METRICS = True
 METRICS_CONFIG = {
     "funding_rate": True,  # 启用资金费率
     "open_interest": True,  # 启用持仓量
-    "long_short_ratio": {"ratio_type": "taker"},  # 启用多空比例（taker 类型）
+    "long_short_ratio": {"ratio_type": "account"},  # 启用多空比例（account 类型）
 }
 
 # 自定义时间范围（可选，留空则使用 Universe 定义的时间范围）

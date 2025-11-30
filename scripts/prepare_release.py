@@ -219,7 +219,7 @@ def _render_changelog_block(version: str, sections: list[tuple[str, list[str]]],
     lines: list[str] = [f"## v{version} ({today})", ""]
 
     if not sections:
-        lines.append("- No notable changes recorded.")
+        lines.append("No significant changes.")
     else:
         for title, items in sections:
             lines.append(f"### {title}")

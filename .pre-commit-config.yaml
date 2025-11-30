@@ -21,7 +21,6 @@ repos:
     hooks:
       - id: mypy
         files: ^src/
-        language_version: python3.12
         additional_dependencies: [types-requests]
 
   - repo: https://github.com/Yelp/detect-secrets
