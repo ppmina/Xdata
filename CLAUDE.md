@@ -11,7 +11,7 @@ This is a Python cryptocurrency data processing package called `cryptoservice` t
 - Historical data processing and analysis
 - Database storage with SQLite
 
-The project is currently at version 1.11.1 and supports Python >=3.10,<3.13.
+The project requires Python >=3.11,<3.14.
 
 ## Architecture
 
@@ -159,7 +159,7 @@ This project uses **uv** for fast Python package management:
 - Dependencies are locked in `uv.lock` file
 - Virtual environment activation: `source .venv/bin/activate` (or `.venv/bin/activate.fish` for fish shell)
 - Install with development dependencies: `uv pip install -e ".[dev-all]"`
-- The project requires Python >=3.10,<3.13 as specified in pyproject.toml
+- The project requires Python >=3.11,<3.14 as specified in pyproject.toml
 - Use `uv pip sync -e ".[dev,test]"` to sync exact dependencies from lock file
 
 ## Demo and Examples
