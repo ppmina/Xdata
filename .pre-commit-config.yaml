@@ -32,3 +32,12 @@ repos:
     rev: v8.21.2
     hooks:
       - id: gitleaks
+
+  - repo: local
+    hooks:
+      - id: pytest-cov
+        name: pytest with coverage
+        entry: .venv/bin/pytest --cov=src/cryptoservice
+        language: system
+        types: [python]
+        pass_filenames: false

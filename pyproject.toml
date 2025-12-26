@@ -113,6 +113,7 @@ ignore_missing_imports = true
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 python_files = ["test_*.py"]
+pythonpath = ["src"]
 asyncio_mode = "auto"
 addopts = "-v --cov=src/cryptoservice --cov-report=term-missing"
 
