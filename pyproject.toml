@@ -115,7 +115,8 @@ testpaths = ["tests"]
 python_files = ["test_*.py"]
 pythonpath = ["src"]
 asyncio_mode = "auto"
-addopts = "-v --cov=src/cryptoservice --cov-report=term-missing"
+addopts = "-v --cov=src/cryptoservice --cov-report=term-missing -m 'not slow'"
+markers = ["slow: marks tests as slow (deselect with '-m \"not slow\"')"]
 
 [tool.coverage.run]
 source = ["src/cryptoservice"]
