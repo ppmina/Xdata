@@ -22,21 +22,18 @@ UNIVERSE_FILE = "./data/universe.json"  # Universe定义文件
 DB_PATH = "./data/database/market.db"  # 数据库文件路径
 
 # 下载配置
-LONG_SHORT_RATIO_TYPES = ["account"]  # 多空比例数据类型
 INTERVAL = Freq.m5  # 数据频率: Freq.m1, Freq.h1, Freq.d1
 MAX_API_WORKERS = 1  # 最大并发数（Binance API建议1-5，）
 MAX_VISION_WORKERS = 50  # Vision S3下载最大并发数, 建议50-150)
 API_REQUEST_DELAY = 0.5  # API请求延迟
 VISION_REQUEST_DELAY = 0  # Vision请求延迟
 MAX_RETRIES = 3  # 最大重试次数
-RETRY_CONFIG = (
-    RetryConfig(
-        max_retries=MAX_RETRIES,
-        base_delay=1.0,
-        max_delay=10.0,
-        backoff_multiplier=2.0,
-        jitter=True,
-    ),
+RETRY_CONFIG = RetryConfig(
+    max_retries=MAX_RETRIES,
+    base_delay=1.0,
+    max_delay=10.0,
+    backoff_multiplier=2.0,
+    jitter=True,
 )
 
 
@@ -96,7 +93,6 @@ async def main():
             await service.download_universe_data(
                 universe_file=UNIVERSE_FILE,
                 db_path=DB_PATH,
-                long_short_ratio_types=LONG_SHORT_RATIO_TYPES,
                 retry_config=RETRY_CONFIG,
                 api_request_delay=API_REQUEST_DELAY,
                 vision_request_delay=VISION_REQUEST_DELAY,

@@ -1,6 +1,116 @@
 """导出数据库数据到文件的脚本 - 简化版.
 
 使用 storage 模块的统一导出接口，代码简洁清晰。
+
+================================================================================
+数据形状转换说明 (Input Shape → Output Shape)
+================================================================================
+
+【输入数据】(来自 SQLite 数据库)
+─────────────────────────────────────────────────────────────────────────────────
+源数据存储在 SQLite 表中，通过 KlineQuery / MetricsQuery 读取为 DataFrame：
+
+  K线数据 (klines 表):
+    - 索引: MultiIndex(symbol, timestamp)
+    - 列: open_price, high_price, low_price, close_price, volume, quote_volume,
+          trades_count, taker_buy_volume, taker_buy_quote_volume, ...
+    - 形状: (N_records,) 其中 N_records = n_symbols × n_timestamps
+
+  Metrics数据 (funding_rates/open_interests/long_short_ratios 表):
+    - 索引: MultiIndex(symbol, timestamp)
+    - 列: funding_rate / open_interest / long_short_ratio
+    - 形状: (N_records,)
+
+【处理流程】
+─────────────────────────────────────────────────────────────────────────────────
+1. 查询数据库 → DataFrame (symbol, timestamp) 多级索引
+2. 重采样 (如 5m → 1h → 1d)，使用 DataResampler
+3. Metrics 数据通过 asof 策略对齐到 K线时间点
+4. 字段重命名: open_price→opn, high_price→hgh, close_price→cls, ...
+5. 按日期分组，每天导出一组 .npy 文件
+
+【输出文件结构】
+─────────────────────────────────────────────────────────────────────────────────
+output_path/
+├── univ_dct2.json          # 每日交易对列表 {"YYYYMMDD": ["BTCUSDT", "ETHUSDT", ...]}
+├── opn/YYYYMMDD.npy        # 开盘价    shape: (K, T) dtype: float64
+├── hgh/YYYYMMDD.npy        # 最高价    shape: (K, T) dtype: float64
+├── low/YYYYMMDD.npy        # 最低价    shape: (K, T) dtype: float64
+├── cls/YYYYMMDD.npy        # 收盘价    shape: (K, T) dtype: float64
+├── vol/YYYYMMDD.npy        # 成交量(币) shape: (K, T) dtype: float64
+├── ctm/YYYYMMDD.npy        # 收盘时间   shape: (K, T) dtype: float64
+├── amt/YYYYMMDD.npy        # 成交额(USDT) shape: (K, T) dtype: float64
+├── tnum/YYYYMMDD.npy       # 成交笔数   shape: (K, T) dtype: float64
+├── tbvol/YYYYMMDD.npy      # 主买成交量  shape: (K, T) dtype: float64
+├── tbamt/YYYYMMDD.npy      # 主买成交额  shape: (K, T) dtype: float64
+├── tsvol/YYYYMMDD.npy      # 主卖成交量  shape: (K, T) dtype: float64
+├── tsamt/YYYYMMDD.npy      # 主卖成交额  shape: (K, T) dtype: float64
+├── fr/YYYYMMDD.npy         # 资金费率   shape: (K, T) dtype: float64
+├── oi/YYYYMMDD.npy         # 持仓量    shape: (K, T) dtype: float64
+├── lsr/YYYYMMDD.npy        # 多空比    shape: (K, T) dtype: float64
+└── timestamp/YYYYMMDD.npy  # 时间戳    shape: (N_types, K, T) dtype: int64
+
+【维度说明】
+─────────────────────────────────────────────────────────────────────────────────
+  K = n_symbols   : 交易对数量 (行), 顺序与 univ_dct2.json[date] 一致
+  T = n_timestamps: 当日时间点数量 (列), 取决于导出频率:
+                    - 1d: T=1 (每日1条)
+                    - 1h: T=24 (每日24条)
+                    - 5m: T=288 (每日288条)
+  N_types         : timestamp 类型数量 (1~4), 按顺序堆叠:
+                    [kline_ts, oi_ts, lsr_ts, fr_ts]
+
+【字段映射】
+─────────────────────────────────────────────────────────────────────────────────
+  数据库列名                    →  导出缩写   说明
+  ─────────────────────────────────────────────────────────────────
+  open_price                   →  opn       开盘价
+  high_price                   →  hgh       最高价
+  low_price                    →  low       最低价
+  close_price                  →  cls       收盘价
+  volume                       →  vol       成交量 (基础货币, 如 BTC)
+  close_time                   →  ctm       收盘时间 (毫秒时间戳)
+  quote_volume                 →  amt       成交额 (计价货币, 如 USDT)
+  trades_count                 →  tnum      成交笔数
+  taker_buy_volume             →  tbvol     主动买入成交量
+  taker_buy_quote_volume       →  tbamt     主动买入成交额
+  taker_sell_volume            →  tsvol     主动卖出成交量 (= vol - tbvol)
+  taker_sell_quote_volume      →  tsamt     主动卖出成交额 (= amt - tbamt)
+  funding_rate                 →  fr        资金费率 (永续合约, 每8h更新)
+  open_interest                →  oi        持仓量 (合约未平仓数量)
+  long_short_ratio             →  lsr       多空账户比 / 大户持仓比
+
+【Timestamp 特殊说明】
+─────────────────────────────────────────────────────────────────────────────────
+  timestamp/YYYYMMDD.npy 存储的是各数据源的原始时间戳 (毫秒):
+  - 形状: (N_types, K, T), 其中 N_types ∈ {1,2,3,4}
+  - 维度 0 按固定顺序: [kline, oi, lsr, fr] (仅包含启用的类型)
+  - 值为 0 表示该时间点无数据 (NaN → 0)
+  - 用途: 追溯 metrics 对齐前的真实时间, 便于验证数据质量
+
+【使用示例】
+─────────────────────────────────────────────────────────────────────────────────
+  import numpy as np
+  import json
+
+  # 加载交易对列表
+  with open("univ_dct2.json") as f:
+      univ = json.load(f)
+  symbols = univ["20241015"]  # 获取 2024-10-15 的交易对顺序
+
+  # 加载收盘价
+  cls = np.load("cls/20241015.npy")  # shape: (K, T)
+  print(f"BTCUSDT 收盘价: {cls[symbols.index('BTCUSDT'), :]}")
+
+  # 加载资金费率
+  fr = np.load("fr/20241015.npy")  # shape: (K, T)
+
+  # 加载时间戳 (可选, 用于数据验证)
+  ts = np.load("timestamp/20241015.npy")  # shape: (N_types, K, T)
+  kline_ts = ts[0]  # K线时间戳
+  fr_ts = ts[3]     # 资金费率原始时间戳 (如果启用了 fr)
+
+================================================================================
 """
 
 import asyncio
@@ -71,7 +181,7 @@ async def main():
     # 构建导出特征列表
     features = []
     if EXPORT_KLINES:
-        kline_features = ["opn", "hgh", "low", "cls", "vol", "amt", "tnum", "tbvol", "tbamt", "tsvol", "tsamt"]
+        kline_features = ["opn", "hgh", "low", "cls", "vol", "ctm", "amt", "tnum", "tbvol", "tbamt", "tsvol", "tsamt"]
         features.extend(kline_features)
     if EXPORT_METRICS:
         metrics_features = ["fr", "oi", "lsr"]

@@ -55,6 +55,7 @@ class KlineStore:
                 kline.low_price,
                 kline.close_price,
                 kline.volume,
+                kline.close_time,
                 kline.quote_volume,
                 kline.trades_count,
                 kline.taker_buy_volume,
@@ -83,10 +84,10 @@ class KlineStore:
             INSERT OR REPLACE INTO klines (
                 symbol, timestamp, freq,
                 open_price, high_price, low_price, close_price,
-                volume, quote_volume, trades_count,
+                volume, close_time, quote_volume, trades_count,
                 taker_buy_volume, taker_buy_quote_volume,
                 taker_sell_volume, taker_sell_quote_volume
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """
 
         total_inserted = 0
