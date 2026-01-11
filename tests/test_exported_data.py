@@ -107,22 +107,34 @@ def _check_sequence_monotonic(ts_seq: np.ndarray) -> list | None:
 class ExportedDataChecker:
     """导出数据检查器."""
 
-    DEFAULT_FIELDS = [
-        "amt",
-        "cls",
-        "fr",
-        "hgh",
-        "low",
-        "lsr",
-        "oi",
-        "opn",
-        "tbamt",
-        "tbvol",
-        "tnum",
-        "tsamt",
-        "tsvol",
-        "vol",
+    # K线字段
+    KLINE_FIELDS = [
+        "opn",  # 开盘价
+        "hgh",  # 最高价
+        "low",  # 最低价
+        "cls",  # 收盘价
+        "vol",  # 成交量
+        "amt",  # 成交额
+        "tnum",  # 成交笔数
+        "tbvol",  # 主动买入成交量
+        "tbamt",  # 主动买入成交额
+        "tsvol",  # 主动卖出成交量
+        "tsamt",  # 主动卖出成交额
     ]
+
+    # Metrics 字段
+    METRICS_FIELDS = [
+        "fr",  # 资金费率
+        "oi",  # 持仓量
+        "oiv",  # 持仓量价值 (可选)
+        "lsr_ta",  # Top20%账户数比例
+        "lsr_tp",  # Top20%持仓比例
+        "lsr_ga",  # 全体账户数比例
+        "lsr_tv",  # Taker买卖量比
+    ]
+
+    # 默认检查字段（K线 + 常用 Metrics）
+    DEFAULT_FIELDS = KLINE_FIELDS + ["fr", "oi"]
 
     def __init__(self, base_path: Path | str):
         """初始化检查器."""

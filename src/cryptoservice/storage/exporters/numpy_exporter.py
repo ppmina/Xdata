@@ -30,6 +30,7 @@ class NumpyExporter:
     """
 
     # 默认字段映射：长字段名 -> 缩写形式
+    # 注意：close_time 不再单独导出，已包含在 timestamp 数组中 (index=1)
     DEFAULT_FIELD_MAPPING = {
         # K线数据字段
         "open_price": "opn",
@@ -37,7 +38,6 @@ class NumpyExporter:
         "low_price": "low",
         "close_price": "cls",
         "volume": "vol",
-        "close_time": "ctm",
         "quote_volume": "amt",
         "trades_count": "tnum",
         "taker_buy_volume": "tbvol",
@@ -46,21 +46,22 @@ class NumpyExporter:
         "taker_sell_quote_volume": "tsamt",
         # Metrics 数据字段
         "funding_rate": "fr",
-        "open_interest": "oi",
-        # 多空比例字段 - 使用原始 CSV 字段名（不缩写）
+        "open_interest": "oi",  # 持仓量（合约张数）
+        "open_interest_value": "oiv",  # 持仓量价值（USD）
+        # 多空比例字段 - 使用缩写形式
         # 这些字段由 select_long_short_ratio_by_type 方法自动命名
-        # toptrader_account -> count_toptrader_long_short_ratio
-        # toptrader_position -> sum_toptrader_long_short_ratio
-        # global_account -> count_long_short_ratio
-        # taker_vol -> sum_taker_long_short_vol_ratio
+        # toptrader_account -> lsr_ta (Top 20% 账户数比例)
+        # toptrader_position -> lsr_tp (Top 20% 持仓比例)
+        # global_account -> lsr_ga (全体账户数比例)
+        # taker_vol -> lsr_tv (Taker 买/卖成交量比)
     }
 
-    # ratio_type 到导出字段名的映射（与 MetricsQuery.RATIO_TYPE_TO_EXPORT_NAME 保持一致）
+    # ratio_type 到导出字段名的映射（使用缩写，与 MetricsQuery.RATIO_TYPE_TO_EXPORT_NAME 保持一致）
     RATIO_TYPE_TO_EXPORT_NAME = {
-        "toptrader_account": "count_toptrader_long_short_ratio",
-        "toptrader_position": "sum_toptrader_long_short_ratio",
-        "global_account": "count_long_short_ratio",
-        "taker_vol": "sum_taker_long_short_vol_ratio",
+        "toptrader_account": "lsr_ta",  # Top 20% 账户数比例
+        "toptrader_position": "lsr_tp",  # Top 20% 持仓比例
+        "global_account": "lsr_ga",  # 全体账户数比例
+        "taker_vol": "lsr_tv",  # Taker 买/卖成交量比
     }
 
     # 所有支持的 LSR 类型
@@ -215,7 +216,7 @@ class NumpyExporter:
     async def _export_timestamps(self, timestamp_dfs: dict[str, pd.DataFrame], day_mask: pd.Series, output_path: Path, freq: Freq, date_str: str) -> None:
         """导出 timestamp 数据为单个合并的 .npy 文件.
 
-        将多个 timestamp 按约定顺序合并：kline, oi/lsr, fr
+        将多个 timestamp 按约定顺序合并：open_ts, close_ts, oi_ts, lsr_ts, fr_ts
 
         Args:
             timestamp_dfs: 各类数据的原始 timestamp
@@ -232,8 +233,8 @@ class NumpyExporter:
         def merge_and_save_timestamps():
             """合并所有 timestamp 并保存为单个文件."""
             try:
-                # 定义顺序：kline, oi, lsr, fr
-                ordered_keys = ["kline_timestamp", "oi_timestamp", "lsr_timestamp", "fr_timestamp"]
+                # 定义顺序：open_ts, close_ts, oi_ts, lsr_ts, fr_ts
+                ordered_keys = ["open_timestamp", "close_timestamp", "oi_timestamp", "lsr_timestamp", "fr_timestamp"]
 
                 merged_columns = {}
 
@@ -399,6 +400,7 @@ class NumpyExporter:
             return
 
         # 默认特征映射（使用简短名称）
+        # 注意：close_time 不再单独导出，已包含在 timestamp 数组中
         if feature_mapping is None:
             feature_mapping = {
                 "open_price": "opn",
@@ -406,7 +408,6 @@ class NumpyExporter:
                 "low_price": "low",
                 "close_price": "cls",
                 "volume": "vol",
-                "close_time": "ctm",
                 "quote_volume": "amt",
                 "trades_count": "tnum",
                 "taker_buy_volume": "tbvol",
@@ -514,15 +515,18 @@ class NumpyExporter:
             include_metrics: 是否包含 Metrics 数据
             metrics_config: Metrics 配置字典，例如：
                 {
-                    "funding_rate": True,  # 启用资金费率
-                    "open_interest": True,  # 启用持仓量
+                    "funding_rate": True,  # 启用资金费率 -> fr
+                    "open_interest": True,  # 启用持仓量 (oi + oiv)
+                    # 或指定是否包含 value:
+                    "open_interest": {"include_value": True},  # oi + oiv
+                    "open_interest": {"include_value": False},  # 仅 oi
                     "long_short_ratio": True,  # 启用所有4种多空比例类型
                     # 或指定特定类型:
                     "long_short_ratio": {
-                        "toptrader_account": True,   # count_toptrader_long_short_ratio
-                        "toptrader_position": True,  # sum_toptrader_long_short_ratio
-                        "global_account": True,      # count_long_short_ratio
-                        "taker_vol": True,           # sum_taker_long_short_vol_ratio
+                        "toptrader_account": True,   # -> lsr_ta (Top 20%账户数)
+                        "toptrader_position": True,  # -> lsr_tp (Top 20%持仓)
+                        "global_account": True,      # -> lsr_ga (全体账户数)
+                        "taker_vol": True,           # -> lsr_tv (Taker买卖量)
                     },
                 }
             field_mapping: 自定义字段映射（默认使用 DEFAULT_FIELD_MAPPING）
@@ -611,10 +615,16 @@ class NumpyExporter:
         # 2. 合并 Metrics 数据（如果需要）
         timestamp_dfs = {}  # 存储各类数据的原始 timestamp
 
-        # 提取 K线的 timestamp
+        # 提取 K线的 open_timestamp 和 close_timestamp
         if not combined_df.empty:
-            kline_timestamps = self._extract_timestamps(combined_df)
-            timestamp_dfs["kline_timestamp"] = kline_timestamps
+            open_timestamps = self._extract_timestamps(combined_df)
+            timestamp_dfs["open_timestamp"] = open_timestamps
+
+            # 提取 close_timestamp（从 close_time 列），然后删除该列（不再单独导出）
+            if "close_time" in combined_df.columns:
+                close_timestamps = self._extract_close_timestamps(combined_df)
+                timestamp_dfs["close_timestamp"] = close_timestamps
+                combined_df = combined_df.drop(columns=["close_time"])
 
         if include_metrics and self.metrics_query and not combined_df.empty:
             metrics_df, metrics_timestamps = await self._fetch_and_merge_metrics(combined_df, symbols, start_time, end_time, export_freq, metrics_config)
@@ -722,18 +732,29 @@ class NumpyExporter:
             except Exception as e:
                 logger.warning("fetch_funding_rate_data_failed", error=str(e))
 
-        # 持仓量
-        if metrics_config.get("open_interest"):
+        # 持仓量 (open_interest 和 open_interest_value)
+        oi_config = metrics_config.get("open_interest")
+        if oi_config:
             try:
-                logger.info("fetch_open_interest_data_start")
-                oi_df_raw = await self.metrics_query.select_open_interests(symbols, start_time, end_time, columns=["open_interest"])
+                # 确定要查询哪些列
+                oi_columns = ["open_interest"]
+                agg_strategy = {"open_interest": "last"}
+
+                # 检查是否需要导出 open_interest_value
+                include_value = oi_config is True or (isinstance(oi_config, dict) and oi_config.get("include_value", True))
+                if include_value:
+                    oi_columns.append("open_interest_value")
+                    agg_strategy["open_interest_value"] = "last"
+
+                logger.info("fetch_open_interest_data_start", columns=oi_columns)
+                oi_df_raw = await self.metrics_query.select_open_interests(symbols, start_time, end_time, columns=oi_columns)
                 if not oi_df_raw.empty:
                     # 重采样并对齐，同时获取原始 timestamp
                     result = await self.resampler.resample_and_align(
                         oi_df_raw,
                         kline_df,
                         target_freq,
-                        agg_strategy={"open_interest": "last"},
+                        agg_strategy=agg_strategy,
                         align_method="asof",
                         return_original_timestamps=True,
                     )
@@ -748,7 +769,7 @@ class NumpyExporter:
                         timestamp_dfs["oi_timestamp"] = oi_ts_df
 
                     metrics_dfs.append(oi_df)
-                    logger.info("fetch_open_interest_data_complete", records=len(oi_df))
+                    logger.info("fetch_open_interest_data_complete", records=len(oi_df), columns=list(oi_df.columns))
             except Exception as e:
                 logger.warning("fetch_open_interest_data_failed", error=str(e))
 
@@ -843,7 +864,7 @@ class NumpyExporter:
 
     @staticmethod
     def _extract_timestamps(df: pd.DataFrame) -> pd.DataFrame:
-        """从 DataFrame 中提取 timestamp 索引.
+        """从 DataFrame 中提取 timestamp 索引（open_timestamp）.
 
         Args:
             df: 数据 DataFrame，使用 (symbol, timestamp) 多级索引
@@ -857,6 +878,24 @@ class NumpyExporter:
         # 创建一个 DataFrame，只包含 timestamp
         # 使用 MultiIndex 的 timestamp level 作为数据
         timestamps = pd.DataFrame({"timestamp": df.index.get_level_values("timestamp")}, index=df.index)
+
+        return timestamps
+
+    @staticmethod
+    def _extract_close_timestamps(df: pd.DataFrame) -> pd.DataFrame:
+        """从 DataFrame 中提取 close_time 列作为 close_timestamp.
+
+        Args:
+            df: 数据 DataFrame，必须包含 close_time 列
+
+        Returns:
+            只包含 close_timestamp 的 DataFrame，索引为 (symbol, timestamp)
+        """
+        if df.empty or "close_time" not in df.columns:
+            return pd.DataFrame()
+
+        # 创建一个 DataFrame，使用 close_time 列作为 timestamp
+        timestamps = pd.DataFrame({"timestamp": df["close_time"].values}, index=df.index)
 
         return timestamps
 

@@ -38,7 +38,6 @@ output_path/
 ├── low/YYYYMMDD.npy        # 最低价    shape: (K, T) dtype: float64
 ├── cls/YYYYMMDD.npy        # 收盘价    shape: (K, T) dtype: float64
 ├── vol/YYYYMMDD.npy        # 成交量(币) shape: (K, T) dtype: float64
-├── ctm/YYYYMMDD.npy        # 收盘时间   shape: (K, T) dtype: float64
 ├── amt/YYYYMMDD.npy        # 成交额(USDT) shape: (K, T) dtype: float64
 ├── tnum/YYYYMMDD.npy       # 成交笔数   shape: (K, T) dtype: float64
 ├── tbvol/YYYYMMDD.npy      # 主买成交量  shape: (K, T) dtype: float64
@@ -46,8 +45,15 @@ output_path/
 ├── tsvol/YYYYMMDD.npy      # 主卖成交量  shape: (K, T) dtype: float64
 ├── tsamt/YYYYMMDD.npy      # 主卖成交额  shape: (K, T) dtype: float64
 ├── fr/YYYYMMDD.npy         # 资金费率   shape: (K, T) dtype: float64
-├── oi/YYYYMMDD.npy         # 持仓量    shape: (K, T) dtype: float64
-├── lsr/YYYYMMDD.npy        # 多空比    shape: (K, T) dtype: float64
+├── oi/YYYYMMDD.npy         # 持仓量(合约张数) shape: (K, T) dtype: float64
+├── oiv/YYYYMMDD.npy        # 持仓量价值(USD) shape: (K, T) dtype: float64
+│
+│   # 多空比例字段 (4种类型，使用缩写)
+├── lsr_ta/YYYYMMDD.npy     # Top20%账户数比例 shape: (K, T) (toptrader_account)
+├── lsr_tp/YYYYMMDD.npy     # Top20%持仓比例   shape: (K, T) (toptrader_position)
+├── lsr_ga/YYYYMMDD.npy     # 全体账户数比例   shape: (K, T) (global_account)
+├── lsr_tv/YYYYMMDD.npy     # Taker买卖量比   shape: (K, T) (taker_vol)
+│
 └── timestamp/YYYYMMDD.npy  # 时间戳    shape: (N_types, K, T) dtype: int64
 
 【维度说明】
@@ -57,8 +63,8 @@ output_path/
                     - 1d: T=1 (每日1条)
                     - 1h: T=24 (每日24条)
                     - 5m: T=288 (每日288条)
-  N_types         : timestamp 类型数量 (1~4), 按顺序堆叠:
-                    [kline_ts, oi_ts, lsr_ts, fr_ts]
+  N_types         : timestamp 类型数量 (1~5), 按顺序堆叠:
+                    [open_ts, close_ts, oi_ts, lsr_ts, fr_ts]
 
 【字段映射】
 ─────────────────────────────────────────────────────────────────────────────────
@@ -69,7 +75,6 @@ output_path/
   low_price                    →  low       最低价
   close_price                  →  cls       收盘价
   volume                       →  vol       成交量 (基础货币, 如 BTC)
-  close_time                   →  ctm       收盘时间 (毫秒时间戳)
   quote_volume                 →  amt       成交额 (计价货币, 如 USDT)
   trades_count                 →  tnum      成交笔数
   taker_buy_volume             →  tbvol     主动买入成交量
@@ -77,14 +82,27 @@ output_path/
   taker_sell_volume            →  tsvol     主动卖出成交量 (= vol - tbvol)
   taker_sell_quote_volume      →  tsamt     主动卖出成交额 (= amt - tbamt)
   funding_rate                 →  fr        资金费率 (永续合约, 每8h更新)
-  open_interest                →  oi        持仓量 (合约未平仓数量)
-  long_short_ratio             →  lsr       多空账户比 / 大户持仓比
+  open_interest                →  oi        持仓量 (合约张数, sum_open_interest)
+  open_interest_value          →  oiv       持仓量价值 (USD, sum_open_interest_value)
+
+  # 多空比例字段 (4种类型，使用缩写)
+  # ratio_type                 →  缩写      原始CSV字段                           说明
+  # ─────────────────────────────────────────────────────────────────────────────────────
+  # toptrader_account          →  lsr_ta    count_toptrader_long_short_ratio   Top20%账户数比例
+  # toptrader_position         →  lsr_tp    sum_toptrader_long_short_ratio     Top20%持仓比例
+  # global_account             →  lsr_ga    count_long_short_ratio             全体交易者账户数比例
+  # taker_vol                  →  lsr_tv    sum_taker_long_short_vol_ratio     Taker买/卖成交量比
 
 【Timestamp 特殊说明】
 ─────────────────────────────────────────────────────────────────────────────────
   timestamp/YYYYMMDD.npy 存储的是各数据源的原始时间戳 (毫秒):
-  - 形状: (N_types, K, T), 其中 N_types ∈ {1,2,3,4}
-  - 维度 0 按固定顺序: [kline, oi, lsr, fr] (仅包含启用的类型)
+  - 形状: (N_types, K, T), 其中 N_types 取决于启用的数据类型
+  - 维度 0 按固定顺序: [open_ts, close_ts, oi_ts, lsr_ts, fr_ts] (仅包含启用的类型)
+    - open_ts: K线开盘时间戳 (即 K线的 timestamp 索引)
+    - close_ts: K线收盘时间戳 (原 close_time 字段, 不再单独导出为 ctm)
+    - oi_ts: 持仓量原始时间戳
+    - lsr_ts: 多空比例原始时间戳
+    - fr_ts: 资金费率原始时间戳
   - 值为 0 表示该时间点无数据 (NaN → 0)
   - 用途: 追溯 metrics 对齐前的真实时间, 便于验证数据质量
 
@@ -105,10 +123,16 @@ output_path/
   # 加载资金费率
   fr = np.load("fr/20241015.npy")  # shape: (K, T)
 
+  # 加载多空比例 (4种类型)
+  lsr_toptrader_account = np.load("count_toptrader_long_short_ratio/20241015.npy")  # Top20%账户数
+  lsr_toptrader_position = np.load("sum_toptrader_long_short_ratio/20241015.npy")   # Top20%持仓
+  lsr_global_account = np.load("count_long_short_ratio/20241015.npy")               # 全体账户数
+  lsr_taker_vol = np.load("sum_taker_long_short_vol_ratio/20241015.npy")            # Taker买卖量
+
   # 加载时间戳 (可选, 用于数据验证)
   ts = np.load("timestamp/20241015.npy")  # shape: (N_types, K, T)
-  kline_ts = ts[0]  # K线时间戳
-  fr_ts = ts[3]     # 资金费率原始时间戳 (如果启用了 fr)
+  open_ts = ts[0]   # K线开盘时间戳
+  close_ts = ts[1]  # K线收盘时间戳 (原 ctm)
 
 ================================================================================
 """
@@ -136,9 +160,21 @@ EXPORT_METRICS = True
 
 # Metrics 配置
 METRICS_CONFIG = {
-    "funding_rate": True,  # 启用资金费率
-    "open_interest": True,  # 启用持仓量
-    "long_short_ratio": {"ratio_type": "account"},  # 启用多空比例（account 类型）
+    "funding_rate": True,  # 启用资金费率 -> fr
+    "open_interest": True,  # 启用持仓量 -> oi + oiv (默认包含 value)
+    # 或者只导出合约张数，不导出USD价值:
+    # "open_interest": {"include_value": False},  # 仅 oi
+    # 多空比例配置 - 支持以下两种格式:
+    # 1. True: 导出所有4种类型
+    # 2. dict: 指定特定类型
+    "long_short_ratio": True,  # 导出所有4种多空比例类型
+    # 或者指定特定类型:
+    # "long_short_ratio": {
+    #     "toptrader_account": True,   # -> lsr_ta (Top20%账户数比例)
+    #     "toptrader_position": True,  # -> lsr_tp (Top20%持仓比例)
+    #     "global_account": True,      # -> lsr_ga (全体账户数比例)
+    #     "taker_vol": True,           # -> lsr_tv (Taker买卖量比)
+    # },
 }
 
 # 自定义时间范围（可选，留空则使用 Universe 定义的时间范围）
@@ -181,10 +217,20 @@ async def main():
     # 构建导出特征列表
     features = []
     if EXPORT_KLINES:
-        kline_features = ["opn", "hgh", "low", "cls", "vol", "ctm", "amt", "tnum", "tbvol", "tbamt", "tsvol", "tsamt"]
+        # 注意: close_time (ctm) 不再单独导出，已包含在 timestamp 数组的 index=1 位置
+        kline_features = ["opn", "hgh", "low", "cls", "vol", "amt", "tnum", "tbvol", "tbamt", "tsvol", "tsamt"]
         features.extend(kline_features)
     if EXPORT_METRICS:
-        metrics_features = ["fr", "oi", "lsr"]
+        # 资金费率、持仓量、以及4种多空比例类型
+        metrics_features = [
+            "fr",  # 资金费率
+            "oi",  # 持仓量
+            # 4种多空比例类型 (使用原始 CSV 字段名)
+            "count_toptrader_long_short_ratio",  # Top20%账户数比例
+            "sum_toptrader_long_short_ratio",  # Top20%持仓比例
+            "count_long_short_ratio",  # 全体账户数比例
+            "sum_taker_long_short_vol_ratio",  # Taker买卖量比
+        ]
         features.extend(metrics_features)
 
     logger.debug(
