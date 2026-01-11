@@ -438,12 +438,13 @@ class MetricsQuery:
 
         return results
 
-    # 定义 ratio_type 到导出字段名的映射
+    # 定义 ratio_type 到导出字段名的映射（使用缩写）
+    # 完整名 -> 缩写: toptrader_account -> lsr_ta, toptrader_position -> lsr_tp, etc.
     RATIO_TYPE_TO_EXPORT_NAME = {
-        "toptrader_account": "count_toptrader_long_short_ratio",
-        "toptrader_position": "sum_toptrader_long_short_ratio",
-        "global_account": "count_long_short_ratio",
-        "taker_vol": "sum_taker_long_short_vol_ratio",
+        "toptrader_account": "lsr_ta",  # Top 20% 账户数比例
+        "toptrader_position": "lsr_tp",  # Top 20% 持仓比例
+        "global_account": "lsr_ga",  # 全体账户数比例
+        "taker_vol": "lsr_tv",  # Taker 买/卖成交量比
     }
 
     async def select_long_short_ratio_by_type(
