@@ -438,6 +438,73 @@ class MetricsQuery:
 
         return results
 
+    # 定义 ratio_type 到导出字段名的映射
+    RATIO_TYPE_TO_EXPORT_NAME = {
+        "toptrader_account": "count_toptrader_long_short_ratio",
+        "toptrader_position": "sum_toptrader_long_short_ratio",
+        "global_account": "count_long_short_ratio",
+        "taker_vol": "sum_taker_long_short_vol_ratio",
+    }
+
+    async def select_long_short_ratio_by_type(
+        self,
+        symbols: list[str],
+        start_time: str,
+        end_time: str,
+        ratio_type: str,
+        rename_to_export_name: bool = True,
+    ) -> pd.DataFrame:
+        """按类型查询多空比例数据，用于导出.
+
+        这是一个专门为导出设计的便捷方法，返回单一类型的多空比例数据，
+        可选择将列名重命名为原始CSV字段名。
+
+        Args:
+            symbols: 交易对列表
+            start_time: 开始时间 (YYYY-MM-DD)
+            end_time: 结束时间 (YYYY-MM-DD)
+            ratio_type: 比例类型，支持以下值:
+                - toptrader_account: Top 20% 账户数比例
+                - toptrader_position: Top 20% 持仓比例
+                - global_account: 全体交易者账户数比例
+                - taker_vol: Taker 买/卖成交量比
+            rename_to_export_name: 是否将 long_short_ratio 列重命名为导出字段名
+
+        Returns:
+            包含多空比例数据的 DataFrame，索引为 (symbol, timestamp)
+        """
+        if not symbols:
+            logger.warning("没有指定交易对")
+            return pd.DataFrame()
+
+        valid_types = list(self.RATIO_TYPE_TO_EXPORT_NAME.keys())
+        if ratio_type not in valid_types:
+            raise ValueError(f"不支持的 ratio_type: {ratio_type}，支持的类型: {valid_types}")
+
+        # 只查询 long_short_ratio 列
+        df = await self.select_long_short_ratios(
+            symbols=symbols,
+            start_time=start_time,
+            end_time=end_time,
+            ratio_type=ratio_type,
+            columns=["long_short_ratio"],
+        )
+
+        if df.empty:
+            return df
+
+        # 可选：重命名列为导出字段名
+        if rename_to_export_name:
+            export_name = self.RATIO_TYPE_TO_EXPORT_NAME[ratio_type]
+            df = df.rename(columns={"long_short_ratio": export_name})
+
+        logger.debug(
+            "select_long_short_ratio_by_type_complete",
+            ratio_type=ratio_type,
+            records=len(df),
+        )
+        return df
+
     async def get_metrics_summary(self, data_type: str, symbol: str | None = None) -> dict:
         """获取指标数据概要统计.
 

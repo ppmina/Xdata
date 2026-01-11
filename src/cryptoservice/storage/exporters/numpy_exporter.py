@@ -44,11 +44,27 @@ class NumpyExporter:
         "taker_buy_quote_volume": "tbamt",
         "taker_sell_volume": "tsvol",
         "taker_sell_quote_volume": "tsamt",
-        # Metrics 数据字段（保持缩写）
+        # Metrics 数据字段
         "funding_rate": "fr",
         "open_interest": "oi",
-        "long_short_ratio": "lsr",
+        # 多空比例字段 - 使用原始 CSV 字段名（不缩写）
+        # 这些字段由 select_long_short_ratio_by_type 方法自动命名
+        # toptrader_account -> count_toptrader_long_short_ratio
+        # toptrader_position -> sum_toptrader_long_short_ratio
+        # global_account -> count_long_short_ratio
+        # taker_vol -> sum_taker_long_short_vol_ratio
     }
+
+    # ratio_type 到导出字段名的映射（与 MetricsQuery.RATIO_TYPE_TO_EXPORT_NAME 保持一致）
+    RATIO_TYPE_TO_EXPORT_NAME = {
+        "toptrader_account": "count_toptrader_long_short_ratio",
+        "toptrader_position": "sum_toptrader_long_short_ratio",
+        "global_account": "count_long_short_ratio",
+        "taker_vol": "sum_taker_long_short_vol_ratio",
+    }
+
+    # 所有支持的 LSR 类型
+    ALL_LSR_TYPES = ["toptrader_account", "toptrader_position", "global_account", "taker_vol"]
 
     def __init__(
         self,
@@ -500,7 +516,14 @@ class NumpyExporter:
                 {
                     "funding_rate": True,  # 启用资金费率
                     "open_interest": True,  # 启用持仓量
-                    "long_short_ratio": {"ratio_type": "taker"},  # 启用多空比例，指定类型
+                    "long_short_ratio": True,  # 启用所有4种多空比例类型
+                    # 或指定特定类型:
+                    "long_short_ratio": {
+                        "toptrader_account": True,   # count_toptrader_long_short_ratio
+                        "toptrader_position": True,  # sum_toptrader_long_short_ratio
+                        "global_account": True,      # count_long_short_ratio
+                        "taker_vol": True,           # sum_taker_long_short_vol_ratio
+                    },
                 }
             field_mapping: 自定义字段映射（默认使用 DEFAULT_FIELD_MAPPING）
 
@@ -636,17 +659,29 @@ class NumpyExporter:
             start_time: 开始时间
             end_time: 结束时间
             target_freq: 目标频率
-            metrics_config: Metrics 配置
+            metrics_config: Metrics 配置，支持以下格式:
+                {
+                    "funding_rate": True,
+                    "open_interest": True,
+                    "long_short_ratio": True,  # 导出所有4种类型
+                    # 或指定特定类型:
+                    "long_short_ratio": {
+                        "toptrader_account": True,
+                        "toptrader_position": True,
+                        "global_account": True,
+                        "taker_vol": True,
+                    },
+                }
 
         Returns:
             (合并后的 Metrics DataFrame, 原始 timestamp 字典)
-            timestamp 字典格式: {"fr": DataFrame, "oi": DataFrame, "lsr": DataFrame}
+            timestamp 字典格式: {"fr_timestamp": DataFrame, "oi_timestamp": DataFrame, ...}
         """
         if metrics_config is None:
             metrics_config = {
                 "funding_rate": True,
                 "open_interest": True,
-                "long_short_ratio": {"ratio_type": "taker"},
+                "long_short_ratio": True,  # 默认导出所有 LSR 类型
             }
 
         if not self.metrics_query or not self.resampler:
@@ -717,40 +752,49 @@ class NumpyExporter:
             except Exception as e:
                 logger.warning("fetch_open_interest_data_failed", error=str(e))
 
-        # 多空比例
+        # 多空比例 - 支持多种类型
         lsr_config = metrics_config.get("long_short_ratio")
         if lsr_config:
-            try:
-                ratio_type = lsr_config.get("ratio_type", "taker") if isinstance(lsr_config, dict) else "taker"
-                logger.info("fetch_long_short_ratio_data_start", ratio_type=ratio_type)
+            # 确定要导出哪些 LSR 类型
+            lsr_types_to_export = self._get_lsr_types_to_export(lsr_config)
 
-                lsr_df_raw = await self.metrics_query.select_long_short_ratios(
-                    symbols, start_time, end_time, ratio_type=ratio_type, columns=["long_short_ratio"]
-                )
-                if not lsr_df_raw.empty:
-                    # 重采样并对齐，同时获取原始 timestamp
-                    result = await self.resampler.resample_and_align(
-                        lsr_df_raw,
-                        kline_df,
-                        target_freq,
-                        agg_strategy={"long_short_ratio": "last"},
-                        align_method="asof",
-                        return_original_timestamps=True,
+            for ratio_type in lsr_types_to_export:
+                try:
+                    export_name = self.RATIO_TYPE_TO_EXPORT_NAME[ratio_type]
+                    logger.info("fetch_long_short_ratio_data_start", ratio_type=ratio_type, export_name=export_name)
+
+                    # 使用 select_long_short_ratio_by_type 方法查询，自动重命名列
+                    lsr_df_raw = await self.metrics_query.select_long_short_ratio_by_type(
+                        symbols, start_time, end_time, ratio_type=ratio_type, rename_to_export_name=True
                     )
-                    assert isinstance(result, tuple), "Expected tuple"  # noqa: S101
-                    lsr_df, lsr_original_ts = result
-                    assert isinstance(lsr_df, pd.DataFrame), "Expected DataFrame"  # noqa: S101
-                    assert isinstance(lsr_original_ts, pd.DataFrame), "Expected DataFrame"  # noqa: S101
 
-                    # 保存原始 timestamp
-                    if not lsr_original_ts.empty:
-                        lsr_ts_df = pd.DataFrame({"timestamp": lsr_original_ts["original_timestamp"]}, index=lsr_original_ts.index)
-                        timestamp_dfs["lsr_timestamp"] = lsr_ts_df
+                    if not lsr_df_raw.empty:
+                        # 重采样并对齐，同时获取原始 timestamp
+                        result = await self.resampler.resample_and_align(
+                            lsr_df_raw,
+                            kline_df,
+                            target_freq,
+                            agg_strategy={export_name: "last"},
+                            align_method="asof",
+                            return_original_timestamps=True,
+                        )
+                        assert isinstance(result, tuple), "Expected tuple"  # noqa: S101
+                        lsr_df, lsr_original_ts = result
+                        assert isinstance(lsr_df, pd.DataFrame), "Expected DataFrame"  # noqa: S101
+                        assert isinstance(lsr_original_ts, pd.DataFrame), "Expected DataFrame"  # noqa: S101
 
-                    metrics_dfs.append(lsr_df)
-                    logger.info("fetch_and_merge_metrics_success", metrics_df=len(lsr_df))
-            except Exception as e:
-                logger.warning("fetch_and_merge_metrics_failed", error=str(e))
+                        # 保存原始 timestamp（使用 ratio_type 作为 key 的一部分）
+                        if not lsr_original_ts.empty:
+                            ts_key = f"lsr_{ratio_type}_timestamp"
+                            lsr_ts_df = pd.DataFrame({"timestamp": lsr_original_ts["original_timestamp"]}, index=lsr_original_ts.index)
+                            timestamp_dfs[ts_key] = lsr_ts_df
+
+                        metrics_dfs.append(lsr_df)
+                        logger.info("fetch_long_short_ratio_data_complete", ratio_type=ratio_type, records=len(lsr_df))
+
+                except Exception as e:
+                    logger.warning("fetch_long_short_ratio_data_failed", ratio_type=ratio_type, error=str(e))
+
         logger.info("fetch_and_merge_metrics_complete", metrics_dfs=len(metrics_dfs), timestamp_dfs=len(timestamp_dfs))
         if not metrics_dfs:
             logger.warning("没有 Metrics 数据可合并")
@@ -761,6 +805,41 @@ class NumpyExporter:
         logger.info("fetch_and_merge_metrics_complete", metrics_dfs=len(metrics_dfs))
 
         return merged_metrics, timestamp_dfs
+
+    def _get_lsr_types_to_export(self, lsr_config: bool | dict[str, Any]) -> list[str]:
+        """解析 LSR 配置，返回要导出的类型列表.
+
+        Args:
+            lsr_config: LSR 配置，可以是:
+                - True: 导出所有4种类型
+                - dict: 指定每种类型是否启用
+
+        Returns:
+            要导出的 ratio_type 列表
+        """
+        if lsr_config is True:
+            # 导出所有类型
+            return self.ALL_LSR_TYPES.copy()
+
+        if isinstance(lsr_config, dict):
+            # 兼容旧版配置格式 {"ratio_type": "taker"}
+            if "ratio_type" in lsr_config:
+                old_type = lsr_config["ratio_type"]
+                # 映射旧类型名到新类型名
+                type_mapping = {
+                    "taker": "taker_vol",
+                    "account": "toptrader_account",  # 旧版 account 实际对应 toptrader 数据
+                }
+                new_type = type_mapping.get(old_type, old_type)
+                if new_type in self.ALL_LSR_TYPES:
+                    return [new_type]
+                logger.warning(f"未知的 ratio_type: {old_type}")
+                return []
+
+            # 新版配置格式 {"toptrader_account": True, "taker_vol": True, ...}
+            return [t for t in self.ALL_LSR_TYPES if lsr_config.get(t, False)]
+
+        return []
 
     @staticmethod
     def _extract_timestamps(df: pd.DataFrame) -> pd.DataFrame:

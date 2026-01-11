@@ -145,7 +145,15 @@ class LongShortRatio:
         long_account: 多头账户比例
         short_account: 空头账户比例
         timestamp: 时间戳（毫秒）
-        ratio_type: 比例类型（account/position/global等）
+        ratio_type: 比例类型，支持以下值:
+            - toptrader_account: Top 20% 保证金账户的多空账户数比例
+              (来源: count_toptrader_long_short_ratio, API: topLongShortAccountRatio)
+            - toptrader_position: Top 20% 保证金账户的多空持仓比例
+              (来源: sum_toptrader_long_short_ratio, API: topLongShortPositionRatio)
+            - global_account: 全体交易者的多空账户数比例
+              (来源: count_long_short_ratio, API: globalLongShortAccountRatio)
+            - taker_vol: 主动买/卖成交量比
+              (来源: sum_taker_long_short_vol_ratio, API: takerlongshortRatio)
     """
 
     symbol: str
@@ -153,7 +161,7 @@ class LongShortRatio:
     long_account: Decimal
     short_account: Decimal
     timestamp: int
-    ratio_type: str = "account"  # account, position, global, taker
+    ratio_type: str = "toptrader_position"  # toptrader_account, toptrader_position, global_account, taker_vol
 
     @classmethod
     def from_binance_response(cls, data: dict[str, Any], ratio_type: str = "account") -> "LongShortRatio":

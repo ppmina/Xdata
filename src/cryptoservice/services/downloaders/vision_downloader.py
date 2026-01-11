@@ -276,9 +276,10 @@ class VisionDownloader(BaseDownloader):
                         if any(
                             field in first_row
                             for field in [
-                                "sum_toptrader_long_short_ratio",
-                                "count_long_short_ratio",
-                                "sum_taker_long_short_vol_ratio",
+                                "count_toptrader_long_short_ratio",  # toptrader_account
+                                "sum_toptrader_long_short_ratio",  # toptrader_position
+                                "count_long_short_ratio",  # global_account
+                                "sum_taker_long_short_vol_ratio",  # taker_vol
                             ]
                         ):
                             result["long_short_ratio"].extend(self._parse_lsr_data(rows, symbol, csv_file))
@@ -381,7 +382,14 @@ class VisionDownloader(BaseDownloader):
         return open_interests
 
     def _parse_lsr_data(self, raw_data: list[dict], symbol: str, file_name: str) -> list[LongShortRatio]:  # noqa: C901
-        """解析多空比例数据."""
+        """解析多空比例数据.
+
+        从Vision CSV解析4种不同类型的多空比例数据:
+        - count_toptrader_long_short_ratio -> toptrader_account (Top 20%账户数比例)
+        - sum_toptrader_long_short_ratio -> toptrader_position (Top 20%持仓比例)
+        - count_long_short_ratio -> global_account (全体交易者账户数比例)
+        - sum_taker_long_short_vol_ratio -> taker_vol (主动买/卖成交量比)
+        """
         long_short_ratios = []
 
         for row in raw_data:
@@ -392,29 +400,13 @@ class VisionDownloader(BaseDownloader):
 
                 timestamp = int(datetime.strptime(create_time, "%Y-%m-%d %H:%M:%S").replace(tzinfo=UTC).timestamp() * 1000)
 
-                # 处理顶级交易者数据 - 分别处理，确保无损
+                # 1. 解析 count_toptrader_long_short_ratio (Top 20% 账户数比例)
+                # 来源: topLongShortAccountRatio API
                 try:
-                    if "sum_toptrader_long_short_ratio" in row:
-                        ratio_sum_str = row["sum_toptrader_long_short_ratio"]
-                        count_str = row.get("count_toptrader_long_short_ratio", "")
-
-                        # 安全转换数值，处理空值
-                        ratio_sum = self._safe_decimal_convert(ratio_sum_str)
-                        count = self._safe_decimal_convert(count_str)
-
-                        if ratio_sum is not None:
-                            # 计算平均比例
-                            ratio_value = ratio_sum / count if count is not None and count > 0 else ratio_sum
-
-                            # 计算多空账户比例
-                            if ratio_value > 0:
-                                total = ratio_value + 1
-                                long_account = ratio_value / total
-                                short_account = Decimal("1") / total
-                            else:
-                                long_account = Decimal("0.5")
-                                short_account = Decimal("0.5")
-
+                    if "count_toptrader_long_short_ratio" in row:
+                        ratio_value = self._safe_decimal_convert(row["count_toptrader_long_short_ratio"])
+                        if ratio_value is not None:
+                            long_account, short_account = self._calculate_long_short_accounts(ratio_value)
                             long_short_ratios.append(
                                 LongShortRatio(
                                     symbol=symbol,
@@ -422,45 +414,95 @@ class VisionDownloader(BaseDownloader):
                                     long_account=long_account,
                                     short_account=short_account,
                                     timestamp=timestamp,
-                                    ratio_type="account",
+                                    ratio_type="toptrader_account",
                                 )
                             )
                 except Exception as e:
-                    logger.debug("skip_toptrader_data", symbol=symbol, time=create_time, error=str(e))
+                    logger.debug("skip_toptrader_account_data", symbol=symbol, time=create_time, error=str(e))
 
-                # 处理Taker数据 - 独立处理，确保无损
+                # 2. 解析 sum_toptrader_long_short_ratio (Top 20% 持仓比例)
+                # 来源: topLongShortPositionRatio API
                 try:
-                    if "sum_taker_long_short_vol_ratio" in row:
-                        taker_ratio_str = row["sum_taker_long_short_vol_ratio"]
-                        taker_ratio = self._safe_decimal_convert(taker_ratio_str)
-
-                        if taker_ratio is not None:
-                            if taker_ratio > 0:
-                                total = taker_ratio + 1
-                                long_vol = taker_ratio / total
-                                short_vol = Decimal("1") / total
-                            else:
-                                long_vol = Decimal("0.5")
-                                short_vol = Decimal("0.5")
-
+                    if "sum_toptrader_long_short_ratio" in row:
+                        ratio_value = self._safe_decimal_convert(row["sum_toptrader_long_short_ratio"])
+                        if ratio_value is not None:
+                            long_account, short_account = self._calculate_long_short_accounts(ratio_value)
                             long_short_ratios.append(
                                 LongShortRatio(
                                     symbol=symbol,
-                                    long_short_ratio=taker_ratio,
-                                    long_account=long_vol,
-                                    short_account=short_vol,
+                                    long_short_ratio=ratio_value,
+                                    long_account=long_account,
+                                    short_account=short_account,
                                     timestamp=timestamp,
-                                    ratio_type="taker",
+                                    ratio_type="toptrader_position",
                                 )
                             )
                 except Exception as e:
-                    logger.debug("skip_taker_data", symbol=symbol, time=create_time, error=str(e))
+                    logger.debug("skip_toptrader_position_data", symbol=symbol, time=create_time, error=str(e))
+
+                # 3. 解析 count_long_short_ratio (全体交易者账户数比例)
+                # 来源: globalLongShortAccountRatio API
+                try:
+                    if "count_long_short_ratio" in row:
+                        ratio_value = self._safe_decimal_convert(row["count_long_short_ratio"])
+                        if ratio_value is not None:
+                            long_account, short_account = self._calculate_long_short_accounts(ratio_value)
+                            long_short_ratios.append(
+                                LongShortRatio(
+                                    symbol=symbol,
+                                    long_short_ratio=ratio_value,
+                                    long_account=long_account,
+                                    short_account=short_account,
+                                    timestamp=timestamp,
+                                    ratio_type="global_account",
+                                )
+                            )
+                except Exception as e:
+                    logger.debug("skip_global_account_data", symbol=symbol, time=create_time, error=str(e))
+
+                # 4. 解析 sum_taker_long_short_vol_ratio (Taker 买/卖成交量比)
+                # 来源: takerlongshortRatio API
+                try:
+                    if "sum_taker_long_short_vol_ratio" in row:
+                        ratio_value = self._safe_decimal_convert(row["sum_taker_long_short_vol_ratio"])
+                        if ratio_value is not None:
+                            long_account, short_account = self._calculate_long_short_accounts(ratio_value)
+                            long_short_ratios.append(
+                                LongShortRatio(
+                                    symbol=symbol,
+                                    long_short_ratio=ratio_value,
+                                    long_account=long_account,
+                                    short_account=short_account,
+                                    timestamp=timestamp,
+                                    ratio_type="taker_vol",
+                                )
+                            )
+                except Exception as e:
+                    logger.debug("skip_taker_vol_data", symbol=symbol, time=create_time, error=str(e))
 
             except (ValueError, KeyError) as e:
                 logger.warning("parse_lsr_row_error", error=str(e), row=row)
                 continue
 
         return long_short_ratios
+
+    def _calculate_long_short_accounts(self, ratio_value: Decimal) -> tuple[Decimal, Decimal]:
+        """根据多空比例计算多头和空头账户比例.
+
+        Args:
+            ratio_value: 多空比例值
+
+        Returns:
+            (long_account, short_account) 元组
+        """
+        if ratio_value > 0:
+            total = ratio_value + 1
+            long_account = ratio_value / total
+            short_account = Decimal("1") / total
+        else:
+            long_account = Decimal("0.5")
+            short_account = Decimal("0.5")
+        return long_account, short_account
 
     def _safe_decimal_convert(self, value_str: str | None) -> Decimal | None:
         """安全转换字符串为Decimal，处理空值和无效值.
