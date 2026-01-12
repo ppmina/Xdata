@@ -69,6 +69,16 @@ from .test_storage import (
     test_schema_table_creation,
 )
 
+# 导出 Shape 测试
+from .test_export_shape import (
+    TestBasicExportShape,
+    TestDataIntegrity,
+    TestEdgeCases,
+    TestFrequencyBasedShape,
+    TestImportShape,
+    TestShapeInvariants,
+)
+
 # 工具类测试
 from .test_utils import (
     test_async_exponential_backoff,
@@ -140,6 +150,13 @@ __all__ = [
     "test_numpy_exporter",
     "test_database_full_workflow",
     "test_database_error_handling",
+    # 导出 Shape 测试
+    "TestBasicExportShape",
+    "TestFrequencyBasedShape",
+    "TestDataIntegrity",
+    "TestImportShape",
+    "TestEdgeCases",
+    "TestShapeInvariants",
     # 工具类测试
     "test_data_converter_creation",
     "test_data_converter_to_dataframe",

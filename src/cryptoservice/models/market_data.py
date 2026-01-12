@@ -139,29 +139,61 @@ class OpenInterest:
 class LongShortRatio:
     """多空比例数据模型.
 
+    CSV 列名与字段映射关系:
+    ┌─────────────────────────────────────┬─────────────────────┬────────┬────────────────────────────┐
+    │ CSV 列名                             │ ratio_type          │ 导出    │ 说明                        │
+    ├─────────────────────────────────────┼─────────────────────┼────────┼────────────────────────────┤
+    │ count_toptrader_long_short_ratio    │ toptrader_account   │ lsr_ta │ Top20% 账户的多空账户数比例   │
+    │ sum_toptrader_long_short_ratio      │ toptrader_position  │ lsr_tp │ Top20% 账户的多空持仓比例     │
+    │ count_long_short_ratio              │ global_account      │ lsr_ga │ 全体交易者的多空账户数比例    │
+    │ sum_taker_long_short_vol_ratio      │ taker_vol           │ lsr_tv │ Taker 买/卖成交量比          │
+    └─────────────────────────────────────┴─────────────────────┴────────┴────────────────────────────┘
+
     Attributes:
         symbol: 交易对符号
         long_short_ratio: 多空比例
         long_account: 多头账户比例
         short_account: 空头账户比例
         timestamp: 时间戳（毫秒）
-        ratio_type: 比例类型，支持以下值:
-            - toptrader_account: Top 20% 保证金账户的多空账户数比例
-              (来源: count_toptrader_long_short_ratio, API: topLongShortAccountRatio)
-            - toptrader_position: Top 20% 保证金账户的多空持仓比例
-              (来源: sum_toptrader_long_short_ratio, API: topLongShortPositionRatio)
-            - global_account: 全体交易者的多空账户数比例
-              (来源: count_long_short_ratio, API: globalLongShortAccountRatio)
-            - taker_vol: 主动买/卖成交量比
-              (来源: sum_taker_long_short_vol_ratio, API: takerlongshortRatio)
+        ratio_type: 比例类型 (见上表)
+
+    导出时的 timestamp 顺序: [open_ts, close_ts, oi_ts, lsr_ts, fr_ts]
+    其中 lsr_ts 使用第一个可用的 LSR 类型的时间戳。
     """
+
+    # 支持的 ratio_type 值
+    VALID_RATIO_TYPES = ("toptrader_account", "toptrader_position", "global_account", "taker_vol")
+
+    # CSV 列名 -> ratio_type 映射
+    CSV_COLUMN_TO_RATIO_TYPE = {
+        "count_toptrader_long_short_ratio": "toptrader_account",
+        "sum_toptrader_long_short_ratio": "toptrader_position",
+        "count_long_short_ratio": "global_account",
+        "sum_taker_long_short_vol_ratio": "taker_vol",
+    }
+
+    # ratio_type -> 导出字段名映射
+    RATIO_TYPE_TO_EXPORT_NAME = {
+        "toptrader_account": "lsr_ta",
+        "toptrader_position": "lsr_tp",
+        "global_account": "lsr_ga",
+        "taker_vol": "lsr_tv",
+    }
+
+    # CSV 列名 -> 导出字段名映射 (便捷方法)
+    CSV_COLUMN_TO_EXPORT_NAME = {
+        "count_toptrader_long_short_ratio": "lsr_ta",
+        "sum_toptrader_long_short_ratio": "lsr_tp",
+        "count_long_short_ratio": "lsr_ga",
+        "sum_taker_long_short_vol_ratio": "lsr_tv",
+    }
 
     symbol: str
     long_short_ratio: Decimal
     long_account: Decimal
     short_account: Decimal
     timestamp: int
-    ratio_type: str = "toptrader_position"  # toptrader_account, toptrader_position, global_account, taker_vol
+    ratio_type: str = "toptrader_position"
 
     @classmethod
     def from_binance_response(cls, data: dict[str, Any], ratio_type: str = "account") -> "LongShortRatio":

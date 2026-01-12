@@ -1,6 +1,26 @@
 """持仓量数据存储器.
 
 专门处理持仓量数据的存储操作。
+
+Table: open_interests
+=====================
+存储永续合约的持仓量(Open Interest)数据。持仓量反映市场中未平仓合约的总量。
+
+Columns:
+--------
+    symbol              TEXT        交易对符号 (如 BTCUSDT)
+    timestamp           INTEGER     记录时间戳 (毫秒)
+    interval            TEXT        数据时间间隔 (如 5m, 15m, 1h, 默认 5m)
+    open_interest       REAL        持仓量 (合约数量)
+    open_interest_value REAL        持仓价值 (可选, USDT计价的持仓总值)
+
+Primary Key: (symbol, timestamp, interval)
+
+Indexes:
+--------
+    idx_oi_symbol               symbol
+    idx_oi_timestamp            timestamp
+    idx_oi_symbol_timestamp     (symbol, timestamp)
 """
 
 from typing import TYPE_CHECKING, Any

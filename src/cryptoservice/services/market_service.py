@@ -294,19 +294,20 @@ class MarketDataService:
     async def get_open_interest(
         self,
         symbol: str,
-        period: str = "5m",
         start_time: str | datetime | None = None,
         end_time: str | datetime | None = None,
         limit: int = 500,
     ) -> list[OpenInterest]:
-        """获取永续合约持仓量数据."""
+        """获取永续合约持仓量数据.
+
+        数据频率固定为5m（Binance API支持的最高频率）。
+        """
         # 转换时间格式
         start_time_str = self._convert_time_to_string(start_time) if start_time else ""
         end_time_str = self._convert_time_to_string(end_time) if end_time else ""
 
         return await self.metrics_downloader.download_open_interest(
             symbol=symbol,
-            period=period,
             start_time=start_time_str,
             end_time=end_time_str,
             limit=limit,
@@ -315,20 +316,21 @@ class MarketDataService:
     async def get_long_short_ratio(
         self,
         symbol: str,
-        period: str = "5m",
         ratio_type: str = "account",
         start_time: str | datetime | None = None,
         end_time: str | datetime | None = None,
         limit: int = 500,
     ) -> list[LongShortRatio]:
-        """获取多空比例数据."""
+        """获取多空比例数据.
+
+        数据频率固定为5m（Binance API支持的最高频率）。
+        """
         # 转换时间格式
         start_time_str = self._convert_time_to_string(start_time) if start_time else ""
         end_time_str = self._convert_time_to_string(end_time) if end_time else ""
 
         return await self.metrics_downloader.download_long_short_ratio(
             symbol=symbol,
-            period=period,
             ratio_type=ratio_type,
             start_time=start_time_str,
             end_time=end_time_str,

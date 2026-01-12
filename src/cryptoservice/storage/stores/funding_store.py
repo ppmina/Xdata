@@ -1,6 +1,27 @@
 """资金费率数据存储器.
 
 专门处理资金费率数据的存储操作。
+
+Table: funding_rates
+====================
+存储永续合约的资金费率历史数据。资金费率用于使永续合约价格锚定现货价格。
+
+Columns:
+--------
+    symbol          TEXT        交易对符号 (如 BTCUSDT)
+    timestamp       INTEGER     记录时间戳 (毫秒)
+    funding_rate    REAL        资金费率 (正值: 多头付给空头; 负值: 空头付给多头)
+    funding_time    INTEGER     资金费率结算时间戳 (毫秒)
+    mark_price      REAL        标记价格 (可选, 用于计算资金费用)
+    index_price     REAL        指数价格 (可选, 现货参考价格)
+
+Primary Key: (symbol, timestamp)
+
+Indexes:
+--------
+    idx_funding_symbol              symbol
+    idx_funding_timestamp           timestamp
+    idx_funding_symbol_timestamp    (symbol, timestamp)
 """
 
 from typing import TYPE_CHECKING, Any

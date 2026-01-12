@@ -45,6 +45,7 @@ class DataResampler:
         "low_price": "min",
         "close_price": "last",
         "volume": "sum",
+        "close_time": "last",  # 收盘时间戳，用于 timestamp 导出
         "quote_volume": "sum",
         "trades_count": "sum",
         "taker_buy_volume": "sum",
@@ -381,6 +382,7 @@ class DataResampler:
         method: str = "asof",
         tolerance_ms: int = 24 * 60 * 60 * 1000,  # 默认容差 24 小时 (86400000 ms)
         return_original_timestamps: bool = False,
+        use_close_time: bool = True,
     ) -> pd.DataFrame | tuple[pd.DataFrame, pd.DataFrame]:
         """将 Metrics 数据对齐到 Kline 数据的时间点.
 
@@ -396,18 +398,22 @@ class DataResampler:
                 - "nearest": 最近值（可能使用未来数据，不推荐用于实时场景）
             tolerance_ms: 时间容差（毫秒），默认 24 小时，适配低频更新的 metrics（如资金费率每 8 小时）
             return_original_timestamps: 是否返回原始的 metrics timestamp
+            use_close_time: 是否使用 close_time 作为对齐基准（默认 True）
+                - True: 使用 kline 的 close_time 作为对齐基准，metrics_ts < close_time
+                - False: 使用 kline 的 open_time (timestamp索引) 作为对齐基准
 
         Returns:
             对齐后的 Metrics 数据，时间戳与 kline_df 完全一致
             如果 return_original_timestamps=True，返回 (对齐后的数据, 原始timestamp的DataFrame)
 
         Example:
-            >>> # 将持仓量数据对齐到日线 K线时间点
+            >>> # 将持仓量数据对齐到日线 K线时间点（使用 close_time）
             >>> aligned_oi = await DataResampler.align_to_kline_timestamps(
             ...     oi_df,
             ...     kline_df,
             ...     method="asof",
             ...     tolerance_ms=3600000,
+            ...     use_close_time=True,  # 默认使用 close_time
             ... )
 
             >>> # 同时获取原始 timestamp
@@ -428,11 +434,13 @@ class DataResampler:
             logger.warning("Kline 数据为空，无法对齐")
             return pd.DataFrame()
 
-        logger.info("align_to_kline_timestamps_start", method=method)
+        logger.info("align_to_kline_timestamps_start", method=method, use_close_time=use_close_time)
 
         loop = asyncio.get_event_loop()
         if return_original_timestamps:
-            result = await loop.run_in_executor(None, cls._align_timestamps_sync, metrics_df, kline_df, method, tolerance_ms, return_original_timestamps)
+            result = await loop.run_in_executor(
+                None, cls._align_timestamps_sync, metrics_df, kline_df, method, tolerance_ms, return_original_timestamps, use_close_time
+            )
             assert isinstance(result, tuple), "Expected tuple when return_original_timestamps=True"  # noqa: S101
             result_df, original_ts_df = result
             assert isinstance(result_df, pd.DataFrame), "Expected DataFrame"  # noqa: S101
@@ -444,7 +452,7 @@ class DataResampler:
             )
             return result_df, original_ts_df
         else:
-            result = await loop.run_in_executor(None, cls._align_timestamps_sync, metrics_df, kline_df, method, tolerance_ms, False)
+            result = await loop.run_in_executor(None, cls._align_timestamps_sync, metrics_df, kline_df, method, tolerance_ms, False, use_close_time)
             # 当 return_original_timestamps=False 时，返回值是 DataFrame
             assert isinstance(result, pd.DataFrame), "Expected DataFrame when return_original_timestamps=False"  # noqa: S101
             logger.info(f"时间点对齐完成: {len(result)} 条记录")
@@ -457,6 +465,7 @@ class DataResampler:
         method: str,
         tolerance_ms: int,
         return_original_timestamps: bool = False,
+        use_close_time: bool = True,
     ) -> pd.DataFrame | tuple[pd.DataFrame, pd.DataFrame]:
         """同步执行时间点对齐.
 
@@ -466,6 +475,7 @@ class DataResampler:
             method: 对齐方法
             tolerance_ms: 时间容差（毫秒）
             return_original_timestamps: 是否返回原始timestamp
+            use_close_time: 是否使用 close_time 作为对齐基准
 
         Returns:
             对齐后的 DataFrame，或 (对齐后的DataFrame, 原始timestamp的DataFrame)
@@ -482,6 +492,12 @@ class DataResampler:
         if not common_symbols:
             logger.warning("Kline 和 Metrics 没有共同的交易对")
             return pd.DataFrame()
+
+        # 检查是否可以使用 close_time
+        has_close_time = "close_time" in kline_df.columns
+        if use_close_time and not has_close_time:
+            logger.warning("kline_df 不包含 close_time 列，将使用 open_time (timestamp) 对齐")
+            use_close_time = False
 
         aligned_dfs = []
         original_ts_dfs: list[pd.DataFrame] = [] if return_original_timestamps else []
@@ -501,16 +517,35 @@ class DataResampler:
                     metrics_symbol["_original_timestamp"] = metrics_symbol["timestamp"]
 
                 if method == "asof":
-                    # 使用 merge_asof: 对于每个 kline timestamp，
-                    # 找到 <= 该时间的最近 metrics 值
-                    aligned = pd.merge_asof(
-                        kline_symbol[["timestamp"]],
-                        metrics_symbol,
-                        on="timestamp",
-                        direction="backward",  # 向前查找
-                        tolerance=tolerance_ms,  # 容差
-                        suffixes=("_kline", "_metrics"),
-                    )
+                    if use_close_time:
+                        # 使用 close_time 作为对齐基准
+                        # 对于每个 kline，找 metrics_ts < close_time 的最近值
+                        kline_for_merge = kline_symbol[["timestamp", "close_time"]].copy()
+
+                        # 对 metrics 进行重命名以避免与 kline timestamp 冲突
+                        metrics_for_merge = metrics_symbol.rename(columns={"timestamp": "metrics_ts"})
+
+                        aligned = pd.merge_asof(
+                            kline_for_merge.sort_values("close_time"),
+                            metrics_for_merge.sort_values("metrics_ts"),
+                            left_on="close_time",
+                            right_on="metrics_ts",
+                            direction="backward",  # metrics_ts <= close_time
+                            tolerance=tolerance_ms,
+                        )
+
+                        # 按原始 kline timestamp 排序并重建索引
+                        aligned = aligned.sort_values("timestamp")
+                    else:
+                        # 使用 open_time (timestamp) 作为对齐基准（原有逻辑）
+                        aligned = pd.merge_asof(
+                            kline_symbol[["timestamp"]],
+                            metrics_symbol,
+                            on="timestamp",
+                            direction="backward",  # 向前查找
+                            tolerance=tolerance_ms,  # 容差
+                            suffixes=("_kline", "_metrics"),
+                        )
 
                 elif method == "ffill":
                     # 先 reindex 到 kline 时间点，再前向填充
@@ -519,14 +554,20 @@ class DataResampler:
                         metrics_ts_map = metrics_symbol.set_index("timestamp")["_original_timestamp"]
 
                     metrics_symbol = metrics_symbol.set_index("timestamp")
-                    kline_timestamps = kline_symbol["timestamp"].values
 
-                    aligned = metrics_symbol.reindex(kline_timestamps, method="ffill")
+                    # 使用 close_time 或 open_time 作为对齐基准
+                    align_timestamps = kline_symbol["close_time"].values if use_close_time else kline_symbol["timestamp"].values
+
+                    aligned = metrics_symbol.reindex(align_timestamps, method="ffill")
                     aligned = aligned.reset_index()
+
+                    # 将结果的索引替换回 kline 的 open_time
+                    if use_close_time:
+                        aligned["timestamp"] = kline_symbol["timestamp"].values
 
                     if return_original_timestamps:
                         # ffill 原始 timestamp
-                        aligned["_original_timestamp"] = metrics_ts_map.reindex(kline_timestamps, method="ffill").values
+                        aligned["_original_timestamp"] = metrics_ts_map.reindex(align_timestamps, method="ffill").values
 
                 elif method == "nearest":
                     # reindex 到最近值（可能是未来数据）
@@ -534,13 +575,17 @@ class DataResampler:
                         metrics_ts_map = metrics_symbol.set_index("timestamp")["_original_timestamp"]
 
                     metrics_symbol = metrics_symbol.set_index("timestamp")
-                    kline_timestamps = kline_symbol["timestamp"].values
 
-                    aligned = metrics_symbol.reindex(kline_timestamps, method="nearest", tolerance=tolerance_ms)
+                    align_timestamps = kline_symbol["close_time"].values if use_close_time else kline_symbol["timestamp"].values
+
+                    aligned = metrics_symbol.reindex(align_timestamps, method="nearest", tolerance=tolerance_ms)
                     aligned = aligned.reset_index()
 
+                    if use_close_time:
+                        aligned["timestamp"] = kline_symbol["timestamp"].values
+
                     if return_original_timestamps:
-                        aligned["_original_timestamp"] = metrics_ts_map.reindex(kline_timestamps, method="nearest", tolerance=tolerance_ms).values
+                        aligned["_original_timestamp"] = metrics_ts_map.reindex(align_timestamps, method="nearest", tolerance=tolerance_ms).values
 
                 else:
                     raise ValueError(f"不支持的对齐方法: {method}")
@@ -559,6 +604,12 @@ class DataResampler:
 
                     # 从对齐后的数据中移除原始 timestamp 列
                     aligned = aligned.drop(columns=["_original_timestamp"], errors="ignore")
+
+                # 清理临时列
+                if "close_time" in aligned.columns:
+                    aligned = aligned.drop(columns=["close_time"], errors="ignore")
+                if "metrics_ts" in aligned.columns:
+                    aligned = aligned.drop(columns=["metrics_ts"], errors="ignore")
 
                 # 添加 symbol 列并设置多级索引
                 aligned["symbol"] = symbol
@@ -594,6 +645,7 @@ class DataResampler:
         align_method: str = "asof",
         tolerance_ms: int = 24 * 60 * 60 * 1000,  # 默认容差 24 小时 (86400000 ms)
         return_original_timestamps: bool = False,
+        use_close_time: bool = True,
     ) -> pd.DataFrame | tuple[pd.DataFrame, pd.DataFrame]:
         """一站式：重采样 Metrics 数据并对齐到 Kline 时间点.
 
@@ -612,13 +664,16 @@ class DataResampler:
             align_method: 时间对齐方法（推荐 "asof"）
             tolerance_ms: 时间容差（毫秒），默认 24 小时
             return_original_timestamps: 是否返回原始 timestamp（对齐前的实际时间）
+            use_close_time: 是否使用 close_time 作为对齐基准（默认 True）
+                - True: 使用 kline 的 close_time，metrics_ts < close_time（包含 bar 期间数据）
+                - False: 使用 kline 的 open_time，metrics_ts <= open_time（传统行为）
 
         Returns:
             重采样并对齐后的 Metrics 数据，如果 return_original_timestamps=True，
             则返回 (aligned_df, original_timestamp_df)
 
         Example:
-            >>> # 将 5分钟持仓量重采样为日线，并对齐到日线 K线时间点
+            >>> # 将 5分钟持仓量重采样为日线，并对齐到日线 K线时间点（使用 close_time）
             >>> aligned_oi = await DataResampler.resample_and_align(
             ...     oi_5m_df,
             ...     kline_1d_df,
@@ -627,9 +682,10 @@ class DataResampler:
             ...         "open_interest": "last"
             ...     },
             ...     align_method="asof",
+            ...     use_close_time=True,  # 默认
             ... )
         """
-        logger.info("resample_and_align_start")
+        logger.info("resample_and_align_start", use_close_time=use_close_time)
 
         # 步骤 1: 重采样到目标频率
         resampled = await cls.resample_metrics(metrics_df, target_freq, agg_strategy)
@@ -642,7 +698,9 @@ class DataResampler:
 
         # 步骤 2: 对齐到 kline 时间点
         if return_original_timestamps:
-            result = await cls.align_to_kline_timestamps(resampled, kline_df, align_method, tolerance_ms, return_original_timestamps=True)
+            result = await cls.align_to_kline_timestamps(
+                resampled, kline_df, align_method, tolerance_ms, return_original_timestamps=True, use_close_time=use_close_time
+            )
             assert isinstance(result, tuple), "Expected tuple when return_original_timestamps=True"  # noqa: S101
             aligned, original_ts = result
             assert isinstance(aligned, pd.DataFrame), "Expected DataFrame"  # noqa: S101
@@ -655,7 +713,7 @@ class DataResampler:
             )
             return aligned, original_ts
         else:
-            result = await cls.align_to_kline_timestamps(resampled, kline_df, align_method, tolerance_ms)
+            result = await cls.align_to_kline_timestamps(resampled, kline_df, align_method, tolerance_ms, use_close_time=use_close_time)
             # 当 return_original_timestamps=False 时（默认），返回值是 DataFrame
             assert isinstance(result, pd.DataFrame), "Expected DataFrame when return_original_timestamps=False"  # noqa: S101
             logger.info("重采样并对齐完成")

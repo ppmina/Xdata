@@ -11,7 +11,7 @@ from binance import AsyncClient
 
 from cryptoservice.config.logging import get_logger
 from cryptoservice.exceptions import MarketDataFetchError
-from cryptoservice.models import Freq, FundingRate, LongShortRatio, OpenInterest
+from cryptoservice.models import FundingRate, LongShortRatio, OpenInterest
 from cryptoservice.storage.database import Database as AsyncMarketDB
 from cryptoservice.utils.run_id import generate_run_id
 from cryptoservice.utils.time_utils import date_to_timestamp_end, date_to_timestamp_start, timestamp_to_datetime
@@ -19,6 +19,10 @@ from cryptoservice.utils.time_utils import date_to_timestamp_end, date_to_timest
 from .base_downloader import BaseDownloader
 
 logger = get_logger(__name__)
+
+# 非kline数据固定使用最高可用频率 (Binance API 支持的最高频率)
+METRICS_PERIOD = "5m"
+METRICS_INTERVAL_HOURS = 5 / 60  # 5分钟 = 5/60 小时
 
 
 class MetricsDownloader(BaseDownloader):
@@ -223,25 +227,25 @@ class MetricsDownloader(BaseDownloader):
         start_time: str,
         end_time: str,
         db_path: str,
-        interval: Freq = Freq.m5,
         request_delay: float = 0.5,
         max_workers: int = 5,
         incremental: bool = True,
     ) -> None:
         """批量异步下载持仓量数据.
 
+        数据频率固定为5m（Binance API支持的最高频率）。
+
         Args:
             symbols: 交易对列表
             start_time: 开始时间 (YYYY-MM-DD)
             end_time: 结束时间 (YYYY-MM-DD)
             db_path: 数据库路径
-            interval: 时间间隔
             request_delay: 请求延迟
             max_workers: 最大并发数
             incremental: 是否启用增量下载（默认True）
         """
         try:
-            logger.info(f"开始下载持仓量数据：{len(symbols)} 个交易对（频率 {interval.value}）。")
+            logger.info(f"开始下载持仓量数据：{len(symbols)} 个交易对（频率 {METRICS_PERIOD}）。")
 
             if self.db is None:
                 self.db = AsyncMarketDB(db_path)
@@ -252,27 +256,13 @@ class MetricsDownloader(BaseDownloader):
 
             if incremental:
                 logger.debug("incremental_mode_enabled", dataset="open_interest", action="analyzing_data")
-                # 根据interval计算时间间隔（小时）
-                interval_hours_map = {
-                    Freq.m5: 5 / 60,
-                    Freq.m15: 15 / 60,
-                    Freq.m30: 30 / 60,
-                    Freq.h1: 1,
-                    Freq.h2: 2,
-                    Freq.h4: 4,
-                    Freq.h6: 6,
-                    Freq.h8: 8,
-                    Freq.h12: 12,
-                    Freq.d1: 24,
-                }
-                interval_hours = interval_hours_map.get(interval, 1)
 
                 missing_plan = await self.db.plan_metrics_download(
                     symbols=symbols,
                     start_date=start_time,
                     end_date=end_time,
                     data_type="open_interest",
-                    interval_hours=interval_hours,
+                    interval_hours=METRICS_INTERVAL_HOURS,
                 )
 
                 # 过滤出需要下载的交易对
@@ -324,7 +314,6 @@ class MetricsDownloader(BaseDownloader):
                         for range_start, range_end in ranges:
                             open_interests = await self.download_open_interest(
                                 symbol=symbol,
-                                period=interval.value,
                                 start_ts=range_start,
                                 end_ts=range_end,
                                 limit=1000,
@@ -395,7 +384,6 @@ class MetricsDownloader(BaseDownloader):
         start_time: str,
         end_time: str,
         db_path: str,
-        period: str = "5m",
         ratio_type: str = "account",
         request_delay: float = 0.5,
         max_workers: int = 5,
@@ -403,19 +391,20 @@ class MetricsDownloader(BaseDownloader):
     ) -> None:
         """批量异步下载多空比例数据.
 
+        数据频率固定为5m（Binance API支持的最高频率）。
+
         Args:
             symbols: 交易对列表
             start_time: 开始时间 (YYYY-MM-DD)
             end_time: 结束时间 (YYYY-MM-DD)
             db_path: 数据库路径
-            period: 时间周期
             ratio_type: 比例类型
             request_delay: 请求延迟
             max_workers: 最大并发数
             incremental: 是否启用增量下载（默认True）
         """
         try:
-            logger.info(f"开始下载多空比例数据（{ratio_type} 类型）：{len(symbols)} 个交易对。")
+            logger.info(f"开始下载多空比例数据（{ratio_type} 类型）：{len(symbols)} 个交易对（频率 {METRICS_PERIOD}）。")
 
             if self.db is None:
                 self.db = AsyncMarketDB(db_path)
@@ -426,26 +415,13 @@ class MetricsDownloader(BaseDownloader):
 
             if incremental:
                 logger.debug("incremental_mode_enabled", dataset="long_short_ratio", action="analyzing_data")
-                # 解析period转换为小时数
-                period_hours_map = {
-                    "5m": 5 / 60,
-                    "15m": 15 / 60,
-                    "30m": 30 / 60,
-                    "1h": 1,
-                    "2h": 2,
-                    "4h": 4,
-                    "6h": 6,
-                    "12h": 12,
-                    "1d": 24,
-                }
-                interval_hours = period_hours_map.get(period, 1)
 
                 missing_plan = await self.db.plan_metrics_download(
                     symbols=symbols,
                     start_date=start_time,
                     end_date=end_time,
                     data_type="long_short_ratio",
-                    interval_hours=interval_hours,
+                    interval_hours=METRICS_INTERVAL_HOURS,
                 )
 
                 # 过滤出需要下载的交易对
@@ -498,7 +474,6 @@ class MetricsDownloader(BaseDownloader):
                         for range_start, range_end in ranges:
                             long_short_ratios = await self.download_long_short_ratio(
                                 symbol=symbol,
-                                period=period,
                                 ratio_type=ratio_type,
                                 start_ts=range_start,
                                 end_ts=range_end,
@@ -607,7 +582,6 @@ class MetricsDownloader(BaseDownloader):
     async def download_open_interest(
         self,
         symbol: str,
-        period: str = "5m",
         start_time: str | None = None,
         end_time: str | None = None,
         limit: int = 1000,
@@ -615,12 +589,15 @@ class MetricsDownloader(BaseDownloader):
         start_ts: int | None = None,
         end_ts: int | None = None,
     ) -> list[OpenInterest]:
-        """异步下载单个交易对的持仓量数据."""
+        """异步下载单个交易对的持仓量数据.
+
+        数据频率固定为5m（Binance API支持的最高频率）。
+        """
         try:
             logger.debug("download_start", dataset="open_interest", symbol=symbol)
 
             async def request_func():
-                params = {"symbol": symbol, "period": period, "limit": min(limit, 500)}
+                params = {"symbol": symbol, "period": METRICS_PERIOD, "limit": min(limit, 500)}
                 if start_ts is not None:
                     params["startTime"] = int(start_ts)
                 elif start_time:
@@ -648,7 +625,6 @@ class MetricsDownloader(BaseDownloader):
     async def download_long_short_ratio(  # noqa: C901
         self,
         symbol: str,
-        period: str = "5m",
         ratio_type: str = "account",
         start_time: str | None = None,
         end_time: str | None = None,
@@ -657,12 +633,15 @@ class MetricsDownloader(BaseDownloader):
         start_ts: int | None = None,
         end_ts: int | None = None,
     ) -> list[LongShortRatio]:
-        """异步下载单个交易对的多空比例数据."""
+        """异步下载单个交易对的多空比例数据.
+
+        数据频率固定为5m（Binance API支持的最高频率）。
+        """
         try:
             logger.debug("download_start", dataset="long_short_ratio", symbol=symbol, ratio_type=ratio_type)
 
             async def request_func():
-                params = {"symbol": symbol, "period": period, "limit": min(limit, 500)}
+                params = {"symbol": symbol, "period": METRICS_PERIOD, "limit": min(limit, 500)}
                 if start_ts is not None:
                     params["startTime"] = int(start_ts)
                 elif start_time:

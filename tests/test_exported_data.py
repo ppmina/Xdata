@@ -168,7 +168,11 @@ class ExportedDataChecker:
         return is_consistent, shapes
 
     def check_timestamp_no_future_data(self, date_str: str) -> tuple[bool, list[dict]]:
-        """检查时间戳是否存在未来数据泄露."""
+        """检查时间戳是否存在未来数据泄露.
+
+        注意：close_time 可以是当天最后一毫秒 (23:59:59.999)，这是正常的。
+        因此使用次日 00:00:00 作为边界进行比较。
+        """
         timestamp_path = self.base_path / "timestamp" / f"{date_str}.npy"
         if not timestamp_path.exists():
             return True, []
@@ -177,10 +181,12 @@ class ExportedDataChecker:
         if timestamps.size == 0:
             return True, []
 
-        # 当天结束时间 (UTC)
+        # 使用次日 00:00:00 作为边界
+        # 这样可以正确处理 close_time 为 23:59:59.999 的情况
         current_date = datetime.strptime(date_str, "%Y%m%d").replace(tzinfo=UTC)
-        date_end = current_date.replace(hour=23, minute=59, second=59)
-        date_end_ts = datetime_to_timestamp(date_end, float(timestamps.flat[0]))
+        next_day = current_date + timedelta(days=1)
+        date_end = current_date.replace(hour=23, minute=59, second=59)  # 用于报告
+        date_end_ts = datetime_to_timestamp(next_day, float(timestamps.flat[0]))  # 用于比较
 
         leak_details = self._collect_future_leaks(timestamps, date_end_ts, date_end)
         return len(leak_details) == 0, leak_details

@@ -1,6 +1,38 @@
 """K线数据存储器.
 
 专门处理K线数据的存储操作。
+
+Table: klines
+=============
+存储永续合约的K线(蜡烛图)数据。
+
+Columns:
+--------
+    symbol              TEXT        交易对符号 (如 BTCUSDT)
+    timestamp           INTEGER     K线开盘时间戳 (毫秒)
+    freq                TEXT        数据频率 (如 1m, 5m, 1h, 1d)
+    open_price          REAL        开盘价
+    high_price          REAL        最高价
+    low_price           REAL        最低价
+    close_price         REAL        收盘价
+    volume              REAL        成交量 (基础货币)
+    close_time          INTEGER     K线收盘时间戳 (毫秒)
+    quote_volume        REAL        成交额 (计价货币)
+    trades_count        INTEGER     成交笔数
+    taker_buy_volume    REAL        主动买入成交量
+    taker_buy_quote_volume  REAL    主动买入成交额
+    taker_sell_volume   REAL        主动卖出成交量 (计算字段: volume - taker_buy_volume)
+    taker_sell_quote_volume REAL    主动卖出成交额 (计算字段: quote_volume - taker_buy_quote_volume)
+
+Primary Key: (symbol, timestamp, freq)
+
+Indexes:
+--------
+    idx_klines_symbol                   symbol
+    idx_klines_timestamp                timestamp
+    idx_klines_freq                     freq
+    idx_klines_symbol_freq              (symbol, freq)
+    idx_klines_symbol_freq_timestamp    (symbol, freq, timestamp)
 """
 
 from typing import TYPE_CHECKING

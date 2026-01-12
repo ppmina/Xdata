@@ -284,7 +284,7 @@ class MetricsQuery:
             "latest_date": result[4],
         }
 
-    async def get_missing_timestamps(self, data_type: str, symbol: str, start_ts: int, end_ts: int, interval_hours: int = 8) -> list[int]:
+    async def get_missing_timestamps(self, data_type: str, symbol: str, start_ts: int, end_ts: int, interval_hours: float = 8) -> list[int]:
         """获取指标数据缺失的时间戳.
 
         Args:
@@ -292,7 +292,7 @@ class MetricsQuery:
             symbol: 交易对
             start_ts: 开始时间戳
             end_ts: 结束时间戳
-            interval_hours: 数据间隔小时数，默认8小时（资金费率）
+            interval_hours: 数据间隔小时数，默认8小时（资金费率），支持分数表示分钟（如 5/60 表示 5 分钟）
 
         Returns:
             缺失的时间戳列表
@@ -410,31 +410,57 @@ class MetricsQuery:
 
         return [segment_start, segment_end]
 
+    # 定义 Vision 下载中需要的所有 ratio_type
+    # 这些类型与 VisionDownloader._parse_lsr_data 中解析的类型一致
+    REQUIRED_RATIO_TYPES = [
+        "toptrader_account",  # Top 20% 账户数比例
+        "toptrader_position",  # Top 20% 持仓比例
+        "global_account",  # 全体交易者账户数比例
+        "taker_vol",  # Taker 买/卖成交量比
+    ]
+
     async def get_daily_metrics_status(self, symbol: str, date_str: str) -> dict[str, int]:
         """获取指定日期指标数据的覆盖情况.
+
+        检查 open_interest 和所有 ratio_type 的 long_short_ratio 数据是否存在。
+        只有当所有必需的 ratio_type 都有数据时，才认为 long_short_ratio 数据完整。
 
         Args:
             symbol: 交易对
             date_str: 日期字符串 (YYYY-MM-DD)
 
         Returns:
-            包含 open_interest 和 long_short_ratio 计数的字典
+            包含 open_interest 和 long_short_ratio 计数的字典。
+            long_short_ratio 返回所有必需类型中数据量最少的值（短板效应）。
         """
         start_ts = date_to_timestamp_start(date_str)
         end_ts = date_to_timestamp_end(date_str)
 
-        queries = {
-            "open_interest": ("SELECT COUNT(*) FROM open_interests WHERE symbol = ? AND timestamp >= ? AND timestamp < ?"),
-            "long_short_ratio": ("SELECT COUNT(*) FROM long_short_ratios WHERE symbol = ? AND timestamp >= ? AND timestamp < ?"),
-        }
-
         results: dict[str, int] = {"open_interest": 0, "long_short_ratio": 0}
 
         async with self.pool.get_connection() as conn:
-            for key, sql in queries.items():
-                cursor = await conn.execute(sql, (symbol, start_ts, end_ts))
+            # 检查 open_interest
+            cursor = await conn.execute(
+                "SELECT COUNT(*) FROM open_interests WHERE symbol = ? AND timestamp >= ? AND timestamp < ?",
+                (symbol, start_ts, end_ts),
+            )
+            row = await cursor.fetchone()
+            results["open_interest"] = row[0] if row else 0
+
+            # 检查每种 ratio_type 的 long_short_ratio 数据
+            # 使用短板效应：返回最少的数量，确保所有类型都有数据
+            lsr_counts = []
+            for ratio_type in self.REQUIRED_RATIO_TYPES:
+                cursor = await conn.execute(
+                    "SELECT COUNT(*) FROM long_short_ratios WHERE symbol = ? AND timestamp >= ? AND timestamp < ? AND ratio_type = ?",
+                    (symbol, start_ts, end_ts, ratio_type),
+                )
                 row = await cursor.fetchone()
-                results[key] = row[0] if row else 0
+                count = row[0] if row else 0
+                lsr_counts.append(count)
+
+            # 返回最小值（短板效应）：只有所有类型都有数据才认为完整
+            results["long_short_ratio"] = min(lsr_counts) if lsr_counts else 0
 
         return results
 

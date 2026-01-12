@@ -279,7 +279,9 @@ class IncrementalManager:
             return {}
 
         display_name = self._METRICS_LABELS.get(data_type, data_type)
-        logger.debug(f"开始生成 {display_name} 增量计划（范围 {start_date} ~ {end_date}，间隔 {interval_hours:.1f} 小时，{len(symbols)} 个交易对）")
+        # 显示间隔（分钟或小时）
+        interval_display = f"{int(interval_hours * 60)} 分钟" if interval_hours < 1 else f"{interval_hours:.1f} 小时"
+        logger.debug(f"开始生成 {display_name} 增量计划（范围 {start_date} ~ {end_date}，间隔 {interval_display}，{len(symbols)} 个交易对）")
 
         plan: dict[str, dict[str, Any]] = {}
 
@@ -287,12 +289,12 @@ class IncrementalManager:
         start_ts = date_to_timestamp_start(start_date)
         end_ts = date_to_timestamp_end(end_date)
         interval_ms = self._hours_to_milliseconds(interval_hours)
-        interval_hours_value = int(interval_hours) if interval_hours > 0 else 1
 
         # 为每个交易对检查缺失数据
         for symbol in symbols:
             try:
-                missing_timestamps = await self.metrics_query.get_missing_timestamps(data_type, symbol, start_ts, end_ts, interval_hours_value)
+                # 传递 float 值以支持分钟级间隔（如 5/60 = 5分钟）
+                missing_timestamps = await self.metrics_query.get_missing_timestamps(data_type, symbol, start_ts, end_ts, interval_hours)
                 if missing_timestamps:
                     segment = self._build_single_segment(
                         missing_timestamps,

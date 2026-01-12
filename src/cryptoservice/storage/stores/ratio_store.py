@@ -1,6 +1,28 @@
 """多空比例数据存储器.
 
 专门处理多空比例数据的存储操作。
+
+Table: long_short_ratios
+========================
+存储永续合约的多空比例数据。反映市场多空双方的力量对比。
+
+Columns:
+--------
+    symbol              TEXT        交易对符号 (如 BTCUSDT)
+    timestamp           INTEGER     记录时间戳 (毫秒)
+    period              TEXT        统计周期 (如 5m, 15m, 1h, 默认 5m)
+    ratio_type          TEXT        比例类型 (account: 账户数比, position: 持仓量比, 默认 account)
+    long_short_ratio    REAL        多空比例 (>1 多头占优, <1 空头占优)
+    long_account        REAL        多头账户/持仓占比 (可选)
+    short_account       REAL        空头账户/持仓占比 (可选)
+
+Primary Key: (symbol, timestamp, period, ratio_type)
+
+Indexes:
+--------
+    idx_lsr_symbol              symbol
+    idx_lsr_timestamp           timestamp
+    idx_lsr_symbol_timestamp    (symbol, timestamp)
 """
 
 from typing import TYPE_CHECKING, Any
