@@ -20,6 +20,7 @@ from cryptoservice.config.logging import get_logger
 from cryptoservice.exceptions import MarketDataFetchError
 from cryptoservice.models import LongShortRatio, OpenInterest
 from cryptoservice.storage.database import Database as AsyncMarketDB
+from cryptoservice.utils.time_utils import shift_date
 
 from .base_downloader import BaseDownloader
 
@@ -76,6 +77,7 @@ class VisionDownloader(BaseDownloader):
         """
         try:
             data_types = ["openInterest", "longShortRatio"]
+            expanded_start_date = shift_date(start_date, -1)
             # 重置统计
             self._perf_stats = {
                 "download_time": 0.0,
@@ -86,7 +88,11 @@ class VisionDownloader(BaseDownloader):
                 "max_concurrent": 0,
             }
 
-            logger.info(f"准备下载 Binance Vision 指标数据：{', '.join(data_types)}。")
+            logger.info(
+                "准备下载 Binance Vision 指标数据：%s（扩展起点 %s）。",
+                ", ".join(data_types),
+                expanded_start_date,
+            )
 
             if self.db is None:
                 self.db = AsyncMarketDB(db_path)
@@ -94,12 +100,12 @@ class VisionDownloader(BaseDownloader):
 
             import pandas as pd
 
-            date_range = pd.date_range(start=start_date, end=end_date, freq="D")
+            date_range = pd.date_range(start=expanded_start_date, end=end_date, freq="D")
             total_candidates = len(symbols) * len(date_range)
 
             if incremental:
                 logger.debug("Vision 下载启用增量模式，开始分析缺失数据。")
-                plan = await self.db.incremental.plan_vision_metrics_download(symbols, start_date, end_date)
+                plan = await self.db.incremental.plan_vision_metrics_download(symbols, expanded_start_date, end_date)
 
                 symbol_date_pairs = [(symbol, date_str) for symbol, details in plan.items() for date_str in details.get("missing_dates", [])]
                 skipped_count = total_candidates - len(symbol_date_pairs)
@@ -113,7 +119,7 @@ class VisionDownloader(BaseDownloader):
             else:
                 # 不启用增量下载，下载所有数据
                 symbol_date_pairs = [(symbol, date.strftime("%Y-%m-%d")) for date in date_range for symbol in symbols]
-                logger.info(f"Vision 下载计划：将处理 {len(symbol_date_pairs)} 个任务（范围 {start_date} ~ {end_date}）。")
+                logger.info(f"Vision 下载计划：将处理 {len(symbol_date_pairs)} 个任务（范围 {start_date} ~ {end_date}，扩展起点 {expanded_start_date}）。")
 
             semaphore = asyncio.Semaphore(max_workers)
             tasks = []

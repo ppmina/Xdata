@@ -9,7 +9,7 @@ import pandas as pd
 
 from cryptoservice.config.logging import get_logger
 from cryptoservice.models import Freq
-from cryptoservice.utils import date_to_timestamp_end, date_to_timestamp_start, timestamp_to_date_str
+from cryptoservice.utils import date_to_timestamp_end, date_to_timestamp_start, shift_date, timestamp_to_date_str
 
 if TYPE_CHECKING:
     from .queries import KlineQuery, MetricsQuery
@@ -279,14 +279,17 @@ class IncrementalManager:
             return {}
 
         display_name = self._METRICS_LABELS.get(data_type, data_type)
+        expanded_start_date = shift_date(start_date, -1)
         # 显示间隔（分钟或小时）
         interval_display = f"{int(interval_hours * 60)} 分钟" if interval_hours < 1 else f"{interval_hours:.1f} 小时"
-        logger.debug(f"开始生成 {display_name} 增量计划（范围 {start_date} ~ {end_date}，间隔 {interval_display}，{len(symbols)} 个交易对）")
+        logger.debug(
+            f"{display_name} incremental plan（{start_date} ~ {end_date}，start: {expanded_start_date}，interval: {interval_display}，len: {len(symbols)} ）"
+        )
 
         plan: dict[str, dict[str, Any]] = {}
 
         # 转换日期为时间戳（使用 UTC 时区）
-        start_ts = date_to_timestamp_start(start_date)
+        start_ts = date_to_timestamp_start(expanded_start_date)
         end_ts = date_to_timestamp_end(end_date)
         interval_ms = self._hours_to_milliseconds(interval_hours)
 

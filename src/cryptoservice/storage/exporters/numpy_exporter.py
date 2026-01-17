@@ -13,6 +13,7 @@ import pandas as pd
 
 from cryptoservice.config.logging import get_logger
 from cryptoservice.models import Freq
+from cryptoservice.utils.time_utils import shift_date
 
 from ..queries import KlineQuery
 from ..resampler import DataResampler
@@ -980,7 +981,8 @@ class NumpyExporter:
         try:
             assert self.metrics_query is not None and self.resampler is not None  # noqa: S101
             logger.info("fetch_funding_rate_data_start")
-            fr_df_raw = await self.metrics_query.select_funding_rates(symbols, start_time, end_time, columns=["funding_rate"])
+            expanded_start_time = shift_date(start_time, -1)
+            fr_df_raw = await self.metrics_query.select_funding_rates(symbols, expanded_start_time, end_time, columns=["funding_rate"])
             if fr_df_raw.empty:
                 return None, None, "fr_timestamp"
 
@@ -1020,7 +1022,8 @@ class NumpyExporter:
                 agg_strategy["open_interest_value"] = "last"
 
             logger.info("fetch_open_interest_data_start", columns=oi_columns)
-            oi_df_raw = await self.metrics_query.select_open_interests(symbols, start_time, end_time, columns=oi_columns)
+            expanded_start_time = shift_date(start_time, -1)
+            oi_df_raw = await self.metrics_query.select_open_interests(symbols, expanded_start_time, end_time, columns=oi_columns)
             if oi_df_raw.empty:
                 return None, None, "oi_timestamp"
 
@@ -1056,8 +1059,9 @@ class NumpyExporter:
             export_name = self.RATIO_TYPE_TO_EXPORT_NAME[ratio_type]
             logger.info("fetch_long_short_ratio_data_start", ratio_type=ratio_type, export_name=export_name)
 
+            expanded_start_time = shift_date(start_time, -1)
             lsr_df_raw = await self.metrics_query.select_long_short_ratio_by_type(
-                symbols, start_time, end_time, ratio_type=ratio_type, rename_to_export_name=True
+                symbols, expanded_start_time, end_time, ratio_type=ratio_type, rename_to_export_name=True
             )
             if lsr_df_raw.empty:
                 return None, None, "lsr_timestamp"

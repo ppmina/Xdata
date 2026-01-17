@@ -136,6 +136,22 @@ def parse_date_safe(date_str: str) -> pd.Timestamp:
     return pd.to_datetime(date_str, utc=True)
 
 
+def shift_date(date_str: str, days: int) -> str:
+    """按天数偏移日期字符串，返回 YYYY-MM-DD.
+
+    Args:
+        date_str: 日期字符串，格式为 YYYY-MM-DD 或可被 pandas 解析
+        days: 偏移天数（可为负数）
+
+    Returns:
+        str: 偏移后的日期字符串，格式为 YYYY-MM-DD
+    """
+    if not date_str or date_str.isdigit():
+        return date_str
+    shifted = pd.to_datetime(date_str, utc=True) + pd.Timedelta(days=days)
+    return shifted.strftime("%Y-%m-%d")
+
+
 def now_utc() -> datetime:
     """获取当前UTC时间.
 
@@ -221,6 +237,7 @@ __all__ = [
     "timestamp_to_datetime",
     "timestamp_to_date_str",
     "parse_date_safe",
+    "shift_date",
     "now_utc",
     "now_utc_timestamp",
     "generate_date_range",

@@ -15,6 +15,7 @@ from .time_utils import (
     now_utc,
     now_utc_timestamp,
     parse_date_safe,
+    shift_date,
     timestamp_to_date_str,
     timestamp_to_datetime,
 )
@@ -36,6 +37,7 @@ __all__ = [
     "timestamp_to_datetime",
     "timestamp_to_date_str",
     "parse_date_safe",
+    "shift_date",
     "now_utc",
     "now_utc_timestamp",
     "generate_date_range",

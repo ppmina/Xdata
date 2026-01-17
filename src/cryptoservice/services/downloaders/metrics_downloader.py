@@ -14,7 +14,7 @@ from cryptoservice.exceptions import MarketDataFetchError
 from cryptoservice.models import FundingRate, LongShortRatio, OpenInterest
 from cryptoservice.storage.database import Database as AsyncMarketDB
 from cryptoservice.utils.run_id import generate_run_id
-from cryptoservice.utils.time_utils import date_to_timestamp_end, date_to_timestamp_start, timestamp_to_datetime
+from cryptoservice.utils.time_utils import date_to_timestamp_end, date_to_timestamp_start, shift_date, timestamp_to_datetime
 
 from .base_downloader import BaseDownloader
 
@@ -66,13 +66,20 @@ class MetricsDownloader(BaseDownloader):
         run = run_id or generate_run_id("funding")
         self._run_id = run
         started_at = time.perf_counter()
+        expanded_start_time = shift_date(start_time, -1)
 
         try:
             if self.db is None:
                 self.db = AsyncMarketDB(db_path)
             await self.db.initialize()
 
-            logger.info(f"开始检查资金费率数据：{len(symbols)} 个交易对（{start_time} ~ {end_time}）。")
+            logger.info(
+                "开始检查资金费率数据：%s 个交易对（%s ~ %s，扩展起点 %s）。",
+                len(symbols),
+                start_time,
+                end_time,
+                expanded_start_time,
+            )
 
             symbol_plans: dict[str, dict[str, Any]] = {}
 
@@ -82,7 +89,7 @@ class MetricsDownloader(BaseDownloader):
                 # 使用新的增量计划方法，不依赖固定频率
                 symbol_plans = await self.db.plan_metrics_download(
                     symbols=symbols,
-                    start_date=start_time,
+                    start_date=expanded_start_time,
                     end_date=end_time,
                     data_type="funding_rate",
                     interval_hours=0,  # 对于 funding_rate，这个参数会被忽略
@@ -101,7 +108,7 @@ class MetricsDownloader(BaseDownloader):
 
             default_range = [
                 (
-                    date_to_timestamp_start(start_time) if start_time else None,
+                    date_to_timestamp_start(expanded_start_time) if expanded_start_time else None,
                     date_to_timestamp_end(end_time) if end_time else None,
                 )
             ]
@@ -197,6 +204,7 @@ class MetricsDownloader(BaseDownloader):
                             "data_type": "funding_rate",
                             "start_time": start_time,
                             "end_time": end_time,
+                            "expanded_start_time": expanded_start_time,
                         }
                         if plan:
                             start_ts = plan.get("start_ts")
@@ -245,7 +253,13 @@ class MetricsDownloader(BaseDownloader):
             incremental: 是否启用增量下载（默认True）
         """
         try:
-            logger.info(f"开始下载持仓量数据：{len(symbols)} 个交易对（频率 {METRICS_PERIOD}）。")
+            expanded_start_time = shift_date(start_time, -1)
+            logger.info(
+                "开始下载持仓量数据：%s 个交易对（频率 %s，扩展起点 %s）。",
+                len(symbols),
+                METRICS_PERIOD,
+                expanded_start_time,
+            )
 
             if self.db is None:
                 self.db = AsyncMarketDB(db_path)
@@ -259,7 +273,7 @@ class MetricsDownloader(BaseDownloader):
 
                 missing_plan = await self.db.plan_metrics_download(
                     symbols=symbols,
-                    start_date=start_time,
+                    start_date=expanded_start_time,
                     end_date=end_time,
                     data_type="open_interest",
                     interval_hours=METRICS_INTERVAL_HOURS,
@@ -293,7 +307,7 @@ class MetricsDownloader(BaseDownloader):
 
             default_range = [
                 (
-                    date_to_timestamp_start(start_time) if start_time else None,
+                    date_to_timestamp_start(expanded_start_time) if expanded_start_time else None,
                     date_to_timestamp_end(end_time) if end_time else None,
                 )
             ]
@@ -352,6 +366,7 @@ class MetricsDownloader(BaseDownloader):
                             "data_type": "open_interest",
                             "start_time": start_time,
                             "end_time": end_time,
+                            "expanded_start_time": expanded_start_time,
                         }
                         if plan:
                             start_ts = plan.get("start_ts")
@@ -404,7 +419,14 @@ class MetricsDownloader(BaseDownloader):
             incremental: 是否启用增量下载（默认True）
         """
         try:
-            logger.info(f"开始下载多空比例数据（{ratio_type} 类型）：{len(symbols)} 个交易对（频率 {METRICS_PERIOD}）。")
+            expanded_start_time = shift_date(start_time, -1)
+            logger.info(
+                "开始下载多空比例数据（%s 类型）：%s 个交易对（频率 %s，扩展起点 %s）。",
+                ratio_type,
+                len(symbols),
+                METRICS_PERIOD,
+                expanded_start_time,
+            )
 
             if self.db is None:
                 self.db = AsyncMarketDB(db_path)
@@ -418,7 +440,7 @@ class MetricsDownloader(BaseDownloader):
 
                 missing_plan = await self.db.plan_metrics_download(
                     symbols=symbols,
-                    start_date=start_time,
+                    start_date=expanded_start_time,
                     end_date=end_time,
                     data_type="long_short_ratio",
                     interval_hours=METRICS_INTERVAL_HOURS,
@@ -453,7 +475,7 @@ class MetricsDownloader(BaseDownloader):
 
             default_range = [
                 (
-                    date_to_timestamp_start(start_time) if start_time else None,
+                    date_to_timestamp_start(expanded_start_time) if expanded_start_time else None,
                     date_to_timestamp_end(end_time) if end_time else None,
                 )
             ]
@@ -514,6 +536,7 @@ class MetricsDownloader(BaseDownloader):
                             "ratio_type": ratio_type,
                             "start_time": start_time,
                             "end_time": end_time,
+                            "expanded_start_time": expanded_start_time,
                         }
                         if plan:
                             start_ts = plan.get("start_ts")
