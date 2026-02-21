@@ -636,10 +636,16 @@ class TestImportShape:
         integer_fields = {"close_time", "timestamp", "trades_count"}
         # 价格/数量字段应该是浮点数
         float_fields = {
-            "open_price", "high_price", "low_price", "close_price",
-            "volume", "quote_volume",
-            "taker_buy_volume", "taker_buy_quote_volume",
-            "taker_sell_volume", "taker_sell_quote_volume",
+            "open_price",
+            "high_price",
+            "low_price",
+            "close_price",
+            "volume",
+            "quote_volume",
+            "taker_buy_volume",
+            "taker_buy_quote_volume",
+            "taker_sell_volume",
+            "taker_sell_quote_volume",
         }
 
         with tempfile.TemporaryDirectory() as tmp_dir:

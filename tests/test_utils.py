@@ -17,6 +17,7 @@ from cryptoservice.utils import (
     DataConverter,
     EnhancedErrorHandler,
     RateLimitManager,
+    load_symbols_from_txt,
 )
 from cryptoservice.utils.category_utils import CategoryUtils
 from cryptoservice.utils.tools import Tool
@@ -260,6 +261,34 @@ def test_category_utils_get_statistics():
     assert stats["DeFi"]["count"] == 1
     # AI应该有0个交易对
     assert stats["AI"]["count"] == 0
+
+
+# ================= Symbol 文本导入测试 =================
+
+
+def test_load_symbols_from_txt(tmp_path):
+    """测试从 txt 导入 symbols."""
+    file_path = tmp_path / "symbols.txt"
+    file_path.write_text(
+        "# symbols list\n"
+        "btcusdt\n"
+        "ETHUSDT, solusdt\n"
+        "adausdt # inline comment\n"
+        "BTCUSDT\n",
+        encoding="utf-8",
+    )
+
+    symbols = load_symbols_from_txt(file_path)
+    assert symbols == ["BTCUSDT", "ETHUSDT", "SOLUSDT", "ADAUSDT"]
+
+
+def test_load_symbols_from_txt_without_deduplicate(tmp_path):
+    """测试关闭去重时保留重复 symbols."""
+    file_path = tmp_path / "symbols_dup.txt"
+    file_path.write_text("btcusdt\nBTCUSDT\n", encoding="utf-8")
+
+    symbols = load_symbols_from_txt(file_path, deduplicate=False)
+    assert symbols == ["BTCUSDT", "BTCUSDT"]
 
 
 # ================= 异步工具测试 =================

@@ -6,6 +6,7 @@ from .error_handler import AsyncExponentialBackoff, EnhancedErrorHandler, Expone
 from .logger import print_table
 from .rate_limit_manager import AsyncRateLimitManager, RateLimitManager
 from .run_id import generate_run_id
+from .symbol_utils import load_symbols_from_txt
 from .time_utils import (
     date_to_timestamp_end,
     date_to_timestamp_start,
@@ -24,6 +25,7 @@ __all__ = [
     "CacheManager",
     "DataConverter",
     "generate_run_id",
+    "load_symbols_from_txt",
     "print_table",
     "RateLimitManager",
     "AsyncRateLimitManager",

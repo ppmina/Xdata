@@ -1,185 +1,81 @@
 # 数据导出
 
-将数据库中的数据导出为分析友好的格式。
+导出阶段支持两种入口，并统一产出 `report.json`：
 
-## 📤 基本导出
+- `export_universe_data`: 从 `universe_file` 导出。
+- `export_custom_universe_data`: 从 `symbols + start/end` 导出。
 
-基于 `demo/export_data.py`：
+导出报告会合并两类缺失：
+
+- 定义期缺失：来自 `metadata.daily_existence_check.missing_by_date`
+- 导出期缺失：按日期对比 `expected symbols` 与 `univ_dct2.json` 实际 symbols
+
+## 1. 按 Universe 文件导出
 
 ```python
-import asyncio
-from cryptoservice.storage import Database
 from cryptoservice.models import Freq
 
-async def export_data():
-    async with Database("./universe.db") as db:
-        # 导出为NumPy格式（推荐）
-        await db.export_to_numpy(
-            symbols=["BTCUSDT", "ETHUSDT"],
-            start_time="2024-01-01",
-            end_time="2024-01-02",
-            freq=Freq.h1,
-            output_path="./exports"
-        )
-
-        # 导出为CSV格式
-        await db.export_to_csv(
-            symbols=["BTCUSDT"],
-            start_time="2024-01-01",
-            end_time="2024-01-02",
-            freq=Freq.h1,
-            output_path="./data.csv"
-        )
-
-        print("✅ 导出完成")
-
-asyncio.run(export_data())
-```
-
-## 📊 导出格式说明
-
-### NumPy格式
-- 适合机器学习和数值计算
-- 文件小，加载快
-- 保持数据类型精度
-
-### CSV格式
-- 通用格式，Excel可打开
-- 易于查看和调试
-- 适合小数据量
-
-### Parquet格式
-- 列式存储，压缩率高
-- 适合大数据分析
-- Pandas原生支持
-
-```python
-# 导出为Parquet
-await db.export_to_parquet(
-    symbols=["BTCUSDT"],
-    start_time="2024-01-01",
-    end_time="2024-01-02",
-    freq=Freq.h1,
-    output_path="./data.parquet"
+report = await service.export_universe_data(
+    universe_file="./data/universe.json",
+    db_path="./data/database/market.db",
+    export_base_path="./data/exports",
+    source_freq=Freq.m5,
+    export_freq=Freq.m5,
+    include_klines=True,
+    include_metrics=True,
+    metrics_config={
+        "funding_rate": True,
+        "open_interest": True,
+        "long_short_ratio": True,
+    },
+    custom_start_date="2024-10-01",
+    custom_end_date="2024-10-31",
 )
+
+print(report["report_path"])
+print(report["stats"])
 ```
 
-## 🔍 数据字段
-
-### K线数据
-- `open_price`: 开盘价
-- `high_price`: 最高价
-- `low_price`: 最低价
-- `close_price`: 收盘价
-- `volume`: 成交量
-- `quote_volume`: 成交额
-
-### 市场指标
-- `funding_rate`: 资金费率
-- `open_interest`: 持仓量
-- `long_short_ratio`: 多空比例
-
-## 📁 导出文件结构
-
-```
-./exports/
-├── BTCUSDT_klines.npy      # BTC K线数据
-├── BTCUSDT_funding.npy     # BTC 资金费率
-├── ETHUSDT_klines.npy      # ETH K线数据
-└── metadata.json           # 元数据信息
-```
-
-## 💻 使用导出数据
-
-### 加载NumPy数据
+## 2. 自定义导出
 
 ```python
-import numpy as np
-import pandas as pd
+report = await service.export_custom_universe_data(
+    symbols=["BTCUSDT", "ETHUSDT", "SOLUSDT"],
+    start_date="2024-10-01",
+    end_date="2024-10-31",
+    db_path="./data/database/market.db",
+    export_base_path="./data/exports",
+    source_freq=Freq.m5,
+    export_freq=Freq.m5,
+    include_klines=True,
+    include_metrics=True,
+)
 
-# 加载K线数据
-klines = np.load("./exports/BTCUSDT_klines.npy")
-print(f"数据形状: {klines.shape}")
-
-# 转换为DataFrame
-df = pd.DataFrame(klines, columns=[
-    'timestamp', 'open_price', 'high_price', 'low_price',
-    'close_price', 'volume', 'quote_volume'
-])
-
-# 转换时间戳
-df['datetime'] = pd.to_datetime(df['timestamp'], unit='ms')
-print(df.head())
+print(report["valid_symbols"])
+print(report["skipped_symbols"])
+print(report["universe_file"])  # 本次导出对应的 universe 定义文件
 ```
 
-### 加载CSV数据
+## 3. 输出目录与报告
 
-```python
-import pandas as pd
+默认目录策略：
 
-df = pd.read_csv("./data.csv")
-df['datetime'] = pd.to_datetime(df['timestamp'], unit='ms')
-print(df.head())
-```
+- `<export_base>/<freq-dir>/univ_*`（按 universe 文件）
+- `<export_base>/<freq-dir>/custom_*`（按自定义 symbols）
 
-## 🔧 按Universe导出
+每次导出都会写入：
 
-按Universe快照分别导出：
+- `report.json`: 汇总状态与缺失统计
+- `univ_dct2.json`: 每日导出 symbols
+- `universe.json`（custom 导出默认生成）: 本次导出的 universe 定义
+- 多个 `.npy` 特征文件目录
 
-```python
-import asyncio
-from cryptoservice.storage import Database
-from cryptoservice.models import UniverseDefinition, Freq
+`report.json` 关键字段：
 
-async def export_by_universe():
-    # 加载Universe
-    universe_def = UniverseDefinition.load_from_file("./universe.json")
-
-    async with Database("./universe.db") as db:
-        # 为每个快照导出数据
-        for i, snapshot in enumerate(universe_def.snapshots):
-            print(f"导出快照 {i+1}: {snapshot.effective_date}")
-
-            await db.export_to_numpy(
-                symbols=snapshot.symbols,
-                start_time=snapshot.start_date,
-                end_time=snapshot.end_date,
-                freq=Freq.h1,
-                output_path=f"./exports/snapshot_{snapshot.effective_date}"
-            )
-
-    print("✅ 按Universe导出完成")
-
-asyncio.run(export_by_universe())
-```
-
-## 📈 简单分析示例
-
-```python
-import pandas as pd
-import numpy as np
-
-# 加载数据
-df = pd.read_csv("./data.csv")
-df['datetime'] = pd.to_datetime(df['timestamp'], unit='ms')
-
-# 基本统计
-print("📊 基本统计:")
-print(f"   数据行数: {len(df)}")
-print(f"   价格范围: ${df['low_price'].min():.2f} - ${df['high_price'].max():.2f}")
-print(f"   平均成交量: {df['volume'].mean():.2f}")
-
-# 计算收益率
-df['returns'] = df['close_price'].pct_change()
-print(f"   平均收益率: {df['returns'].mean():.4f}")
-print(f"   收益率标准差: {df['returns'].std():.4f}")
-
-# 移动平均线
-df['ma_20'] = df['close_price'].rolling(20).mean()
-df['signal'] = np.where(df['close_price'] > df['ma_20'], 1, -1)
-
-print("📈 技术指标:")
-print(f"   当前价格: ${df['close_price'].iloc[-1]:.2f}")
-print(f"   MA20: ${df['ma_20'].iloc[-1]:.2f}")
-print(f"   交易信号: {'买入' if df['signal'].iloc[-1] == 1 else '卖出'}")
-```
+- `define_missing`
+- `export_missing`
+- `merged_missing`
+- `exported_snapshots`
+- `skipped_snapshots`
+- `errors`
+- `stats`
