@@ -37,6 +37,28 @@ class EndpointControlRegistry:
         self.adaptive_async: dict[str, AdaptiveEndpointController] = {}
         self.adaptive_init_lock = asyncio.Lock()
 
+    def configure_async_endpoint_rate(
+        self,
+        endpoint_key: str,
+        base_delay: float,
+        max_requests_per_minute: int = 1800,
+    ) -> None:
+        """Pre-configure rate manager for an endpoint key.
+
+        Creates a new AsyncRateLimitManager if the key does not exist,
+        or reconfigures the existing one with the given parameters.
+        """
+        if endpoint_key in self.async_limiters:
+            mgr = self.async_limiters[endpoint_key]
+            mgr.base_delay = base_delay
+            mgr.current_delay = base_delay
+            mgr.max_requests_per_minute = max_requests_per_minute
+        else:
+            self.async_limiters[endpoint_key] = AsyncRateLimitManager(
+                base_delay=base_delay,
+                max_requests_per_minute=max_requests_per_minute,
+            )
+
 
 class BaseDownloader(ABC):
     """下载器基类."""

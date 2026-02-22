@@ -961,6 +961,45 @@ def test_cli_define_returns_nonzero_when_symbols_missing(monkeypatch, tmp_path) 
     assert exit_code == 1
 
 
+def test_cli_define_passes_max_requests_per_minute(monkeypatch, tmp_path) -> None:
+    """CLI should forward --daily-check-max-requests-per-minute to service call."""
+    import cryptoservice.cli.universe as universe_cli
+
+    _set_api_env(monkeypatch)
+
+    service = AsyncMock()
+    service.define_universe = AsyncMock(return_value=_build_universe())
+
+    class _FakeMarketDataService:
+        @staticmethod
+        async def create(api_key: str, api_secret: str):
+            return _AsyncServiceContext(service)
+
+    monkeypatch.setattr(universe_cli, "_get_market_service_cls", lambda: _FakeMarketDataService)
+
+    output_path = tmp_path / "universe.json"
+    exit_code = main(
+        [
+            "universe",
+            "define",
+            "--symbols",
+            "BTCUSDT",
+            "--start-date",
+            "2024-01-01",
+            "--end-date",
+            "2024-01-01",
+            "--output",
+            str(output_path),
+            "--daily-check-max-requests-per-minute",
+            "1200",
+        ]
+    )
+
+    assert exit_code == 0
+    call_kwargs = service.define_universe.await_args.kwargs
+    assert call_kwargs["daily_check_max_requests_per_minute"] == 1200
+
+
 def test_cli_download_returns_nonzero_on_schema_error(monkeypatch, tmp_path) -> None:
     """CLI should return code 1 when download fails on invalid universe schema."""
     import cryptoservice.cli.universe as universe_cli

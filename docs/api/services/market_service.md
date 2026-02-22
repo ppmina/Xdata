@@ -30,11 +30,14 @@ Inputs:
 - `description: str | None = None`
 - `force: bool = False`
 - `daily_check_workers: int = 5`
-- `daily_check_request_delay: float = 0.0`
+- `daily_check_request_delay: float = 0.0` — global minimum spacing between check API requests
+- `daily_check_max_requests_per_minute: int = 1800` — cap per minute (Binance IP limit: 2400)
 
 Behavior:
 
 - Builds strict daily truth table (`daily_snapshots`).
+- Symbol checks route through the adaptive retry/rate-limit stack (shared with downloaders).
+- Transient errors (e.g. Binance `-1003`) are retried; unrecoverable failures abort the run.
 - Existing file is immutable unless `force=True`.
 - v1 schema is not supported.
 

@@ -19,6 +19,7 @@ class RateLimitManager:
     def __init__(
         self,
         base_delay: float = 0.5,
+        max_requests_per_minute: int = 1800,
         forbidden_error_threshold: int = 3,
         forbidden_cooldown_schedule: tuple[float, float, float] = (30.0, 90.0, 300.0),
     ):
@@ -26,6 +27,7 @@ class RateLimitManager:
 
         Args:
             base_delay (float): 初始延迟（秒）。
+            max_requests_per_minute (int): 每分钟最大请求数（80%时开始减速）。
             forbidden_error_threshold (int): 连续 403 达到该阈值后打开熔断。
             forbidden_cooldown_schedule (tuple[float, float, float]): 连续 403 的冷却时长（秒）。
         """
@@ -36,7 +38,7 @@ class RateLimitManager:
         self.window_start_time = time.time()
         self.consecutive_errors = 0
         self.consecutive_forbidden_errors = 0
-        self.max_requests_per_minute = 1800  # 保守估计，低于API限制
+        self.max_requests_per_minute = max_requests_per_minute
         self.cooldown_until = 0.0
         self.circuit_open = False
         self.forbidden_error_threshold = max(1, forbidden_error_threshold)
@@ -193,6 +195,7 @@ class AsyncRateLimitManager:
     def __init__(
         self,
         base_delay: float = 0.5,
+        max_requests_per_minute: int = 1800,
         forbidden_error_threshold: int = 3,
         forbidden_cooldown_schedule: tuple[float, float, float] = (30.0, 90.0, 300.0),
     ):
@@ -200,6 +203,7 @@ class AsyncRateLimitManager:
 
         Args:
             base_delay (float): 初始延迟（秒）。
+            max_requests_per_minute (int): 每分钟最大请求数（80%时开始减速）。
             forbidden_error_threshold (int): 连续 403 达到该阈值后打开熔断。
             forbidden_cooldown_schedule (tuple[float, float, float]): 连续 403 的冷却时长（秒）。
         """
@@ -210,7 +214,7 @@ class AsyncRateLimitManager:
         self.window_start_time = time.time()
         self.consecutive_errors = 0
         self.consecutive_forbidden_errors = 0
-        self.max_requests_per_minute = 1800  # 保守估计，低于API限制
+        self.max_requests_per_minute = max_requests_per_minute
         self.cooldown_until = 0.0
         self.circuit_open = False
         self.forbidden_error_threshold = max(1, forbidden_error_threshold)

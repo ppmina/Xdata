@@ -44,6 +44,7 @@ from .processors import CategoryManager, DataValidator, UniverseManager
 
 logger = get_logger(__name__)
 SYMBOL_CHECK_TIMEOUT_SECONDS = 20.0
+_SYMBOL_CHECK_ENDPOINT = "fapi_symbol_check_1m"
 
 
 class MarketDataService:
@@ -997,6 +998,7 @@ class MarketDataService:
         force: bool = False,
         daily_check_workers: int = 5,
         daily_check_request_delay: float = 0.0,
+        daily_check_max_requests_per_minute: int = 1800,
     ) -> UniverseDefinition:
         """Define immutable v2 universe from symbols and date range."""
         return await self.universe_manager.define_universe(
@@ -1008,6 +1010,7 @@ class MarketDataService:
             force=force,
             daily_check_workers=daily_check_workers,
             daily_check_request_delay=daily_check_request_delay,
+            daily_check_max_requests_per_minute=daily_check_max_requests_per_minute,
         )
 
     async def export_universe_data(
@@ -1449,6 +1452,61 @@ class MarketDataService:
                 raise MarketDataFetchError(f"Failed to check symbol {symbol} on {date}: {exc}") from exc
             logger.debug(f"check_symbol_exists_on_date_failed symbol={symbol} date={date} error={exc}")
             return False
+
+    def _configure_symbol_check_rate(
+        self,
+        base_delay: float,
+        max_requests_per_minute: int = 1800,
+    ) -> None:
+        """Configure rate manager for symbol-check endpoint."""
+        self._endpoint_controls.configure_async_endpoint_rate(
+            endpoint_key=_SYMBOL_CHECK_ENDPOINT,
+            base_delay=base_delay,
+            max_requests_per_minute=max_requests_per_minute,
+        )
+
+    async def _check_symbol_date_status(
+        self,
+        symbol: str,
+        date: str,
+        endpoint_max_workers: int = 5,
+    ) -> str:
+        """Classify a symbol on a single date via rate-controlled probe.
+
+        Returns one of: "active", "not_full_day_on_date", "no_kline_on_date".
+        Raises MarketDataFetchError on unrecoverable failures.
+        """
+        start_time = self._date_to_timestamp_start(date)
+        end_time = self._date_to_timestamp_end(date)
+        day_start_ts = int(start_time)
+
+        async def request_func():
+            return await self.client.futures_klines(
+                symbol=symbol,
+                interval="1m",
+                startTime=start_time,
+                endTime=end_time,
+                limit=1,
+            )
+
+        try:
+            klines = await self.kline_downloader._handle_async_request_with_retry(
+                request_func,
+                endpoint_key=_SYMBOL_CHECK_ENDPOINT,
+                endpoint_max_workers=endpoint_max_workers,
+            )
+        except RateLimitError as exc:
+            raise MarketDataFetchError(f"Rate limit circuit breaker tripped checking {symbol} on {date}: {exc}") from exc
+        except Exception as exc:
+            raise MarketDataFetchError(f"Failed to check symbol {symbol} on {date}: {exc}") from exc
+
+        if not klines:
+            return "no_kline_on_date"
+
+        first_open_time = int(klines[0][0])
+        if first_open_time == day_start_ts:
+            return "active"
+        return "not_full_day_on_date"
 
     # ==================== 私有辅助方法 ====================
 

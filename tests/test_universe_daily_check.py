@@ -12,14 +12,14 @@ async def test_classify_symbols_for_date_builds_partition() -> None:
     """Classification should split requested symbols into active and missing."""
     service = Mock()
 
-    async def fake_full_day(symbol: str, date: str, strict: bool = False) -> bool:
-        return symbol == "BTCUSDT"
+    async def fake_status(symbol: str, date: str, endpoint_max_workers: int = 5) -> str:
+        if symbol == "BTCUSDT":
+            return "active"
+        if symbol == "ETHUSDT":
+            return "not_full_day_on_date"
+        return "no_kline_on_date"
 
-    async def fake_exists(symbol: str, date: str, strict: bool = False) -> bool:
-        return symbol in {"BTCUSDT", "ETHUSDT"}
-
-    service.check_symbol_full_day_available_on_date = AsyncMock(side_effect=fake_full_day)
-    service.check_symbol_exists_on_date = AsyncMock(side_effect=fake_exists)
+    service._check_symbol_date_status = AsyncMock(side_effect=fake_status)
     manager = UniverseManager(service)
 
     snapshot = await manager._classify_symbols_for_date(
@@ -27,7 +27,6 @@ async def test_classify_symbols_for_date_builds_partition() -> None:
         valid_symbol_set={"BTCUSDT", "ETHUSDT"},
         target_date="2024-01-01",
         daily_check_workers=3,
-        daily_check_request_delay=0.0,
     )
 
     assert snapshot.active_symbols == ["BTCUSDT"]
@@ -43,8 +42,8 @@ async def test_define_universe_fails_without_file_write_on_api_error(tmp_path) -
     service = Mock()
     service._normalize_symbols = staticmethod(lambda symbols: [symbol.upper() for symbol in symbols])
     service.get_perpetual_symbols = AsyncMock(return_value=["BTCUSDT"])
-    service.check_symbol_full_day_available_on_date = AsyncMock(side_effect=RuntimeError("network failure"))
-    service.check_symbol_exists_on_date = AsyncMock()
+    service._configure_symbol_check_rate = Mock()
+    service._check_symbol_date_status = AsyncMock(side_effect=RuntimeError("network failure"))
 
     manager = UniverseManager(service)
     output_path = tmp_path / "universe.json"
@@ -66,8 +65,8 @@ async def test_define_universe_fails_without_file_write_on_symbol_list_error(tmp
     service = Mock()
     service._normalize_symbols = staticmethod(lambda symbols: [symbol.upper() for symbol in symbols])
     service.get_perpetual_symbols = AsyncMock(side_effect=RuntimeError("symbol endpoint down"))
-    service.check_symbol_full_day_available_on_date = AsyncMock()
-    service.check_symbol_exists_on_date = AsyncMock()
+    service._configure_symbol_check_rate = Mock()
+    service._check_symbol_date_status = AsyncMock()
 
     manager = UniverseManager(service)
     output_path = tmp_path / "universe.json"

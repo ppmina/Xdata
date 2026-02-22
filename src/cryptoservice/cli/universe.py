@@ -27,7 +27,18 @@ def add_universe_parser(subparsers: argparse._SubParsersAction[argparse.Argument
     define_parser.add_argument("--description", default=None, help="Optional universe description")
     define_parser.add_argument("--force", action="store_true", help="Overwrite existing universe file")
     define_parser.add_argument("--daily-check-workers", type=int, default=5, help="Concurrency for per-day symbol checks")
-    define_parser.add_argument("--daily-check-request-delay", type=float, default=0.0, help="Delay seconds per symbol check")
+    define_parser.add_argument(
+        "--daily-check-request-delay",
+        type=float,
+        default=0.0,
+        help="Global minimum spacing (seconds) between symbol check API requests",
+    )
+    define_parser.add_argument(
+        "--daily-check-max-requests-per-minute",
+        type=int,
+        default=1800,
+        help="Max symbol check requests per minute (default: 1800, Binance limit: 2400)",
+    )
     define_parser.set_defaults(handler=_handle_define)
 
     download_parser = universe_subparsers.add_parser("download", help="Download from universe.json")
@@ -191,6 +202,7 @@ async def _handle_define(args: argparse.Namespace) -> int:
             force=args.force,
             daily_check_workers=args.daily_check_workers,
             daily_check_request_delay=args.daily_check_request_delay,
+            daily_check_max_requests_per_minute=args.daily_check_max_requests_per_minute,
         )
 
     print(

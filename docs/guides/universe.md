@@ -83,7 +83,10 @@ cryptoservice universe define \
   --end-date 2024-10-31 \
   --output ./data/universe.json \
   --api-key "${BINANCE_API_KEY}" \
-  --api-secret "${BINANCE_API_SECRET}"
+  --api-secret "${BINANCE_API_SECRET}" \
+  --daily-check-workers 5 \
+  --daily-check-request-delay 0.0 \
+  --daily-check-max-requests-per-minute 1800
 
 # load symbols from txt file
 cryptoservice universe define \
@@ -168,9 +171,21 @@ Scripts are pass-through wrappers; consumer must provide all paths and options.
 You can provide credentials via `--api-key/--api-secret`, or via env (`BINANCE_API_KEY`, `BINANCE_API_SECRET`).
 Dotenv option: `uv run --env-file .env cryptoservice universe define ...`.
 
+## Rate Control
+
+Symbol checks during `define` use the same adaptive retry/rate-limit stack as downloaders.
+Transient errors (e.g. Binance `-1003` rate limit) are retried automatically.
+
+| Option | Default | Description |
+|---|---|---|
+| `--daily-check-workers` | `5` | Concurrency for per-day symbol checks |
+| `--daily-check-request-delay` | `0.0` | Global minimum spacing (seconds) between check API requests |
+| `--daily-check-max-requests-per-minute` | `1800` | Cap per minute (Binance IP limit: 2400) |
+
 ## Failure Rules
 
-- API/network failure during `define` aborts the run and writes nothing.
+- Transient API errors during `define` are retried via the adaptive rate controller.
+- Unrecoverable failures abort the run and write nothing.
 - Unknown symbols remain in `requested_symbols` and appear in each day's `missing_symbols`.
 - Days with zero `active_symbols` are valid and preserved.
 - `download` / `export` support optional `--start-date` / `--end-date` overrides (inclusive, `YYYY-MM-DD`).

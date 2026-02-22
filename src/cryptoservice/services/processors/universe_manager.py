@@ -12,7 +12,6 @@ from cryptoservice.config.logging import get_logger
 from cryptoservice.models import UniverseDailySnapshot, UniverseDefinition
 from cryptoservice.models.universe import (
     MISSING_REASON_NO_KLINE_ON_DATE,
-    MISSING_REASON_NOT_FULL_DAY_ON_DATE,
     MISSING_REASON_NOT_IN_CURRENT_TRADING_LIST,
     SCHEMA_VERSION,
 )
@@ -40,6 +39,7 @@ class UniverseManager:
         force: bool = False,
         daily_check_workers: int = 5,
         daily_check_request_delay: float = 0.0,
+        daily_check_max_requests_per_minute: int = 1800,
     ) -> UniverseDefinition:
         """Build and persist a strict v2 universe definition.
 
@@ -65,7 +65,14 @@ class UniverseManager:
         total_days = len(all_dates)
         workers = max(1, daily_check_workers)
         request_delay = max(0.0, daily_check_request_delay)
+        max_rpm = max(1, daily_check_max_requests_per_minute)
         run_started = time.monotonic()
+
+        self.market_service._configure_symbol_check_rate(
+            base_delay=request_delay,
+            max_requests_per_minute=max_rpm,
+        )
+
         logger.info(
             "universe_define_started",
             start_date=standardized_start,
@@ -75,6 +82,7 @@ class UniverseManager:
             valid_requested_symbols=valid_requested_count,
             daily_check_workers=workers,
             daily_check_request_delay=request_delay,
+            daily_check_max_requests_per_minute=max_rpm,
         )
 
         snapshots: list[UniverseDailySnapshot] = []
@@ -86,7 +94,6 @@ class UniverseManager:
                 valid_symbol_set=valid_symbol_set,
                 target_date=date_str,
                 daily_check_workers=workers,
-                daily_check_request_delay=request_delay,
             )
             snapshots.append(snapshot)
             logger.info(
@@ -128,25 +135,18 @@ class UniverseManager:
         valid_symbol_set: set[str],
         target_date: str,
         daily_check_workers: int,
-        daily_check_request_delay: float,
     ) -> UniverseDailySnapshot:
-        """Classify requested symbols into active and missing for one day."""
-        semaphore = asyncio.Semaphore(max(1, daily_check_workers))
+        """Classify requested symbols into active and missing for one day.
 
+        Concurrency and rate limiting are handled by the shared endpoint
+        controller for the symbol-check endpoint key (configured before
+        the date loop in define_universe).
+        """
         valid_requested = [symbol for symbol in requested_symbols if symbol in valid_symbol_set]
 
         async def _check_symbol(symbol: str) -> tuple[str, str]:
-            async with semaphore:
-                if daily_check_request_delay > 0:
-                    await asyncio.sleep(daily_check_request_delay)
-                is_full_day = await self.market_service.check_symbol_full_day_available_on_date(symbol, target_date, strict=True)
-                if is_full_day:
-                    return symbol, "active"
-
-                has_any_data = await self.market_service.check_symbol_exists_on_date(symbol, target_date, strict=True)
-                if has_any_data:
-                    return symbol, MISSING_REASON_NOT_FULL_DAY_ON_DATE
-                return symbol, MISSING_REASON_NO_KLINE_ON_DATE
+            status = await self.market_service._check_symbol_date_status(symbol, target_date, endpoint_max_workers=daily_check_workers)
+            return symbol, status
 
         checks = await asyncio.gather(*[_check_symbol(symbol) for symbol in valid_requested])
         symbol_status_map = dict(checks)

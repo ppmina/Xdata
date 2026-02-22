@@ -23,6 +23,7 @@ FALLBACK_SYMBOLS = ["BTCUSDT", "ETHUSDT", "SOLUSDT", "BADSYMBOL"]
 FORCE_OVERWRITE = False
 DAILY_CHECK_WORKERS = 8
 DAILY_CHECK_REQUEST_DELAY = 0.0
+DAILY_CHECK_MAX_REQUESTS_PER_MINUTE = 1800
 
 
 def resolve_symbols() -> list[str]:
@@ -70,6 +71,7 @@ async def main() -> None:
             force=FORCE_OVERWRITE,
             daily_check_workers=DAILY_CHECK_WORKERS,
             daily_check_request_delay=DAILY_CHECK_REQUEST_DELAY,
+            daily_check_max_requests_per_minute=DAILY_CHECK_MAX_REQUESTS_PER_MINUTE,
         )
 
     active_union = universe.active_symbols_union

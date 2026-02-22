@@ -15,14 +15,14 @@ async def test_define_universe_builds_daily_truth_table(tmp_path) -> None:
     service = MarketDataService(AsyncMock())
     service.get_perpetual_symbols = AsyncMock(return_value=["BTCUSDT", "ETHUSDT"])
 
-    async def fake_full_day(symbol: str, date: str, strict: bool = False) -> bool:
-        return not (symbol == "ETHUSDT" and date == "2024-10-02")
+    async def fake_status(symbol: str, date: str, endpoint_max_workers: int = 5) -> str:
+        if symbol == "ETHUSDT" and date == "2024-10-02":
+            return "not_full_day_on_date"
+        if symbol in {"BTCUSDT", "ETHUSDT"}:
+            return "active"
+        return "no_kline_on_date"
 
-    async def fake_exists(symbol: str, date: str, strict: bool = False) -> bool:
-        return symbol in {"BTCUSDT", "ETHUSDT"}
-
-    service.check_symbol_full_day_available_on_date = AsyncMock(side_effect=fake_full_day)
-    service.check_symbol_exists_on_date = AsyncMock(side_effect=fake_exists)
+    service._check_symbol_date_status = AsyncMock(side_effect=fake_status)
 
     output_path = tmp_path / "universe.json"
     universe = await service.define_universe(
@@ -58,8 +58,7 @@ async def test_define_universe_requires_force_to_overwrite(tmp_path) -> None:
     """Define should enforce immutable file semantics unless force=True."""
     service = MarketDataService(AsyncMock())
     service.get_perpetual_symbols = AsyncMock(return_value=["BTCUSDT"])
-    service.check_symbol_full_day_available_on_date = AsyncMock(return_value=True)
-    service.check_symbol_exists_on_date = AsyncMock(return_value=True)
+    service._check_symbol_date_status = AsyncMock(return_value="active")
 
     output_path = tmp_path / "universe.json"
     output_path.write_text(json.dumps({"existing": True}), encoding="utf-8")
