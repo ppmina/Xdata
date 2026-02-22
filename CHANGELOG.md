@@ -1,16 +1,20 @@
-## 1.17.0 (2025-11-30)
-
-No significant changes.
-
-
-## 1.16.3 (2025-11-01)
-
-No significant changes.
-
-
 # CHANGELOG
 
 <!-- next-version -->
+
+## v2.0.0 (2026-02-22)
+
+### Features
+
+- Route universe define symbol checks through adaptive retry/rate-limit stack
+- Implement strict metrics reliability mode and enhance export functionality
+- Enhance universe management and symbol validation
+- Refactor universe management and enhance CLI functionality
+- Enhance universe definition and data download processes
+
+### Fixes
+
+- Add explicit type annotation to resolve mypy errors in _normalize_metrics_config
 
 ## v1.16.2 (2025-10-28)
 
