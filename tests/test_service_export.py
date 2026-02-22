@@ -79,7 +79,7 @@ def _build_universe() -> UniverseDefinition:
             UniverseDailySnapshot(
                 date="2024-01-01",
                 active_symbols=["BTCUSDT"],
-                missing_symbols={"ETHUSDT": "not_available_on_date"},
+                missing_symbols={"ETHUSDT": "no_kline_on_date"},
             ),
             UniverseDailySnapshot(
                 date="2024-01-02",
@@ -116,9 +116,9 @@ async def test_export_universe_definition_writes_report_and_merges_missing(monke
     )
 
     assert Path(report["report_path"]).exists()
-    assert report["define_missing"]["2024-01-01"] == {"ETHUSDT": "not_available_on_date"}
+    assert report["define_missing"]["2024-01-01"] == {"ETHUSDT": "no_kline_on_date"}
     assert report["export_missing"]["2024-01-02"] == ["ETHUSDT"]
-    assert report["merged_missing"]["2024-01-01"]["ETHUSDT"] == "not_available_on_date"
+    assert report["merged_missing"]["2024-01-01"]["ETHUSDT"] == "no_kline_on_date"
     assert report["merged_missing"]["2024-01-02"]["ETHUSDT"] == "missing_in_export"
 
 

@@ -15,10 +15,14 @@ async def test_define_universe_builds_daily_truth_table(tmp_path) -> None:
     service = MarketDataService(AsyncMock())
     service.get_perpetual_symbols = AsyncMock(return_value=["BTCUSDT", "ETHUSDT"])
 
-    async def fake_check(symbol: str, date: str, strict: bool = False) -> bool:
+    async def fake_full_day(symbol: str, date: str, strict: bool = False) -> bool:
         return not (symbol == "ETHUSDT" and date == "2024-10-02")
 
-    service.check_symbol_exists_on_date = AsyncMock(side_effect=fake_check)
+    async def fake_exists(symbol: str, date: str, strict: bool = False) -> bool:
+        return symbol in {"BTCUSDT", "ETHUSDT"}
+
+    service.check_symbol_full_day_available_on_date = AsyncMock(side_effect=fake_full_day)
+    service.check_symbol_exists_on_date = AsyncMock(side_effect=fake_exists)
 
     output_path = tmp_path / "universe.json"
     universe = await service.define_universe(
@@ -34,14 +38,14 @@ async def test_define_universe_builds_daily_truth_table(tmp_path) -> None:
     day1 = universe.get_snapshot_for_date("2024-10-01")
     assert day1 is not None
     assert day1.active_symbols == ["BTCUSDT", "ETHUSDT"]
-    assert day1.missing_symbols == {"BADSYMBOL": "invalid_symbol"}
+    assert day1.missing_symbols == {"BADSYMBOL": "not_in_current_trading_list"}
 
     day2 = universe.get_snapshot_for_date("2024-10-02")
     assert day2 is not None
     assert day2.active_symbols == ["BTCUSDT"]
     assert day2.missing_symbols == {
-        "BADSYMBOL": "invalid_symbol",
-        "ETHUSDT": "not_available_on_date",
+        "BADSYMBOL": "not_in_current_trading_list",
+        "ETHUSDT": "not_full_day_on_date",
     }
 
     assert output_path.exists()
@@ -54,6 +58,7 @@ async def test_define_universe_requires_force_to_overwrite(tmp_path) -> None:
     """Define should enforce immutable file semantics unless force=True."""
     service = MarketDataService(AsyncMock())
     service.get_perpetual_symbols = AsyncMock(return_value=["BTCUSDT"])
+    service.check_symbol_full_day_available_on_date = AsyncMock(return_value=True)
     service.check_symbol_exists_on_date = AsyncMock(return_value=True)
 
     output_path = tmp_path / "universe.json"

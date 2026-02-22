@@ -297,9 +297,7 @@ class KlineDownloader(BaseDownloader):
                         status = outcome["status"]
                         if status == "success":
                             successful_symbols.append(symbol)
-                        elif status == "empty":
-                            missing_periods.append(outcome["missing"])
-                        elif status == "failed":
+                        elif status in {"empty", "failed"}:
                             failed_symbols.append(symbol)
                             missing_periods.append(outcome["missing"])
                 finally:
@@ -540,8 +538,12 @@ class KlineDownloader(BaseDownloader):
 
     def _generate_recommendations(self, successful_symbols: list[str], failed_symbols: list[str]) -> list[str]:
         """生成建议."""
+        total_symbols = len(successful_symbols) + len(failed_symbols)
+        if total_symbols == 0:
+            return ["no symbols to process"]
+
         recommendations = []
-        success_rate = len(successful_symbols) / (len(successful_symbols) + len(failed_symbols))
+        success_rate = len(successful_symbols) / total_symbols
 
         if success_rate < 0.5:
             recommendations.append("🚨 数据质量严重不足，建议重新下载")

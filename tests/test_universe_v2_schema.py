@@ -17,7 +17,7 @@ def _build_valid_universe() -> UniverseDefinition:
             UniverseDailySnapshot(
                 date="2024-10-01",
                 active_symbols=["BTCUSDT"],
-                missing_symbols={"ETHUSDT": "not_available_on_date"},
+                missing_symbols={"ETHUSDT": "not_in_current_trading_list"},
             ),
             UniverseDailySnapshot(
                 date="2024-10-02",
@@ -27,7 +27,7 @@ def _build_valid_universe() -> UniverseDefinition:
             UniverseDailySnapshot(
                 date="2024-10-03",
                 active_symbols=["ETHUSDT"],
-                missing_symbols={"BTCUSDT": "not_available_on_date"},
+                missing_symbols={"BTCUSDT": "no_kline_on_date"},
             ),
         ],
         created_at=datetime.now(tz=UTC),
@@ -158,6 +158,42 @@ def test_rejects_snapshot_missing_symbols_non_string_reason() -> None:
         UniverseDefinition.from_dict(payload)
 
 
+def test_rejects_legacy_invalid_symbol_reason() -> None:
+    """Legacy invalid_symbol reason must be rejected."""
+    payload = _build_valid_universe().to_dict()
+    payload["daily_snapshots"][0]["missing_symbols"] = {"ETHUSDT": "invalid_symbol"}
+
+    with pytest.raises(ValueError, match="unsupported reason"):
+        UniverseDefinition.from_dict(payload)
+
+
+def test_rejects_legacy_not_available_reason() -> None:
+    """Legacy not_available_on_date reason must be rejected."""
+    payload = _build_valid_universe().to_dict()
+    payload["daily_snapshots"][0]["missing_symbols"] = {"ETHUSDT": "not_available_on_date"}
+
+    with pytest.raises(ValueError, match="unsupported reason"):
+        UniverseDefinition.from_dict(payload)
+
+
+def test_rejects_unknown_missing_reason_code() -> None:
+    """Unknown missing reason code must be rejected."""
+    payload = _build_valid_universe().to_dict()
+    payload["daily_snapshots"][0]["missing_symbols"] = {"ETHUSDT": "something_else"}
+
+    with pytest.raises(ValueError, match="unsupported reason"):
+        UniverseDefinition.from_dict(payload)
+
+
+def test_accepts_not_full_day_missing_reason_code() -> None:
+    """`not_full_day_on_date` should be accepted as a valid missing reason."""
+    payload = _build_valid_universe().to_dict()
+    payload["daily_snapshots"][0]["missing_symbols"] = {"ETHUSDT": "not_full_day_on_date"}
+
+    loaded = UniverseDefinition.from_dict(payload)
+    assert loaded.daily_snapshots[0].missing_symbols == {"ETHUSDT": "not_full_day_on_date"}
+
+
 def test_rejects_snapshot_missing_required_field() -> None:
     """Snapshots must include date/active_symbols/missing_symbols."""
     payload = _build_valid_universe().to_dict()
@@ -188,7 +224,7 @@ def test_constructor_rejects_non_string_symbols() -> None:
                 UniverseDailySnapshot(
                     date="2024-10-01",
                     active_symbols=["BTCUSDT"],
-                    missing_symbols={"ETHUSDT": "not_available_on_date"},
+                    missing_symbols={"ETHUSDT": "no_kline_on_date"},
                 )
             ],
             created_at=datetime.now(tz=UTC),

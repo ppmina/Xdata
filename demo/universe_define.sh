@@ -16,8 +16,8 @@ uv run --env-file .env cryptoservice universe define \
   --symbols @../data/univ_base.txt \
   --start-date 2024-10-01 \
   --end-date 2024-10-31 \
-  --output ../data/universe.json \
+  --output ./data/universe.json \
   --daily-check-workers 5 \
-  --daily-check-request-delay 0.1
+  --daily-check-request-delay 0.0
   # --api-key "${BINANCE_API_KEY}" \
   # --api-secret "${BINANCE_API_SECRET}" \

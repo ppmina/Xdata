@@ -31,14 +31,14 @@ def __getattr__(name: str) -> Any:
     if name in {"ErrorSeverity", "Freq", "HistoricalKlinesType", "SortBy", "Univ"}:
         from .enums import ErrorSeverity, Freq, HistoricalKlinesType, SortBy, Univ
 
-        mapping = {
+        enum_exports: dict[str, Any] = {
             "ErrorSeverity": ErrorSeverity,
             "Freq": Freq,
             "HistoricalKlinesType": HistoricalKlinesType,
             "SortBy": SortBy,
             "Univ": Univ,
         }
-        return mapping[name]
+        return enum_exports[name]
 
     if name == "IntegrityReport":
         from .integrity_report import IntegrityReport
@@ -48,12 +48,12 @@ def __getattr__(name: str) -> Any:
     if name in {"FundingRate", "LongShortRatio", "OpenInterest"}:
         from .market_data import FundingRate, LongShortRatio, OpenInterest
 
-        mapping = {
+        metric_exports: dict[str, Any] = {
             "FundingRate": FundingRate,
             "LongShortRatio": LongShortRatio,
             "OpenInterest": OpenInterest,
         }
-        return mapping[name]
+        return metric_exports[name]
 
     if name in {
         "DailyMarketTicker",
@@ -74,7 +74,7 @@ def __getattr__(name: str) -> Any:
             SymbolTicker,
         )
 
-        mapping = {
+        ticker_exports: dict[str, Any] = {
             "DailyMarketTicker": DailyMarketTicker,
             "FuturesKlineTicker": FuturesKlineTicker,
             "KlineIndex": KlineIndex,
@@ -83,15 +83,15 @@ def __getattr__(name: str) -> Any:
             "SpotKlineTicker": SpotKlineTicker,
             "SymbolTicker": SymbolTicker,
         }
-        return mapping[name]
+        return ticker_exports[name]
 
     if name in {"UniverseDailySnapshot", "UniverseDefinition"}:
         from .universe import UniverseDailySnapshot, UniverseDefinition
 
-        mapping = {
+        universe_exports: dict[str, Any] = {
             "UniverseDailySnapshot": UniverseDailySnapshot,
             "UniverseDefinition": UniverseDefinition,
         }
-        return mapping[name]
+        return universe_exports[name]
 
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

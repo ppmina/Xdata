@@ -10,10 +10,19 @@ from unittest.mock import AsyncMock
 import pytest
 
 from cryptoservice.config import RetryConfig
+from cryptoservice.config.logging import Environment, LogLevel, reset_logging, setup_logging
 from cryptoservice.exceptions import RateLimitError
 from cryptoservice.models import Freq, IntegrityReport
 from cryptoservice.models.universe import UniverseDailySnapshot, UniverseDefinition
 from cryptoservice.services import MarketDataService
+
+
+@pytest.fixture(autouse=True)
+def _setup_structured_logging() -> None:
+    """Configure deterministic structured logging for caplog payload assertions."""
+    setup_logging(environment=Environment.TEST, log_level=LogLevel.INFO, use_colors=False)
+    yield
+    reset_logging()
 
 
 def _write_universe(path: Path) -> None:

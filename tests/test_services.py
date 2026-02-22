@@ -72,6 +72,49 @@ async def test_kline_downloader_creation():
     assert downloader.error_handler is not None
 
 
+def test_kline_downloader_generate_recommendations_handles_zero_symbols():
+    """Recommendation generation should not divide by zero when no symbols were processed."""
+    from cryptoservice.services.downloaders import KlineDownloader
+
+    downloader = KlineDownloader(AsyncMock())
+    assert downloader._generate_recommendations([], []) == ["no symbols to process"]
+
+
+@pytest.mark.asyncio
+async def test_kline_downloader_treats_empty_outcome_as_failed_symbol(tmp_path):
+    """`empty` symbol outcome should be counted as failed for run summary."""
+    from cryptoservice.models import Freq
+    from cryptoservice.services.downloaders import KlineDownloader
+
+    downloader = KlineDownloader(AsyncMock(), request_delay=0.0)
+    downloader.db = AsyncMock()
+    downloader.db.initialize = AsyncMock()
+    downloader._process_symbol = AsyncMock(  # type: ignore[method-assign]
+        return_value={
+            "status": "empty",
+            "missing": {
+                "symbol": "BTCUSDT",
+                "period": "2024-10-01 00:00:00 - 2024-10-02 00:00:00",
+                "reason": "no_data",
+            },
+        }
+    )
+
+    report = await downloader.download_multiple_symbols(
+        symbols=["BTCUSDT"],
+        start_time="2024-10-01",
+        end_time="2024-10-01",
+        interval=Freq.m1,
+        db_path=tmp_path / "market.db",
+        max_workers=1,
+        incremental=False,
+    )
+
+    assert report.successful_symbols == 0
+    assert report.failed_symbols == ["BTCUSDT"]
+    assert len(report.missing_periods) == 1
+
+
 @pytest.mark.asyncio
 async def test_metrics_downloader_creation():
     """测试指标下载器创建."""

@@ -596,7 +596,7 @@ class MarketDataService:
                     "missing_periods": list(kline_report.missing_periods),
                 }
                 day_reports.append(day_report)
-                status = "complete" if not kline_report.failed_symbols else "partial"
+                status = "complete" if not kline_report.failed_symbols and not kline_report.missing_periods else "partial"
                 day_status_counts[status] += 1
                 logger.info(
                     "download.day_done",
@@ -693,7 +693,7 @@ class MarketDataService:
             stage_status = "skipped"
         elif terminal_aborted and total_success == 0 and total_failures == total_symbols:
             stage_status = "aborted"
-        elif total_failures > 0 or stage_errors:
+        elif day_status_counts.get("partial", 0) > 0 or total_failures > 0 or stage_errors:
             stage_status = "partial"
         else:
             stage_status = "complete"
@@ -1329,6 +1329,48 @@ class MarketDataService:
             universe_file=universe_file,
             output_path=output_path,
         )
+
+    async def check_symbol_full_day_available_on_date(self, symbol: str, date: str, strict: bool = False) -> bool:
+        """Check whether a symbol has complete day coverage on a specific date."""
+        try:
+            start_time = self._date_to_timestamp_start(date)
+            end_time = self._date_to_timestamp_end(date)
+            day_start_ts = int(start_time)
+
+            klines = await asyncio.wait_for(
+                self.client.futures_klines(
+                    symbol=symbol,
+                    interval="1m",
+                    startTime=start_time,
+                    endTime=end_time,
+                    limit=1,
+                ),
+                timeout=SYMBOL_CHECK_TIMEOUT_SECONDS,
+            )
+
+            if not klines:
+                return False
+
+            first_open_time = int(klines[0][0])
+            return first_open_time == day_start_ts
+
+        except TimeoutError as exc:
+            if strict:
+                raise MarketDataFetchError(
+                    f"Timed out checking full-day coverage for symbol {symbol} on {date} after {SYMBOL_CHECK_TIMEOUT_SECONDS:.0f}s"
+                ) from exc
+            logger.debug(
+                "check_symbol_full_day_available_on_date_timeout symbol=%s date=%s timeout=%.0fs",
+                symbol,
+                date,
+                SYMBOL_CHECK_TIMEOUT_SECONDS,
+            )
+            return False
+        except Exception as exc:
+            if strict:
+                raise MarketDataFetchError(f"Failed to check full-day coverage for symbol {symbol} on {date}: {exc}") from exc
+            logger.debug(f"check_symbol_full_day_available_on_date_failed symbol={symbol} date={date} error={exc}")
+            return False
 
     async def check_symbol_exists_on_date(self, symbol: str, date: str, strict: bool = False) -> bool:
         """Check whether a symbol has data on a specific date."""

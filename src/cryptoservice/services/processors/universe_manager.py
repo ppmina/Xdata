@@ -11,8 +11,9 @@ from typing import TYPE_CHECKING
 from cryptoservice.config.logging import get_logger
 from cryptoservice.models import UniverseDailySnapshot, UniverseDefinition
 from cryptoservice.models.universe import (
-    MISSING_REASON_INVALID_SYMBOL,
-    MISSING_REASON_NOT_AVAILABLE_ON_DATE,
+    MISSING_REASON_NO_KLINE_ON_DATE,
+    MISSING_REASON_NOT_FULL_DAY_ON_DATE,
+    MISSING_REASON_NOT_IN_CURRENT_TRADING_LIST,
     SCHEMA_VERSION,
 )
 
@@ -45,6 +46,8 @@ class UniverseManager:
         The output file is immutable by default: existing file requires force=True.
         """
         output_file = self._validate_and_prepare_path(output_path, is_file=True, file_name="universe.json")
+        if output_file.exists() and not force:
+            raise FileExistsError(f"Universe file already exists: {output_file}")
 
         standardized_symbols = self.market_service._normalize_symbols(symbols)
         if not standardized_symbols:
@@ -132,28 +135,35 @@ class UniverseManager:
 
         valid_requested = [symbol for symbol in requested_symbols if symbol in valid_symbol_set]
 
-        async def _check_symbol(symbol: str) -> tuple[str, bool]:
+        async def _check_symbol(symbol: str) -> tuple[str, str]:
             async with semaphore:
                 if daily_check_request_delay > 0:
                     await asyncio.sleep(daily_check_request_delay)
-                is_active = await self.market_service.check_symbol_exists_on_date(symbol, target_date, strict=True)
-                return symbol, is_active
+                is_full_day = await self.market_service.check_symbol_full_day_available_on_date(symbol, target_date, strict=True)
+                if is_full_day:
+                    return symbol, "active"
+
+                has_any_data = await self.market_service.check_symbol_exists_on_date(symbol, target_date, strict=True)
+                if has_any_data:
+                    return symbol, MISSING_REASON_NOT_FULL_DAY_ON_DATE
+                return symbol, MISSING_REASON_NO_KLINE_ON_DATE
 
         checks = await asyncio.gather(*[_check_symbol(symbol) for symbol in valid_requested])
-        active_map = dict(checks)
+        symbol_status_map = dict(checks)
 
         active_symbols: list[str] = []
         missing_symbols: dict[str, str] = {}
 
         for symbol in requested_symbols:
             if symbol not in valid_symbol_set:
-                missing_symbols[symbol] = MISSING_REASON_INVALID_SYMBOL
+                missing_symbols[symbol] = MISSING_REASON_NOT_IN_CURRENT_TRADING_LIST
                 continue
 
-            if active_map.get(symbol, False):
+            status = symbol_status_map.get(symbol)
+            if status == "active":
                 active_symbols.append(symbol)
             else:
-                missing_symbols[symbol] = MISSING_REASON_NOT_AVAILABLE_ON_DATE
+                missing_symbols[symbol] = status or MISSING_REASON_NO_KLINE_ON_DATE
 
         return UniverseDailySnapshot(
             date=target_date,

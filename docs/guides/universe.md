@@ -23,7 +23,7 @@ Universe v2 uses a single immutable `universe.json` as the source of truth.
       "date": "2024-10-01",
       "active_symbols": ["BTCUSDT"],
       "missing_symbols": {
-        "ETHUSDT": "not_available_on_date"
+        "ETHUSDT": "no_kline_on_date"
       }
     }
   ],
@@ -31,6 +31,10 @@ Universe v2 uses a single immutable `universe.json` as the source of truth.
   "description": "optional"
 }
 ```
+
+`missing_symbols` reason codes:
+- `not_in_current_trading_list`: symbol is not in the current Binance `PERPETUAL && TRADING && USDT` symbol set.
+- `no_kline_on_date`: symbol is in the current set but has no kline data for that date.
 
 ## Python API
 

@@ -15,7 +15,7 @@ def test_universe_daily_snapshot_roundtrip() -> None:
     snapshot = UniverseDailySnapshot(
         date="2024-01-01",
         active_symbols=["btcusdt", "ETHUSDT"],
-        missing_symbols={"solusdt": "not_available_on_date"},
+        missing_symbols={"solusdt": "no_kline_on_date"},
     )
 
     payload = snapshot.to_dict()
@@ -23,7 +23,7 @@ def test_universe_daily_snapshot_roundtrip() -> None:
 
     assert restored.date == "2024-01-01"
     assert restored.active_symbols == ["BTCUSDT", "ETHUSDT"]
-    assert restored.missing_symbols == {"SOLUSDT": "not_available_on_date"}
+    assert restored.missing_symbols == {"SOLUSDT": "no_kline_on_date"}
 
 
 def test_universe_definition_roundtrip(tmp_path) -> None:
@@ -37,7 +37,7 @@ def test_universe_definition_roundtrip(tmp_path) -> None:
             UniverseDailySnapshot(
                 date="2024-01-01",
                 active_symbols=["BTCUSDT"],
-                missing_symbols={"ETHUSDT": "not_available_on_date"},
+                missing_symbols={"ETHUSDT": "no_kline_on_date"},
             ),
             UniverseDailySnapshot(
                 date="2024-01-02",

@@ -11,9 +11,16 @@ from typing import Any
 import pandas as pd
 
 SCHEMA_VERSION = "2.0"
-MISSING_REASON_INVALID_SYMBOL = "invalid_symbol"
-MISSING_REASON_NOT_AVAILABLE_ON_DATE = "not_available_on_date"
+MISSING_REASON_NOT_IN_CURRENT_TRADING_LIST = "not_in_current_trading_list"
+MISSING_REASON_NO_KLINE_ON_DATE = "no_kline_on_date"
+MISSING_REASON_NOT_FULL_DAY_ON_DATE = "not_full_day_on_date"
 MISSING_REASON_MISSING_IN_EXPORT = "missing_in_export"
+ALLOWED_MISSING_REASONS = {
+    MISSING_REASON_NOT_IN_CURRENT_TRADING_LIST,
+    MISSING_REASON_NO_KLINE_ON_DATE,
+    MISSING_REASON_NOT_FULL_DAY_ON_DATE,
+    MISSING_REASON_MISSING_IN_EXPORT,
+}
 
 
 def _standardize_date(date_str: str) -> str:
@@ -70,7 +77,12 @@ def _standardize_missing_map(missing_symbols: dict[str, str]) -> dict[str, str]:
         if not symbol:
             raise ValueError("missing_symbols contains an empty symbol key")
 
-        reason = raw_reason.strip() or "unknown"
+        reason = raw_reason.strip()
+        if not reason:
+            raise ValueError("missing_symbols contains an empty reason value")
+        if reason not in ALLOWED_MISSING_REASONS:
+            allowed = ", ".join(sorted(ALLOWED_MISSING_REASONS))
+            raise ValueError(f"missing_symbols contains unsupported reason {reason!r}; allowed reasons: {allowed}")
         normalized[symbol] = reason
 
     return normalized
@@ -375,8 +387,9 @@ class UniverseDefinition:
 
 __all__ = [
     "SCHEMA_VERSION",
-    "MISSING_REASON_INVALID_SYMBOL",
-    "MISSING_REASON_NOT_AVAILABLE_ON_DATE",
+    "MISSING_REASON_NOT_IN_CURRENT_TRADING_LIST",
+    "MISSING_REASON_NO_KLINE_ON_DATE",
+    "MISSING_REASON_NOT_FULL_DAY_ON_DATE",
     "MISSING_REASON_MISSING_IN_EXPORT",
     "UniverseDailySnapshot",
     "UniverseDefinition",

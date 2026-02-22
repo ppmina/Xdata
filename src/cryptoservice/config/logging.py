@@ -142,6 +142,20 @@ def reset_logging() -> None:
     reset_wrapper = getattr(structlog, "reset_wrapper_cache", None)
     if callable(reset_wrapper):
         reset_wrapper()
+
+    # Keep structlog wired to stdlib logging after reset so caplog/custom handlers
+    # attached later still receive structured dict payloads.
+    structlog.configure(
+        processors=[
+            structlog.stdlib.add_log_level,
+            structlog.stdlib.ProcessorFormatter.wrap_for_formatter,
+        ],
+        context_class=dict,
+        logger_factory=structlog.stdlib.LoggerFactory(),
+        wrapper_class=structlog.stdlib.BoundLogger,
+        cache_logger_on_first_use=True,
+    )
+
     _STATE.configured = False
 
 

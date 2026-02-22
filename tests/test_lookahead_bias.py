@@ -310,7 +310,7 @@ class TestUniverseSelectionLookaheadBias:
                 UniverseDailySnapshot(
                     date="2024-01-01",
                     active_symbols=["BTCUSDT"],
-                    missing_symbols={"ETHUSDT": "not_available_on_date"},
+                    missing_symbols={"ETHUSDT": "no_kline_on_date"},
                 ),
                 UniverseDailySnapshot(
                     date="2024-01-02",
@@ -320,7 +320,7 @@ class TestUniverseSelectionLookaheadBias:
                 UniverseDailySnapshot(
                     date="2024-01-03",
                     active_symbols=["ETHUSDT"],
-                    missing_symbols={"BTCUSDT": "not_available_on_date"},
+                    missing_symbols={"BTCUSDT": "no_kline_on_date"},
                 ),
             ],
             created_at=pd.Timestamp.now(tz="UTC").to_pydatetime(),

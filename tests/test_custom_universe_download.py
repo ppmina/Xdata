@@ -35,12 +35,12 @@ async def test_download_universe_data_uses_strict_day_symbol_plan(tmp_path) -> N
             UniverseDailySnapshot(
                 date="2024-10-01",
                 active_symbols=["BTCUSDT"],
-                missing_symbols={"ETHUSDT": "not_available_on_date"},
+                missing_symbols={"ETHUSDT": "no_kline_on_date"},
             ),
             UniverseDailySnapshot(
                 date="2024-10-02",
                 active_symbols=["ETHUSDT"],
-                missing_symbols={"BTCUSDT": "not_available_on_date"},
+                missing_symbols={"BTCUSDT": "no_kline_on_date"},
             ),
         ],
     )
@@ -105,16 +105,16 @@ async def test_download_universe_data_tolerates_empty_active_days(tmp_path) -> N
                 date="2024-10-01",
                 active_symbols=[],
                 missing_symbols={
-                    "BTCUSDT": "not_available_on_date",
-                    "ETHUSDT": "not_available_on_date",
+                    "BTCUSDT": "no_kline_on_date",
+                    "ETHUSDT": "no_kline_on_date",
                 },
             ),
             UniverseDailySnapshot(
                 date="2024-10-02",
                 active_symbols=[],
                 missing_symbols={
-                    "BTCUSDT": "not_available_on_date",
-                    "ETHUSDT": "not_available_on_date",
+                    "BTCUSDT": "no_kline_on_date",
+                    "ETHUSDT": "no_kline_on_date",
                 },
             ),
         ],
@@ -151,12 +151,12 @@ async def test_download_universe_data_applies_date_override_and_reports_effectiv
             UniverseDailySnapshot(
                 date="2024-10-01",
                 active_symbols=["BTCUSDT"],
-                missing_symbols={"ETHUSDT": "not_available_on_date"},
+                missing_symbols={"ETHUSDT": "no_kline_on_date"},
             ),
             UniverseDailySnapshot(
                 date="2024-10-02",
                 active_symbols=["ETHUSDT"],
-                missing_symbols={"BTCUSDT": "not_available_on_date"},
+                missing_symbols={"BTCUSDT": "no_kline_on_date"},
             ),
         ],
     )
@@ -222,12 +222,12 @@ async def test_download_universe_data_partial_override_fills_missing_bound(tmp_p
             UniverseDailySnapshot(
                 date="2024-10-01",
                 active_symbols=["BTCUSDT"],
-                missing_symbols={"ETHUSDT": "not_available_on_date"},
+                missing_symbols={"ETHUSDT": "no_kline_on_date"},
             ),
             UniverseDailySnapshot(
                 date="2024-10-02",
                 active_symbols=["ETHUSDT"],
-                missing_symbols={"BTCUSDT": "not_available_on_date"},
+                missing_symbols={"BTCUSDT": "no_kline_on_date"},
             ),
         ],
     )
@@ -273,12 +273,12 @@ async def test_download_universe_data_rejects_out_of_bounds_override(tmp_path) -
             UniverseDailySnapshot(
                 date="2024-10-01",
                 active_symbols=["BTCUSDT"],
-                missing_symbols={"ETHUSDT": "not_available_on_date"},
+                missing_symbols={"ETHUSDT": "no_kline_on_date"},
             ),
             UniverseDailySnapshot(
                 date="2024-10-02",
                 active_symbols=["ETHUSDT"],
-                missing_symbols={"BTCUSDT": "not_available_on_date"},
+                missing_symbols={"BTCUSDT": "no_kline_on_date"},
             ),
         ],
     )
@@ -310,12 +310,12 @@ async def test_download_universe_data_rejects_reversed_override(tmp_path) -> Non
             UniverseDailySnapshot(
                 date="2024-10-01",
                 active_symbols=["BTCUSDT"],
-                missing_symbols={"ETHUSDT": "not_available_on_date"},
+                missing_symbols={"ETHUSDT": "no_kline_on_date"},
             ),
             UniverseDailySnapshot(
                 date="2024-10-02",
                 active_symbols=["ETHUSDT"],
-                missing_symbols={"BTCUSDT": "not_available_on_date"},
+                missing_symbols={"BTCUSDT": "no_kline_on_date"},
             ),
         ],
     )
@@ -347,12 +347,12 @@ async def test_universe_download_runs_kline_stage_before_metrics_stage(tmp_path)
             UniverseDailySnapshot(
                 date="2024-10-01",
                 active_symbols=["BTCUSDT"],
-                missing_symbols={"ETHUSDT": "not_available_on_date"},
+                missing_symbols={"ETHUSDT": "no_kline_on_date"},
             ),
             UniverseDailySnapshot(
                 date="2024-10-02",
                 active_symbols=["ETHUSDT"],
-                missing_symbols={"BTCUSDT": "not_available_on_date"},
+                missing_symbols={"BTCUSDT": "no_kline_on_date"},
             ),
         ],
     )
@@ -403,6 +403,56 @@ async def test_universe_download_runs_kline_stage_before_metrics_stage(tmp_path)
 
 
 @pytest.mark.asyncio
+async def test_universe_download_marks_kline_day_partial_when_missing_periods_present(tmp_path) -> None:
+    """Kline day should be partial when missing periods exist even if failed_symbols is empty."""
+    universe_path = tmp_path / "universe_kline_missing_periods.json"
+    _write_universe(
+        universe_path,
+        [
+            UniverseDailySnapshot(
+                date="2024-10-01",
+                active_symbols=["BTCUSDT"],
+                missing_symbols={"ETHUSDT": "no_kline_on_date"},
+            ),
+            UniverseDailySnapshot(
+                date="2024-10-02",
+                active_symbols=[],
+                missing_symbols={"BTCUSDT": "no_kline_on_date", "ETHUSDT": "no_kline_on_date"},
+            ),
+        ],
+    )
+
+    service = MarketDataService(AsyncMock())
+    service.get_perpetual_data = AsyncMock(
+        return_value=IntegrityReport(
+            total_symbols=1,
+            successful_symbols=1,
+            failed_symbols=[],
+            missing_periods=[{"symbol": "BTCUSDT", "period": "2024-10-01 - 2024-10-01", "reason": "no_data"}],
+            data_quality_score=1.0,
+            recommendations=[],
+        )
+    )
+    service._download_market_metrics_for_date = AsyncMock(return_value=None)
+
+    report = await service.download_universe_data(
+        universe_file=universe_path,
+        db_path=tmp_path / "market.db",
+        retry_config=RetryConfig(max_retries=1),
+        api_request_delay=0.0,
+        vision_request_delay=0.0,
+        download_market_metrics=False,
+        incremental=True,
+        interval=Freq.h1,
+    )
+
+    assert report["stage_reports"]["kline"]["status"] == "partial"
+    assert report["stage_reports"]["kline"]["days_partial"] == 1
+    assert report["stage_reports"]["kline"]["days_complete"] == 0
+    assert report["total_failed_symbols"] == 0
+
+
+@pytest.mark.asyncio
 async def test_universe_download_metrics_partial_failure_isolated_with_stage_error(tmp_path) -> None:
     """One metrics source failure should not abort run and must be reported."""
     universe_path = tmp_path / "universe_metrics_partial.json"
@@ -412,12 +462,12 @@ async def test_universe_download_metrics_partial_failure_isolated_with_stage_err
             UniverseDailySnapshot(
                 date="2024-10-01",
                 active_symbols=["BTCUSDT"],
-                missing_symbols={"ETHUSDT": "not_available_on_date"},
+                missing_symbols={"ETHUSDT": "no_kline_on_date"},
             ),
             UniverseDailySnapshot(
                 date="2024-10-02",
                 active_symbols=["ETHUSDT"],
-                missing_symbols={"BTCUSDT": "not_available_on_date"},
+                missing_symbols={"BTCUSDT": "no_kline_on_date"},
             ),
         ],
     )
@@ -504,12 +554,12 @@ async def test_universe_metrics_terminal_funding_abort_does_not_stop_vision(tmp_
             UniverseDailySnapshot(
                 date="2024-10-01",
                 active_symbols=["BTCUSDT"],
-                missing_symbols={"ETHUSDT": "not_available_on_date"},
+                missing_symbols={"ETHUSDT": "no_kline_on_date"},
             ),
             UniverseDailySnapshot(
                 date="2024-10-02",
                 active_symbols=["ETHUSDT"],
-                missing_symbols={"BTCUSDT": "not_available_on_date"},
+                missing_symbols={"BTCUSDT": "no_kline_on_date"},
             ),
         ],
     )
