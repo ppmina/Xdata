@@ -652,6 +652,8 @@ def test_cli_export_invokes_service(monkeypatch, tmp_path) -> None:
 
     assert exit_code == 0
     service.export_universe_data.assert_awaited_once()
+    kwargs = service.export_universe_data.await_args.kwargs
+    assert kwargs["metrics_reliability"] == "strict_100"
 
 
 def test_cli_export_passes_partial_date_override(monkeypatch, tmp_path) -> None:
@@ -696,6 +698,49 @@ def test_cli_export_passes_partial_date_override(monkeypatch, tmp_path) -> None:
     kwargs = service.export_universe_data.await_args.kwargs
     assert kwargs["start_date"] == "2024-01-01"
     assert kwargs["end_date"] is None
+
+
+def test_cli_export_passes_legacy_reliability_mode(monkeypatch, tmp_path) -> None:
+    """`export` should pass explicit legacy reliability mode."""
+    import cryptoservice.cli.universe as universe_cli
+
+    _set_api_env(monkeypatch)
+
+    service = AsyncMock()
+    service.export_universe_data = AsyncMock(return_value={"status": "ok"})
+
+    class _FakeMarketDataService:
+        @staticmethod
+        async def create(api_key: str, api_secret: str):
+            return _AsyncServiceContext(service)
+
+    monkeypatch.setattr(universe_cli, "_get_market_service_cls", lambda: _FakeMarketDataService)
+
+    universe_path = tmp_path / "universe.json"
+    universe_path.write_text("{}", encoding="utf-8")
+
+    exit_code = main(
+        [
+            "universe",
+            "export",
+            "--universe-file",
+            str(universe_path),
+            "--db-path",
+            str(tmp_path / "market.db"),
+            "--export-base-path",
+            str(tmp_path / "exports"),
+            "--source-freq",
+            Freq.h1.value,
+            "--export-freq",
+            Freq.h1.value,
+            "--metrics-reliability",
+            "legacy_warn",
+        ]
+    )
+
+    assert exit_code == 0
+    kwargs = service.export_universe_data.await_args.kwargs
+    assert kwargs["metrics_reliability"] == "legacy_warn"
 
 
 def test_cli_export_resolves_relative_paths(monkeypatch, tmp_path) -> None:

@@ -73,6 +73,12 @@ def add_universe_parser(subparsers: argparse._SubParsersAction[argparse.Argument
     )
     export_parser.add_argument("--no-klines", action="store_true", help="Skip kline export")
     export_parser.add_argument("--no-metrics", action="store_true", help="Skip metrics export")
+    export_parser.add_argument(
+        "--metrics-reliability",
+        choices=["strict_100", "legacy_warn"],
+        default="strict_100",
+        help="Metrics reliability mode (default: strict_100)",
+    )
     export_parser.set_defaults(handler=_handle_export)
 
 
@@ -246,6 +252,7 @@ async def _handle_export(args: argparse.Namespace) -> int:
             export_freq=args.export_freq,
             include_klines=not args.no_klines,
             include_metrics=not args.no_metrics,
+            metrics_reliability=args.metrics_reliability,
             start_date=args.start_date,
             end_date=args.end_date,
         )

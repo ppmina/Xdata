@@ -42,7 +42,17 @@ class _FakeNumpyExporter:
             json.dump(payload, fp, ensure_ascii=False, indent=2)
 
         if include_metrics:
+            dropped_symbol_days = [
+                {
+                    "symbol": symbol,
+                    "date": start_time,
+                    "reason": "missing_required_metrics_after_asof",
+                    "missing_columns": ["funding_rate"],
+                }
+                for symbol in symbols[1:]
+            ]
             return {
+                "day_status": "exported",
                 "metrics_missing_coverage": {
                     "funding_rate": {
                         "metric_family": "funding_rate",
@@ -52,9 +62,40 @@ class _FakeNumpyExporter:
                         "lookback_days": 3,
                         "tolerance_ms": 172800000,
                     }
-                }
+                },
+                "strict_metrics_filter": {
+                    "mode": (metrics_config or {}).get("reliability_policy", {}).get("mode", "strict_100"),
+                    "coverage_scope": "all_enabled",
+                    "drop_unit": "symbol_day",
+                    "empty_day_behavior": "skip",
+                    "required_columns": ["funding_rate"],
+                    "kept_symbol_days": [{"symbol": symbols[0], "date": start_time}] if symbols else [],
+                    "dropped_symbol_days": dropped_symbol_days,
+                    "drop_reason_counts": {
+                        "missing_required_metrics_after_asof": len(dropped_symbol_days)
+                    }
+                    if dropped_symbol_days
+                    else {},
+                    "skipped": False,
+                    "skip_reason": None,
+                },
             }
-        return {"metrics_missing_coverage": {}}
+        return {
+            "day_status": "exported",
+            "metrics_missing_coverage": {},
+            "strict_metrics_filter": {
+                "mode": (metrics_config or {}).get("reliability_policy", {}).get("mode", "strict_100"),
+                "coverage_scope": "all_enabled",
+                "drop_unit": "symbol_day",
+                "empty_day_behavior": "skip",
+                "required_columns": [],
+                "kept_symbol_days": [{"symbol": symbol, "date": start_time} for symbol in symbols],
+                "dropped_symbol_days": [],
+                "drop_reason_counts": {},
+                "skipped": False,
+                "skip_reason": None,
+            },
+        }
 
 
 class _FakeDatabase:
@@ -111,6 +152,7 @@ async def test_export_universe_definition_writes_report_and_merges_missing(monke
         include_klines=True,
         include_metrics=False,
         metrics_config=None,
+        metrics_reliability="strict_100",
         field_mapping=None,
         universe_file=str(tmp_path / "universe.json"),
     )
@@ -286,3 +328,8 @@ async def test_export_universe_data_includes_metrics_missing_coverage(monkeypatc
     assert "metrics_missing_coverage" in report
     assert "2024-01-01" in report["metrics_missing_coverage"]
     assert report["metrics_missing_coverage"]["2024-01-01"]["funding_rate"]["missing_ratio"] == 0.5
+    assert "metrics_strict_exclusions" in report
+    assert "2024-01-02" in report["metrics_strict_exclusions"]
+    assert report["stats"]["metrics_strict_exclusion_date_count"] == 1
+    assert report["stats"]["metrics_strict_dropped_symbol_day_count"] == 1
+    assert report["export_context"]["metrics_reliability"] == "strict_100"

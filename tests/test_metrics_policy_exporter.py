@@ -1,5 +1,6 @@
 """Metrics asof cold-start policy tests for NumpyExporter."""
 
+from pathlib import Path
 from unittest.mock import AsyncMock
 
 import numpy as np
@@ -142,3 +143,89 @@ async def test_fetch_and_merge_metrics_reports_full_missing_when_metric_unavaila
     assert coverage["open_interest"]["missing_ratio"] == 1.0
     assert coverage["lsr_ta"]["missing_ratio"] == 1.0
     assert coverage["funding_rate"]["missing_count"] == len(kline_df)
+
+
+def test_strict_filter_drops_symbol_day_when_required_metric_contains_nan():
+    """Strict filter should drop symbol-day groups with required metric NaN."""
+    exporter = NumpyExporter(AsyncMock(), AsyncMock(), AsyncMock())
+
+    rows = [
+        {"symbol": "BTCUSDT", "timestamp": 1704153600000, "close_time": 1704239999999, "funding_rate": 0.1},
+        {"symbol": "BTCUSDT", "timestamp": 1704157200000, "close_time": 1704239999999, "funding_rate": 0.2},
+        {"symbol": "ETHUSDT", "timestamp": 1704153600000, "close_time": 1704239999999, "funding_rate": np.nan},
+        {"symbol": "ETHUSDT", "timestamp": 1704157200000, "close_time": 1704239999999, "funding_rate": 0.2},
+    ]
+    combined_df = pd.DataFrame(rows).set_index(["symbol", "timestamp"])
+    ts_df = pd.DataFrame({"timestamp": combined_df["close_time"].values}, index=combined_df.index)
+    policy = exporter._resolve_reliability_policy({"mode": "strict_100"})
+
+    filtered_df, filtered_ts, strict_filter = exporter._apply_strict_metrics_filter(
+        combined_df=combined_df,
+        timestamp_dfs={"close_timestamp": ts_df},
+        required_columns=["funding_rate"],
+        reliability_policy=policy,
+    )
+
+    kept_symbols = filtered_df.index.get_level_values("symbol").unique().tolist()
+    assert kept_symbols == ["BTCUSDT"]
+    assert strict_filter["drop_reason_counts"]["missing_required_metrics_after_asof"] == 1
+    assert strict_filter["dropped_symbol_days"][0]["symbol"] == "ETHUSDT"
+    assert set(filtered_ts["close_timestamp"].index.get_level_values("symbol")) == {"BTCUSDT"}
+
+
+def test_strict_filter_drops_symbol_day_when_required_column_missing():
+    """Strict filter should drop symbol-day when required column is absent."""
+    exporter = NumpyExporter(AsyncMock(), AsyncMock(), AsyncMock())
+    rows = [{"symbol": "BTCUSDT", "timestamp": 1704153600000, "close_time": 1704239999999, "open_price": 1.0}]
+    combined_df = pd.DataFrame(rows).set_index(["symbol", "timestamp"])
+    policy = exporter._resolve_reliability_policy({"mode": "strict_100"})
+
+    filtered_df, _, strict_filter = exporter._apply_strict_metrics_filter(
+        combined_df=combined_df,
+        timestamp_dfs={},
+        required_columns=["funding_rate"],
+        reliability_policy=policy,
+    )
+
+    assert filtered_df.empty
+    assert strict_filter["drop_reason_counts"]["missing_required_columns"] == 1
+    assert strict_filter["dropped_symbol_days"][0]["missing_columns"] == ["funding_rate"]
+
+
+@pytest.mark.asyncio
+async def test_export_combined_data_skips_day_when_strict_filter_drops_all(tmp_path):
+    """Strict mode should skip day when all symbol-day groups are dropped."""
+    kline_df = _make_kline_df()
+    metrics_df = pd.DataFrame({"funding_rate": [np.nan, np.nan]}, index=kline_df.index)
+    ts_df = pd.DataFrame({"timestamp": [np.nan, np.nan]}, index=kline_df.index)
+
+    exporter = NumpyExporter(AsyncMock(), AsyncMock(), AsyncMock())
+    exporter.kline_query.select_by_time_range = AsyncMock(return_value=kline_df)
+    exporter._fetch_and_merge_metrics = AsyncMock(return_value=(metrics_df, {"fr_timestamp": ts_df}, {}))
+
+    result = await exporter.export_combined_data(
+        symbols=["BTCUSDT"],
+        start_time="2024-01-03",
+        end_time="2024-01-03",
+        source_freq=Freq.d1,
+        export_freq=Freq.d1,
+        output_path=Path(tmp_path),
+        include_klines=True,
+        include_metrics=True,
+        metrics_config={"funding_rate": True, "open_interest": False, "long_short_ratio": False},
+    )
+
+    assert result["day_status"] == "skipped"
+    assert result["skip_reason"] == "strict_metrics_empty_day"
+    assert result["strict_metrics_filter"]["skipped"] is True
+    assert result["strict_metrics_filter"]["drop_reason_counts"]["missing_required_metrics_after_asof"] == 2
+    assert not (Path(tmp_path) / "univ_dct2.json").exists()
+
+
+def test_strict_invariant_raises_when_required_metric_nan_survives():
+    """Strict invariant should fail fast if required metrics still contain NaN."""
+    rows = [{"symbol": "BTCUSDT", "timestamp": 1704153600000, "funding_rate": np.nan}]
+    combined_df = pd.DataFrame(rows).set_index(["symbol", "timestamp"])
+
+    with pytest.raises(ValueError, match="strict_100 invariant violated"):
+        NumpyExporter._validate_strict_required_columns(combined_df, ["funding_rate"])

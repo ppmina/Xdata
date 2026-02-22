@@ -65,6 +65,7 @@ Inputs:
 - `export_base_path`
 - `source_freq`, `export_freq`
 - export flags
+- `metrics_reliability: str = "strict_100"` (`strict_100` | `legacy_warn`)
 - `start_date: str | None = None` (optional override, inclusive)
 - `end_date: str | None = None` (optional override, inclusive)
 
@@ -73,6 +74,9 @@ Behavior:
 - Reads daily truth for expected coverage.
 - Supports optional date-window override for small export runs.
 - Writes `report.json` with `define_missing`, `export_missing`, `merged_missing`.
+- Strict mode (`strict_100`, default) drops symbol-days that fail required metrics `asof` coverage.
+- If strict filtering removes all symbol-days for a date, that date is skipped with explicit reason.
+- Report includes `metrics_missing_coverage` and `metrics_strict_exclusions` diagnostics.
 - Report includes requested/effective date range plus override context.
 - Does not mutate `universe.json`.
 

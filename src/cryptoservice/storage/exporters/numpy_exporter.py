@@ -78,6 +78,16 @@ class NumpyExporter:
         "long_short_ratio": 6 * 60 * 60 * 1000,
     }
     METRICS_MISSING_WARN_THRESHOLD = 0.05
+    RELIABILITY_MODES = {"strict_100", "legacy_warn"}
+    RELIABILITY_COVERAGE_SCOPES = {"all_enabled"}
+    RELIABILITY_DROP_UNITS = {"symbol_day"}
+    RELIABILITY_EMPTY_DAY_BEHAVIORS = {"skip"}
+    DEFAULT_RELIABILITY_POLICY: dict[str, str] = {
+        "mode": "strict_100",
+        "coverage_scope": "all_enabled",
+        "drop_unit": "symbol_day",
+        "empty_day_behavior": "skip",
+    }
 
     def __init__(
         self,
@@ -146,7 +156,14 @@ class NumpyExporter:
 
         logger.info("export_klines_complete", path=output_path)
 
-    async def _export_by_dates(self, df: pd.DataFrame, output_path: Path, freq: Freq, timestamp_dfs: dict[str, pd.DataFrame] | None = None) -> None:
+    async def _export_by_dates(
+        self,
+        df: pd.DataFrame,
+        output_path: Path,
+        freq: Freq,
+        timestamp_dfs: dict[str, pd.DataFrame] | None = None,
+        fill_missing_values: bool = True,
+    ) -> None:
         """按日期分组导出数据.
 
         Args:
@@ -154,6 +171,7 @@ class NumpyExporter:
             output_path: 输出路径
             freq: 数据频率
             timestamp_dfs: 各类数据的原始 timestamp，格式：{"kline_timestamp": df, "fr_timestamp": df, ...}
+            fill_missing_values: 是否对特征数组执行时间维度前向填充
         """
         # 获取所有唯一日期 - 使用向量化操作
         timestamps = df.index.get_level_values("timestamp").values
@@ -192,7 +210,7 @@ class NumpyExporter:
             day_ts_dfs: dict[str, pd.DataFrame] | None = None
             if ts_day_groups:
                 day_ts_dfs = {k: v[day] for k, v in ts_day_groups.items() if day in v}
-            task = self._export_single_date_optimized(day_data, date, output_path, freq, day_ts_dfs)
+            task = self._export_single_date_optimized(day_data, date, output_path, freq, day_ts_dfs, fill_missing_values=fill_missing_values)
             tasks.append(task)
 
         # 增大批次大小，减少等待开销
@@ -208,6 +226,7 @@ class NumpyExporter:
         output_path: Path,
         freq: Freq,
         timestamp_dfs: dict[str, pd.DataFrame] | None = None,
+        fill_missing_values: bool = True,
     ) -> None:
         """导出单个日期的数据（旧版，用于兼容）."""
         # 筛选当天数据 - 使用向量化操作
@@ -232,7 +251,7 @@ class NumpyExporter:
                 if mask.any():
                     day_ts_dfs[ts_name] = ts_df.iloc[mask]
 
-        await self._export_single_date_optimized(day_data, date, output_path, freq, day_ts_dfs)
+        await self._export_single_date_optimized(day_data, date, output_path, freq, day_ts_dfs, fill_missing_values=fill_missing_values)
 
     async def _export_single_date_optimized(
         self,
@@ -241,6 +260,7 @@ class NumpyExporter:
         output_path: Path,
         freq: Freq,
         timestamp_dfs: dict[str, pd.DataFrame] | None = None,
+        fill_missing_values: bool = True,
     ) -> None:
         """导出单个日期的数据（优化版）.
 
@@ -250,6 +270,7 @@ class NumpyExporter:
             output_path: 输出路径
             freq: 数据频率
             timestamp_dfs: 已筛选的当天 timestamp 数据
+            fill_missing_values: 是否对特征数组执行时间维度前向填充
         """
         if day_data.empty:
             return
@@ -276,7 +297,7 @@ class NumpyExporter:
                     array = feature_data.values
 
                     # 处理缺失值 - 使用 numpy 的 ffill
-                    if np.isnan(array).any():
+                    if fill_missing_values and np.isnan(array).any():
                         # 使用 pandas ffill（比手动实现更快）
                         df_filled = pd.DataFrame(array)
                         df_filled = df_filled.ffill(axis=1)
@@ -799,9 +820,21 @@ class NumpyExporter:
             ...     ),
             ... )
         """
+        effective_metrics_config = self._normalize_metrics_config(metrics_config)
+        reliability_policy = self._resolve_reliability_policy(effective_metrics_config.get("reliability_policy"))
+        required_metric_columns = self._get_required_metric_columns(effective_metrics_config) if include_metrics else []
+        strict_metrics_filter = self._build_default_strict_metrics_filter(reliability_policy, required_metric_columns)
+
         if not symbols:
             logger.warning("No symbols specified")
-            return {"metrics_missing_coverage": {}}
+            strict_metrics_filter["skipped"] = True
+            strict_metrics_filter["skip_reason"] = "no_symbols"
+            return {
+                "day_status": "skipped",
+                "skip_reason": "no_symbols",
+                "metrics_missing_coverage": {},
+                "strict_metrics_filter": strict_metrics_filter,
+            }
 
         output_path = Path(output_path)
         output_path.mkdir(parents=True, exist_ok=True)
@@ -856,9 +889,9 @@ class NumpyExporter:
             else:
                 logger.warning("close_time_column_missing - timestamp will only have 4 dimensions instead of 5")
         # 合并 Metrics 数据（需要 close_time 列进行对齐）
-        if include_metrics and self.metrics_query and not combined_df.empty:
+        if include_metrics and not combined_df.empty:
             metrics_df, metrics_timestamps, metrics_missing_coverage = await self._fetch_and_merge_metrics(
-                combined_df, symbols, start_time, end_time, export_freq, metrics_config
+                combined_df, symbols, start_time, end_time, export_freq, effective_metrics_config
             )
             if not metrics_df.empty:
                 # 合并到 combined_df
@@ -867,13 +900,37 @@ class NumpyExporter:
             # 合并 metrics 的 timestamp
             timestamp_dfs.update(metrics_timestamps)
 
+            if reliability_policy["mode"] == "strict_100":
+                combined_df, timestamp_dfs, strict_metrics_filter = self._apply_strict_metrics_filter(
+                    combined_df=combined_df,
+                    timestamp_dfs=timestamp_dfs,
+                    required_columns=required_metric_columns,
+                    reliability_policy=reliability_policy,
+                )
+                self._validate_strict_required_columns(combined_df, required_metric_columns)
+
         # 完成 metrics 对齐后，删除 close_time 列（不再单独导出为特征）
         if "close_time" in combined_df.columns:
             combined_df = combined_df.drop(columns=["close_time"])
 
         if combined_df.empty:
             logger.warning("No data to export")
-            return {"metrics_missing_coverage": metrics_missing_coverage}
+            skip_reason = "strict_metrics_empty_day" if reliability_policy["mode"] == "strict_100" else "no_data"
+            if reliability_policy["mode"] == "strict_100" and reliability_policy["empty_day_behavior"] == "skip":
+                strict_metrics_filter["skipped"] = True
+                strict_metrics_filter["skip_reason"] = skip_reason
+                return {
+                    "day_status": "skipped",
+                    "skip_reason": skip_reason,
+                    "metrics_missing_coverage": metrics_missing_coverage,
+                    "strict_metrics_filter": strict_metrics_filter,
+                }
+            return {
+                "day_status": "no_data",
+                "skip_reason": skip_reason,
+                "metrics_missing_coverage": metrics_missing_coverage,
+                "strict_metrics_filter": strict_metrics_filter,
+            }
 
         # 3. 重命名字段为缩写形式
         if field_mapping is None:
@@ -882,11 +939,21 @@ class NumpyExporter:
 
         # 4. 导出数据（包括 timestamp）
         logger.info("export_timestamp_types", types=list(timestamp_dfs.keys()), count=len(timestamp_dfs))
-        await self._export_by_dates(combined_df, output_path, export_freq, timestamp_dfs)
+        await self._export_by_dates(
+            combined_df,
+            output_path,
+            export_freq,
+            timestamp_dfs,
+            fill_missing_values=reliability_policy["mode"] != "strict_100",
+        )
 
         logger.info("export_combined_data_complete", columns=len(combined_df.columns), records=len(combined_df))
         logger.info("export_combined_data_timestamp_types", types=list(timestamp_dfs.keys()))
-        return {"metrics_missing_coverage": metrics_missing_coverage}
+        return {
+            "day_status": "exported",
+            "metrics_missing_coverage": metrics_missing_coverage,
+            "strict_metrics_filter": strict_metrics_filter,
+        }
 
     async def _fetch_and_merge_metrics(  # noqa: C901
         self,
@@ -1241,6 +1308,176 @@ class NumpyExporter:
             return [t for t in self.ALL_LSR_TYPES if lsr_config.get(t, False)]
 
         return []
+
+    def _normalize_metrics_config(self, metrics_config: dict[str, Any] | None) -> dict[str, Any]:
+        """Normalize metrics config and ensure reliability policy is present."""
+        if metrics_config is None:
+            normalized = {
+                "funding_rate": True,
+                "open_interest": True,
+                "long_short_ratio": True,
+            }
+        else:
+            if not isinstance(metrics_config, dict):
+                raise TypeError("metrics_config must be dict[str, Any] or None")
+            normalized = dict(metrics_config)
+
+        normalized["reliability_policy"] = self._resolve_reliability_policy(normalized.get("reliability_policy"))
+        return normalized
+
+    def _resolve_reliability_policy(self, policy: dict[str, Any] | None) -> dict[str, str]:
+        """Resolve reliability policy with strict defaults."""
+        if policy is None:
+            return dict(self.DEFAULT_RELIABILITY_POLICY)
+        if not isinstance(policy, dict):
+            raise TypeError("metrics_config.reliability_policy must be a dict")
+
+        resolved = dict(self.DEFAULT_RELIABILITY_POLICY)
+        for key in ("mode", "coverage_scope", "drop_unit", "empty_day_behavior"):
+            if key in policy and policy[key] is not None:
+                resolved[key] = str(policy[key])
+
+        if resolved["mode"] not in self.RELIABILITY_MODES:
+            raise ValueError(f"Unsupported reliability mode: {resolved['mode']}")
+        if resolved["coverage_scope"] not in self.RELIABILITY_COVERAGE_SCOPES:
+            raise ValueError(f"Unsupported reliability coverage_scope: {resolved['coverage_scope']}")
+        if resolved["drop_unit"] not in self.RELIABILITY_DROP_UNITS:
+            raise ValueError(f"Unsupported reliability drop_unit: {resolved['drop_unit']}")
+        if resolved["empty_day_behavior"] not in self.RELIABILITY_EMPTY_DAY_BEHAVIORS:
+            raise ValueError(f"Unsupported reliability empty_day_behavior: {resolved['empty_day_behavior']}")
+
+        return resolved
+
+    def _get_required_metric_columns(self, metrics_config: dict[str, Any]) -> list[str]:
+        """Derive required metric columns for strict coverage checks."""
+        required: list[str] = []
+        if metrics_config.get("funding_rate"):
+            required.append("funding_rate")
+
+        oi_config = metrics_config.get("open_interest")
+        if oi_config:
+            required.append("open_interest")
+            include_value = oi_config is True or (isinstance(oi_config, dict) and oi_config.get("include_value", True))
+            if include_value:
+                required.append("open_interest_value")
+
+        lsr_config = metrics_config.get("long_short_ratio")
+        if lsr_config:
+            for ratio_type in self._get_lsr_types_to_export(lsr_config):
+                required.append(self.RATIO_TYPE_TO_EXPORT_NAME[ratio_type])
+
+        # de-duplicate while preserving order
+        return list(dict.fromkeys(required))
+
+    @staticmethod
+    def _build_default_strict_metrics_filter(reliability_policy: dict[str, str], required_columns: list[str]) -> dict[str, Any]:
+        """Build default strict diagnostics payload."""
+        return {
+            "mode": reliability_policy["mode"],
+            "coverage_scope": reliability_policy["coverage_scope"],
+            "drop_unit": reliability_policy["drop_unit"],
+            "empty_day_behavior": reliability_policy["empty_day_behavior"],
+            "required_columns": list(required_columns),
+            "kept_symbol_days": [],
+            "dropped_symbol_days": [],
+            "drop_reason_counts": {},
+            "skipped": False,
+            "skip_reason": None,
+        }
+
+    def _apply_strict_metrics_filter(  # noqa: C901
+        self,
+        *,
+        combined_df: pd.DataFrame,
+        timestamp_dfs: dict[str, pd.DataFrame],
+        required_columns: list[str],
+        reliability_policy: dict[str, str],
+    ) -> tuple[pd.DataFrame, dict[str, pd.DataFrame], dict[str, Any]]:
+        """Drop symbol-day groups that fail strict required-metrics coverage."""
+        strict_filter = self._build_default_strict_metrics_filter(reliability_policy, required_columns)
+        if combined_df.empty:
+            return combined_df, timestamp_dfs, strict_filter
+        if not required_columns:
+            # No enabled metrics means nothing to gate.
+            symbols = combined_df.index.get_level_values("symbol")
+            timestamps = combined_df.index.get_level_values("timestamp")
+            dates = pd.to_datetime(timestamps, unit="ms", utc=True).strftime("%Y-%m-%d")
+            for symbol, date in sorted(set(zip(symbols.tolist(), dates.tolist(), strict=False))):
+                strict_filter["kept_symbol_days"].append({"symbol": symbol, "date": date})
+            return combined_df, timestamp_dfs, strict_filter
+
+        if reliability_policy["drop_unit"] != "symbol_day":
+            raise ValueError(f"Unsupported strict drop_unit: {reliability_policy['drop_unit']}")
+
+        symbols = combined_df.index.get_level_values("symbol")
+        timestamps = combined_df.index.get_level_values("timestamp")
+        dates = pd.to_datetime(timestamps, unit="ms", utc=True).strftime("%Y-%m-%d")
+        group_meta = pd.DataFrame({"_symbol": symbols, "_date": dates}, index=combined_df.index)
+
+        keep_mask = pd.Series(True, index=combined_df.index)
+        missing_required_columns = [column for column in required_columns if column not in combined_df.columns]
+
+        for (symbol, date), group_index_df in group_meta.groupby(["_symbol", "_date"], sort=True):
+            group_index = group_index_df.index
+            if missing_required_columns:
+                reason = "missing_required_columns"
+                strict_filter["dropped_symbol_days"].append(
+                    {
+                        "symbol": symbol,
+                        "date": date,
+                        "reason": reason,
+                        "missing_columns": list(missing_required_columns),
+                    }
+                )
+                keep_mask.loc[group_index] = False
+                continue
+
+            group_values = combined_df.loc[group_index, required_columns]
+            if group_values.isna().any().any():
+                reason = "missing_required_metrics_after_asof"
+                missing_columns = [column for column in required_columns if group_values[column].isna().any()]
+                strict_filter["dropped_symbol_days"].append(
+                    {
+                        "symbol": symbol,
+                        "date": date,
+                        "reason": reason,
+                        "missing_columns": missing_columns,
+                    }
+                )
+                keep_mask.loc[group_index] = False
+                continue
+
+            strict_filter["kept_symbol_days"].append({"symbol": symbol, "date": date})
+
+        filtered_df = combined_df.loc[keep_mask.values]
+        filtered_timestamp_dfs: dict[str, pd.DataFrame] = {}
+        keep_index = filtered_df.index
+        for ts_key, ts_df in timestamp_dfs.items():
+            if ts_df is None or ts_df.empty:
+                continue
+            filtered_timestamp_dfs[ts_key] = ts_df.loc[ts_df.index.intersection(keep_index)].copy()
+
+        reason_counts: dict[str, int] = {}
+        for dropped in strict_filter["dropped_symbol_days"]:
+            reason = str(dropped.get("reason", "unknown"))
+            reason_counts[reason] = reason_counts.get(reason, 0) + 1
+        strict_filter["drop_reason_counts"] = reason_counts
+
+        return filtered_df, filtered_timestamp_dfs, strict_filter
+
+    @staticmethod
+    def _validate_strict_required_columns(combined_df: pd.DataFrame, required_columns: list[str]) -> None:
+        """Fail fast when strict required columns remain incomplete after filtering."""
+        if combined_df.empty or not required_columns:
+            return
+
+        missing_columns = [column for column in required_columns if column not in combined_df.columns]
+        if missing_columns:
+            raise ValueError("strict_100 invariant violated: missing required metric columns after filtering: " + ", ".join(missing_columns))
+
+        nan_columns = [column for column in required_columns if combined_df[column].isna().any()]
+        if nan_columns:
+            raise ValueError("strict_100 invariant violated: required metrics still contain NaN after filtering: " + ", ".join(nan_columns))
 
     @staticmethod
     def _extract_timestamps(df: pd.DataFrame) -> pd.DataFrame:

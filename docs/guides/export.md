@@ -15,6 +15,7 @@ report = await service.export_universe_data(
     export_freq=Freq.m5,
     include_klines=True,
     include_metrics=True,
+    metrics_reliability="strict_100",
     start_date="2024-10-10",  # optional
     end_date="2024-10-12",    # optional
 )
@@ -32,6 +33,7 @@ cryptoservice universe export \
   --export-base-path ./data/exports \
   --source-freq 5m \
   --export-freq 5m \
+  --metrics-reliability strict_100 \
   --start-date 2024-10-10 \
   --end-date 2024-10-12
 ```
@@ -53,6 +55,10 @@ cryptoservice universe export \
 - If only one bound is provided, the missing bound falls back to universe boundary.
 - Metrics `asof` warmup lookback is metric-specific: `funding_rate=3d`, `open_interest=1d`, `long_short_ratio=1d`.
 - Metrics staleness tolerance is metric-specific: `funding_rate=48h`, `open_interest=6h`, `long_short_ratio=6h`.
-- Missing metrics remain `NaN` in feature arrays (no future fill, no forced zero fill).
+- Default reliability mode is `strict_100`.
+- Strict mode requires 100% `asof` coverage for every enabled metrics column per symbol-day.
+- Symbol-days with missing required metrics are dropped; if all symbol-days are dropped, that day is skipped.
+- Legacy behavior can be restored with `--metrics-reliability legacy_warn`.
+- Strict mode does not use forward fill to repair required metrics.
 - Exported timestamp arrays keep missing semantics as `0` (from missing timestamps), which should be used as the validity mask downstream.
-- `report.json` includes optional `metrics_missing_coverage` for daily missing-rate monitoring; high missing ratio logs warnings but does not fail export.
+- `report.json` includes `metrics_missing_coverage` and `metrics_strict_exclusions` diagnostics.

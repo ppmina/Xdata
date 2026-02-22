@@ -1020,6 +1020,7 @@ class MarketDataService:
         include_klines: bool = True,
         include_metrics: bool = True,
         metrics_config: dict[str, Any] | None = None,
+        metrics_reliability: str = "strict_100",
         field_mapping: dict[str, str] | None = None,
         start_date: str | None = None,
         end_date: str | None = None,
@@ -1055,6 +1056,7 @@ class MarketDataService:
             include_klines=include_klines,
             include_metrics=include_metrics,
             metrics_config=metrics_config,
+            metrics_reliability=metrics_reliability,
             field_mapping=field_mapping,
             universe_file=str(universe_file_obj),
             snapshots=filtered_snapshots,
@@ -1067,7 +1069,7 @@ class MarketDataService:
             override_end_date=override_end_date,
         )
 
-    async def _export_universe_definition(
+    async def _export_universe_definition(  # noqa: C901
         self,
         universe_def: UniverseDefinition,
         db_path: Path | str,
@@ -1077,6 +1079,7 @@ class MarketDataService:
         include_klines: bool,
         include_metrics: bool,
         metrics_config: dict[str, Any] | None,
+        metrics_reliability: str,
         field_mapping: dict[str, str] | None,
         universe_file: str | None = None,
         snapshots: list[UniverseDailySnapshot] | None = None,
@@ -1100,10 +1103,12 @@ class MarketDataService:
         define_missing_map: dict[str, dict[str, str]] = {}
         export_missing_map: dict[str, list[str]] = {}
         metrics_missing_coverage_map: dict[str, dict[str, Any]] = {}
+        metrics_strict_exclusions_map: dict[str, dict[str, Any]] = {}
 
         exported_days: list[dict[str, Any]] = []
         skipped_days: list[dict[str, Any]] = []
         errors: list[dict[str, str]] = []
+        metrics_config_with_policy = self._inject_metrics_reliability_policy(metrics_config, metrics_reliability)
 
         db = Database(db_file_path)
         await db.initialize()
@@ -1133,13 +1138,26 @@ class MarketDataService:
                         output_path=output_dir,
                         include_klines=include_klines,
                         include_metrics=include_metrics,
-                        metrics_config=metrics_config,
+                        metrics_config=metrics_config_with_policy,
                         field_mapping=field_mapping,
                     )
                     if isinstance(export_summary, dict):
                         day_coverage = export_summary.get("metrics_missing_coverage")
                         if isinstance(day_coverage, dict) and day_coverage:
                             metrics_missing_coverage_map[snapshot.date] = day_coverage
+
+                        strict_filter = export_summary.get("strict_metrics_filter")
+                        if isinstance(strict_filter, dict):
+                            dropped_symbol_days = strict_filter.get("dropped_symbol_days")
+                            if isinstance(dropped_symbol_days, list) and dropped_symbol_days:
+                                metrics_strict_exclusions_map[snapshot.date] = strict_filter
+
+                        day_status = str(export_summary.get("day_status", "exported"))
+                        if day_status == "skipped":
+                            day_reason = str(export_summary.get("skip_reason") or "export_skipped")
+                            skipped_days.append({"index": index, "date": snapshot.date, "reason": day_reason})
+                            export_missing_map[snapshot.date] = sorted(snapshot.active_symbols)
+                            continue
 
                     symbol_payload = self._load_export_symbol_dict(output_dir / "univ_dct2.json")
                     export_missing_symbols = self._calculate_export_missing_for_day(
@@ -1191,6 +1209,7 @@ class MarketDataService:
             "export_missing": {date: symbols for date, symbols in sorted(export_missing_map.items()) if symbols},
             "merged_missing": self._serialize_reason_map(merged_missing_map),
             "metrics_missing_coverage": {date: coverage for date, coverage in sorted(metrics_missing_coverage_map.items()) if coverage},
+            "metrics_strict_exclusions": {date: payload for date, payload in sorted(metrics_strict_exclusions_map.items()) if payload},
             "stats": {
                 "exported_day_count": len(exported_days),
                 "skipped_day_count": len(skipped_days),
@@ -1199,6 +1218,11 @@ class MarketDataService:
                 "export_missing_date_count": len([date for date, symbols in export_missing_map.items() if symbols]),
                 "merged_missing_date_count": len(merged_missing_map),
                 "metrics_missing_coverage_date_count": len(metrics_missing_coverage_map),
+                "metrics_strict_exclusion_date_count": len(metrics_strict_exclusions_map),
+                "metrics_strict_dropped_symbol_day_count": sum(
+                    len(cast(list[dict[str, Any]], payload.get("dropped_symbol_days", []))) for payload in metrics_strict_exclusions_map.values()
+                ),
+                "metrics_strict_skipped_day_count": len([day for day in skipped_days if str(day.get("reason", "")).startswith("strict_metrics_")]),
             },
             "export_context": {
                 "requested_start_date": requested_start,
@@ -1212,6 +1236,7 @@ class MarketDataService:
                 "export_freq": export_freq.value,
                 "include_klines": include_klines,
                 "include_metrics": include_metrics,
+                "metrics_reliability": metrics_reliability,
             },
         }
 
@@ -1286,6 +1311,24 @@ class MarketDataService:
                 continue
             serialized[date] = {symbol: symbol_reason_map[symbol] for symbol in sorted(symbol_reason_map)}
         return serialized
+
+    @staticmethod
+    def _inject_metrics_reliability_policy(metrics_config: dict[str, Any] | None, metrics_reliability: str) -> dict[str, Any]:
+        """Inject/export reliability mode into metrics_config payload."""
+        if metrics_reliability not in {"strict_100", "legacy_warn"}:
+            raise ValueError(f"Unsupported metrics_reliability: {metrics_reliability}")
+
+        resolved: dict[str, Any] = dict(metrics_config) if metrics_config else {}
+        current_policy = resolved.get("reliability_policy")
+        if current_policy is None:
+            policy_dict: dict[str, Any] = {}
+        elif isinstance(current_policy, dict):
+            policy_dict = dict(current_policy)
+        else:
+            raise TypeError("metrics_config.reliability_policy must be a dict when provided")
+        policy_dict["mode"] = metrics_reliability
+        resolved["reliability_policy"] = policy_dict
+        return resolved
 
     # ==================== 分类管理 ====================
 
