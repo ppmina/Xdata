@@ -1,8 +1,8 @@
-# MarketDataService API 参考
+# MarketDataService API
 
-`MarketDataService` 是核心服务类，负责数据查询、下载、Universe 管理和导出。
+`MarketDataService` is the main async service for Binance market data, universe workflows, downloads, and exports.
 
-## 创建服务
+## Create service
 
 ```python
 from cryptoservice.services import MarketDataService
@@ -10,122 +10,72 @@ from cryptoservice.services import MarketDataService
 service = await MarketDataService.create(api_key, api_secret)
 ```
 
-推荐使用异步上下文：
+Prefer context manager:
 
 ```python
 async with await MarketDataService.create(api_key, api_secret) as service:
     ...
 ```
 
-## 基础方法
-
-### `get_symbol_ticker(symbol: str | None = None)`
-
-返回单个或全部交易对行情。
-
-### `get_perpetual_symbols(only_trading: bool = True, quote_asset: str = "USDT")`
-
-返回永续合约 symbol 列表。
-
-### `get_historical_klines(...)`
-
-获取历史 K 线（现货/期货）。
-
-### `get_perpetual_data(...)`
-
-批量下载 K 线到数据库并返回 `IntegrityReport`。
-
-## Universe 定义
+## Universe v2 methods
 
 ### `define_universe(...) -> UniverseDefinition`
 
-标准 Universe 定义流程。
+Inputs:
 
-### `define_universe_with_daily_check(...) -> UniverseDefinition`
+- `symbols: list[str]`
+- `start_date: str`
+- `end_date: str`
+- `output_path: Path | str`
+- `description: str | None = None`
+- `force: bool = False`
+- `daily_check_workers: int = 5`
+- `daily_check_request_delay: float = 0.0`
 
-定义后执行使用期日级存在性检查，过滤缺失 symbol，并写入快照 metadata：
+Behavior:
 
-- `daily_existence_check.checked_range`
-- `daily_existence_check.removed_symbols`
-- `daily_existence_check.missing_by_date`
-- `daily_existence_check.missing_by_symbol`
+- Builds strict daily truth table (`daily_snapshots`).
+- Existing file is immutable unless `force=True`.
+- v1 schema is not supported.
 
-### `define_custom_universe_with_daily_check(...) -> UniverseDefinition`
+### `download_universe_data(...) -> dict[str, Any]`
 
-按 `symbols + start_date + end_date` 直接定义 universe，并执行同样的日级存在性校验。
-无效 symbol 会跳过并记录到快照 metadata（`valid_symbols` / `skipped_symbols`）。
+Inputs:
 
-## Universe 下载
+- `universe_file`
+- `db_path`
+- retry/download settings (`RetryConfig`, delays, workers, interval, etc.)
+- `start_date: str | None = None` (optional override, inclusive)
+- `end_date: str | None = None` (optional override, inclusive)
 
-### `download_universe_data(...) -> None`
+Behavior:
 
-按 `universe_file` 下载（兼容旧流程，不返回值）。
-
-### `download_custom_universe_data(...) -> dict[str, Any]`
-
-按 `symbols + start_date + end_date` 下载。
-
-返回值包含：
-
-- `requested_symbols`
-- `normalized_symbols`
-- `valid_symbols`
-- `skipped_symbols`
-- `universe_file`（保存的 universe 定义文件路径）
-- `download_summary`
-
-## 导出方法
+- Reads only `daily_snapshots[*].active_symbols` and executes per-day plan.
+- Supports optional date-window override for small validation runs.
+- Override range must be within universe bounds.
+- If one bound is missing, it falls back to universe boundary.
+- Does not mutate `universe.json`.
 
 ### `export_universe_data(...) -> dict[str, Any]`
 
-从 `universe_file` 导出，生成 `report.json`。
+Inputs:
 
-### `export_custom_universe_data(...) -> dict[str, Any]`
+- `universe_file`
+- `db_path`
+- `export_base_path`
+- `source_freq`, `export_freq`
+- export flags
+- `start_date: str | None = None` (optional override, inclusive)
+- `end_date: str | None = None` (optional override, inclusive)
 
-从 `symbols + start/end` 导出，生成 `report.json`。
+Behavior:
 
-补充：
+- Reads daily truth for expected coverage.
+- Supports optional date-window override for small export runs.
+- Writes `report.json` with `define_missing`, `export_missing`, `merged_missing`.
+- Report includes requested/effective date range plus override context.
+- Does not mutate `universe.json`.
 
-- `download_custom_universe_data` 支持 `universe_output_path`，用于指定下载阶段落盘的 universe 文件。
-- `export_custom_universe_data` 支持 `universe_output_path`，未指定时默认写到导出目录下 `universe.json`。
+## Other APIs
 
-导出报告关键字段：
-
-- `define_missing`
-- `export_missing`
-- `merged_missing`
-- `exported_snapshots`
-- `skipped_snapshots`
-- `errors`
-- `stats`
-- `report_path`
-
-## 使用示例
-
-```python
-from cryptoservice.config import RetryConfig
-from cryptoservice.models import Freq
-
-async with await MarketDataService.create(api_key, api_secret) as service:
-    await service.download_universe_data(
-        universe_file="./data/universe.json",
-        db_path="./data/database/market.db",
-        retry_config=RetryConfig(max_retries=3),
-        api_request_delay=0.5,
-        vision_request_delay=0.0,
-        download_market_metrics=True,
-        incremental=True,
-        interval=Freq.m5,
-        max_api_workers=1,
-        max_vision_workers=50,
-    )
-
-    report = await service.export_universe_data(
-        universe_file="./data/universe.json",
-        db_path="./data/database/market.db",
-        export_base_path="./data/exports",
-        source_freq=Freq.m5,
-        export_freq=Freq.m5,
-    )
-    print(report["report_path"])
-```
+Base market methods (`get_symbol_ticker`, `get_perpetual_symbols`, `get_historical_klines`, `get_perpetual_data`) remain available.

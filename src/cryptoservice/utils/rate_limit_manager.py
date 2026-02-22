@@ -8,6 +8,7 @@ import threading
 import time
 
 from cryptoservice.config.logging import get_logger
+from cryptoservice.exceptions import RateLimitError
 
 logger = get_logger(__name__)
 
@@ -15,11 +16,18 @@ logger = get_logger(__name__)
 class RateLimitManager:
     """API频率限制管理器."""
 
-    def __init__(self, base_delay: float = 0.5):
+    def __init__(
+        self,
+        base_delay: float = 0.5,
+        forbidden_error_threshold: int = 3,
+        forbidden_cooldown_schedule: tuple[float, float, float] = (30.0, 90.0, 300.0),
+    ):
         """初始化 API 频率限制管理器.
 
         Args:
             base_delay (float): 初始延迟（秒）。
+            forbidden_error_threshold (int): 连续 403 达到该阈值后打开熔断。
+            forbidden_cooldown_schedule (tuple[float, float, float]): 连续 403 的冷却时长（秒）。
         """
         self.base_delay = base_delay
         self.current_delay = base_delay
@@ -27,12 +35,18 @@ class RateLimitManager:
         self.request_count = 0
         self.window_start_time = time.time()
         self.consecutive_errors = 0
+        self.consecutive_forbidden_errors = 0
         self.max_requests_per_minute = 1800  # 保守估计，低于API限制
+        self.cooldown_until = 0.0
+        self.circuit_open = False
+        self.forbidden_error_threshold = max(1, forbidden_error_threshold)
+        self.forbidden_cooldown_schedule = forbidden_cooldown_schedule
         self.lock = threading.Lock()
 
     def wait_before_request(self):
         """在请求前等待适当的时间."""
         with self.lock:
+            self._enforce_circuit_and_cooldown()
             current_time = time.time()
 
             # 重置计数窗口（每分钟）
@@ -63,16 +77,41 @@ class RateLimitManager:
             if time_since_last < total_delay:
                 wait_time = total_delay - time_since_last
                 if wait_time > 0.1:  # 只记录较长的等待时间
-                    logger.debug(f"等待 {wait_time:.2f}秒 (当前延迟: {self.current_delay:.2f}秒)")
+                    logger.debug(f"Waiting {wait_time:.2f}s (current delay: {self.current_delay:.2f}s)")
                 time.sleep(wait_time)
 
             self.last_request_time = time.time()
             self.request_count += 1
 
+    def _set_cooldown(self, wait_seconds: float, reason: str) -> None:
+        now = time.time()
+        self.cooldown_until = max(self.cooldown_until, now + max(0.0, wait_seconds))
+        logger.warning(
+            "rate_limit_cooldown_set",
+            reason=reason,
+            wait_seconds=round(wait_seconds, 2),
+            cooldown_until=round(self.cooldown_until, 2),
+        )
+
+    def _enforce_circuit_and_cooldown(self) -> None:
+        if self.circuit_open:
+            logger.error(
+                "rate_limit_circuit_open",
+                consecutive_forbidden_errors=self.consecutive_forbidden_errors,
+            )
+            raise RateLimitError(f"请求已被保护机制终止：连续 {self.consecutive_forbidden_errors} 次 HTTP 403 Forbidden。")
+
+        current_time = time.time()
+        if current_time < self.cooldown_until:
+            wait_time = self.cooldown_until - current_time
+            logger.warning("rate_limit_cooldown_wait", wait_seconds=round(wait_time, 2))
+            time.sleep(wait_time)
+
     def handle_rate_limit_error(self):
         """处理频率限制错误."""
         with self.lock:
             self.consecutive_errors += 1
+            self.consecutive_forbidden_errors = 0
 
             # 动态增加延迟
             if self.consecutive_errors <= 3:
@@ -95,6 +134,42 @@ class RateLimitManager:
             # 重置请求计数
             self.request_count = 0
             self.window_start_time = time.time()
+            self._set_cooldown(wait_time, reason="rate_limit")
+
+            return wait_time
+
+    def handle_forbidden_throttle_error(self) -> float:
+        """处理应按限流控制的 403 Forbidden 错误."""
+        with self.lock:
+            self.consecutive_errors += 1
+            self.consecutive_forbidden_errors += 1
+
+            index = min(
+                self.consecutive_forbidden_errors - 1,
+                len(self.forbidden_cooldown_schedule) - 1,
+            )
+            wait_time = float(self.forbidden_cooldown_schedule[index])
+            self.current_delay = min(20.0, max(self.base_delay, self.current_delay * 2))
+
+            self.request_count = 0
+            self.window_start_time = time.time()
+            self._set_cooldown(wait_time, reason="forbidden_throttle")
+
+            logger.warning(
+                "forbidden_throttle_detected",
+                consecutive_forbidden_errors=self.consecutive_forbidden_errors,
+                wait_seconds=wait_time,
+                delay_seconds=round(self.current_delay, 2),
+            )
+
+            if self.consecutive_forbidden_errors >= self.forbidden_error_threshold:
+                self.circuit_open = True
+                logger.error(
+                    "forbidden_throttle_circuit_open",
+                    consecutive_forbidden_errors=self.consecutive_forbidden_errors,
+                    threshold=self.forbidden_error_threshold,
+                )
+                raise RateLimitError(f"请求已被保护机制终止：连续 {self.consecutive_forbidden_errors} 次 HTTP 403 Forbidden。")
 
             return wait_time
 
@@ -103,6 +178,8 @@ class RateLimitManager:
         with self.lock:
             if self.consecutive_errors > 0:
                 self.consecutive_errors = max(0, self.consecutive_errors - 1)
+            if self.consecutive_forbidden_errors > 0:
+                self.consecutive_forbidden_errors = 0
                 if self.consecutive_errors == 0:
                     logger.info(
                         "rate_limit_recovered",
@@ -113,11 +190,18 @@ class RateLimitManager:
 class AsyncRateLimitManager:
     """API频率限制管理器的异步版本."""
 
-    def __init__(self, base_delay: float = 0.5):
+    def __init__(
+        self,
+        base_delay: float = 0.5,
+        forbidden_error_threshold: int = 3,
+        forbidden_cooldown_schedule: tuple[float, float, float] = (30.0, 90.0, 300.0),
+    ):
         """初始化 API 频率限制管理器.
 
         Args:
             base_delay (float): 初始延迟（秒）。
+            forbidden_error_threshold (int): 连续 403 达到该阈值后打开熔断。
+            forbidden_cooldown_schedule (tuple[float, float, float]): 连续 403 的冷却时长（秒）。
         """
         self.base_delay = base_delay
         self.current_delay = base_delay
@@ -125,12 +209,18 @@ class AsyncRateLimitManager:
         self.request_count = 0
         self.window_start_time = time.time()
         self.consecutive_errors = 0
+        self.consecutive_forbidden_errors = 0
         self.max_requests_per_minute = 1800  # 保守估计，低于API限制
+        self.cooldown_until = 0.0
+        self.circuit_open = False
+        self.forbidden_error_threshold = max(1, forbidden_error_threshold)
+        self.forbidden_cooldown_schedule = forbidden_cooldown_schedule
         self.lock = asyncio.Lock()
 
     async def wait_before_request(self):
         """在请求前异步等待适当的时间."""
         async with self.lock:
+            await self._enforce_circuit_and_cooldown()
             current_time = time.time()
 
             # 重置计数窗口（每分钟）
@@ -160,16 +250,41 @@ class AsyncRateLimitManager:
                 wait_time = total_delay - time_since_last
                 if wait_time > 0:
                     if wait_time > 0.1:  # 只记录较长的等待时间
-                        logger.debug(f"等待 {wait_time:.2f}秒 (当前延迟: {self.current_delay:.2f}秒)")
+                        logger.debug(f"Waiting {wait_time:.2f}s (current delay: {self.current_delay:.2f}s)")
                     await asyncio.sleep(wait_time)
 
             self.last_request_time = time.time()
             self.request_count += 1
 
+    def _set_cooldown(self, wait_seconds: float, reason: str) -> None:
+        now = time.time()
+        self.cooldown_until = max(self.cooldown_until, now + max(0.0, wait_seconds))
+        logger.warning(
+            "rate_limit_cooldown_set",
+            reason=reason,
+            wait_seconds=round(wait_seconds, 2),
+            cooldown_until=round(self.cooldown_until, 2),
+        )
+
+    async def _enforce_circuit_and_cooldown(self) -> None:
+        if self.circuit_open:
+            logger.error(
+                "rate_limit_circuit_open",
+                consecutive_forbidden_errors=self.consecutive_forbidden_errors,
+            )
+            raise RateLimitError(f"请求已被保护机制终止：连续 {self.consecutive_forbidden_errors} 次 HTTP 403 Forbidden。")
+
+        current_time = time.time()
+        if current_time < self.cooldown_until:
+            wait_time = self.cooldown_until - current_time
+            logger.warning("rate_limit_cooldown_wait", wait_seconds=round(wait_time, 2))
+            await asyncio.sleep(wait_time)
+
     async def handle_rate_limit_error(self) -> float:
         """异步处理频率限制错误."""
         async with self.lock:
             self.consecutive_errors += 1
+            self.consecutive_forbidden_errors = 0
 
             # 动态增加延迟
             if self.consecutive_errors <= 3:
@@ -192,6 +307,42 @@ class AsyncRateLimitManager:
             # 重置请求计数
             self.request_count = 0
             self.window_start_time = time.time()
+            self._set_cooldown(wait_time, reason="rate_limit")
+
+            return wait_time
+
+    async def handle_forbidden_throttle_error(self) -> float:
+        """异步处理应按限流控制的 403 Forbidden 错误."""
+        async with self.lock:
+            self.consecutive_errors += 1
+            self.consecutive_forbidden_errors += 1
+
+            index = min(
+                self.consecutive_forbidden_errors - 1,
+                len(self.forbidden_cooldown_schedule) - 1,
+            )
+            wait_time = float(self.forbidden_cooldown_schedule[index])
+            self.current_delay = min(20.0, max(self.base_delay, self.current_delay * 2))
+
+            self.request_count = 0
+            self.window_start_time = time.time()
+            self._set_cooldown(wait_time, reason="forbidden_throttle")
+
+            logger.warning(
+                "forbidden_throttle_detected",
+                consecutive_forbidden_errors=self.consecutive_forbidden_errors,
+                wait_seconds=wait_time,
+                delay_seconds=round(self.current_delay, 2),
+            )
+
+            if self.consecutive_forbidden_errors >= self.forbidden_error_threshold:
+                self.circuit_open = True
+                logger.error(
+                    "forbidden_throttle_circuit_open",
+                    consecutive_forbidden_errors=self.consecutive_forbidden_errors,
+                    threshold=self.forbidden_error_threshold,
+                )
+                raise RateLimitError(f"请求已被保护机制终止：连续 {self.consecutive_forbidden_errors} 次 HTTP 403 Forbidden。")
 
             return wait_time
 
@@ -200,6 +351,8 @@ class AsyncRateLimitManager:
         async with self.lock:
             if self.consecutive_errors > 0:
                 self.consecutive_errors = max(0, self.consecutive_errors - 1)
+            if self.consecutive_forbidden_errors > 0:
+                self.consecutive_forbidden_errors = 0
                 if self.consecutive_errors == 0:
                     logger.info(
                         "rate_limit_recovered",

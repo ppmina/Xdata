@@ -49,23 +49,21 @@ class CsvExporter:
             chunk_size: 分块大小
         """
         if not symbols:
-            logger.warning("没有指定交易对")
+            logger.warning("No symbols specified")
             return
 
-        logger.info(f"开始导出CSV数据: {len(symbols)} 个交易对")
-
-        # 获取数据
+        logger.info(f"Starting CSV export for {len(symbols)} symbols")
         df = await self.kline_query.select_by_time_range(symbols, start_time, end_time, freq)
 
         if df.empty:
-            logger.warning("没有数据可导出")
+            logger.warning("No data to export")
             return
 
         # 在线程池中处理CSV导出
         loop = asyncio.get_event_loop()
         await loop.run_in_executor(None, self._process_csv_export, df, output_path, chunk_size)
 
-        logger.info(f"CSV数据导出完成: {output_path}")
+        logger.info(f"CSV export completed: {output_path}")
 
     def _process_csv_export(self, df: pd.DataFrame, output_path: Path, chunk_size: int) -> None:
         """处理CSV导出（同步）.
@@ -94,6 +92,6 @@ class CsvExporter:
                 chunk = df_reset.iloc[i : i + chunk_size]
                 chunk_path = output_path.parent / f"{output_path.stem}_part_{i // chunk_size + 1}.csv"
                 chunk.to_csv(chunk_path, index=False)
-                logger.debug(f"保存CSV分块: {chunk_path}")
+                logger.debug(f"Saved CSV chunk: {chunk_path}")
         else:
             df_reset.to_csv(output_path, index=False)

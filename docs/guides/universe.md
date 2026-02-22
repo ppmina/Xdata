@@ -1,137 +1,174 @@
-# Universe 策略
+# Universe v2 Guide
 
-Universe 是动态交易对选择策略，根据成交量等指标定期重平衡交易对集合。
+Universe v2 uses a single immutable `universe.json` as the source of truth.
 
-## 核心能力
+## Workflow
 
-- `define_universe`: 基于 T1/T2/T3 与 top_k/top_ratio 生成 universe 文件。
-- `define_universe_with_daily_check`: 在定义后按使用期做日级存在性校验，过滤缺失 symbol 并写入 metadata。
-- `define_custom_universe_with_daily_check`: 按 `symbols + start/end` 直接定义并做日级校验。
-- `download_universe_data`: 按 `universe_file` 下载快照数据到数据库（兼容原有流程）。
-- `download_custom_universe_data`: 直接用 `symbols + start/end` 下载，不依赖 universe 文件。
-- `load_symbols_from_txt`: 从 txt 加载 symbols（支持逗号/空白分隔与 `#` 注释）。
+1. `define`: generate daily truth from `symbols + start_date + end_date`.
+2. `download`: read `daily_snapshots[*].active_symbols` and execute strict day-symbol downloads.
+3. `export`: read the same daily truth and generate export + missing coverage report.
 
-## 1. 定义 Universe
+`download` and `export` never mutate `universe.json`.
+
+## v2 Schema
+
+```json
+{
+  "schema_version": "2.0",
+  "requested_symbols": ["BTCUSDT", "ETHUSDT"],
+  "start_date": "2024-10-01",
+  "end_date": "2024-10-31",
+  "daily_snapshots": [
+    {
+      "date": "2024-10-01",
+      "active_symbols": ["BTCUSDT"],
+      "missing_symbols": {
+        "ETHUSDT": "not_available_on_date"
+      }
+    }
+  ],
+  "created_at": "2026-02-21T00:00:00+00:00",
+  "description": "optional"
+}
+```
+
+## Python API
 
 ```python
 import asyncio
 import os
 from cryptoservice import MarketDataService
+from cryptoservice.config import RetryConfig
+from cryptoservice.models import Freq
 
 
-async def create_universe():
+async def run():
     api_key = os.getenv("BINANCE_API_KEY")
     api_secret = os.getenv("BINANCE_API_SECRET")
 
     async with await MarketDataService.create(api_key, api_secret) as service:
-        universe_def = await service.define_universe(
+        await service.define_universe(
+            symbols=["BTCUSDT", "ETHUSDT", "SOLUSDT"],
             start_date="2024-10-01",
-            end_date="2024-11-30",
-            t1_months=1,
-            t2_months=1,
-            t3_months=1,
-            top_ratio=0.9,
+            end_date="2024-10-31",
             output_path="./data/universe.json",
-            description="Universe demo",
-            delay_days=7,
-            quote_asset="USDT",
+            force=False,
         )
 
-        print("snapshots:", len(universe_def.snapshots))
+        await service.download_universe_data(
+            universe_file="./data/universe.json",
+            db_path="./data/database/market.db",
+            retry_config=RetryConfig(max_retries=3),
+            api_request_delay=0.5,
+            vision_request_delay=0.0,
+            download_market_metrics=True,
+            incremental=True,
+            interval=Freq.m5,
+        )
 
 
-asyncio.run(create_universe())
+asyncio.run(run())
 ```
 
-## 2. 定义并做日级存在性校验
+## CLI
 
-```python
-universe_def = await service.define_universe_with_daily_check(
-    start_date="2024-10-01",
-    end_date="2024-11-30",
-    t1_months=1,
-    t2_months=1,
-    t3_months=1,
-    top_ratio=0.9,
-    output_path="./data/universe.json",
-    daily_check_workers=8,
-    daily_check_request_delay=0.0,
-)
+```bash
+cryptoservice universe define \
+  --symbols BTCUSDT,ETHUSDT,SOLUSDT \
+  --start-date 2024-10-01 \
+  --end-date 2024-10-31 \
+  --output ./data/universe.json \
+  --api-key "${BINANCE_API_KEY}" \
+  --api-secret "${BINANCE_API_SECRET}"
+
+# load symbols from txt file
+cryptoservice universe define \
+  --symbols-file ./symbols.txt \
+  --start-date 2024-10-01 \
+  --end-date 2024-10-31 \
+  --output ./data/universe.json \
+  --api-key "${BINANCE_API_KEY}" \
+  --api-secret "${BINANCE_API_SECRET}"
+
+# mix inline symbols with @file shorthand
+cryptoservice universe define \
+  --symbols BTCUSDT,@./symbols.txt,ETHUSDT \
+  --start-date 2024-10-01 \
+  --end-date 2024-10-31 \
+  --output ./data/universe.json \
+  --api-key "${BINANCE_API_KEY}" \
+  --api-secret "${BINANCE_API_SECRET}"
+
+cryptoservice universe download \
+  --universe-file ./data/universe.json \
+  --db-path ./data/database/market.db \
+  --api-key "${BINANCE_API_KEY}" \
+  --api-secret "${BINANCE_API_SECRET}" \
+  --interval 5m \
+  --download-market-metrics
+
+# optional small-window download for validation/visualization
+cryptoservice universe download \
+  --universe-file ./data/universe.json \
+  --db-path ./data/database/market.db \
+  --start-date 2024-10-10 \
+  --end-date 2024-10-12 \
+  --interval 5m
+
+cryptoservice universe export \
+  --universe-file ./data/universe.json \
+  --db-path ./data/database/market.db \
+  --export-base-path ./data/exports \
+  --source-freq 5m \
+  --export-freq 5m
+
+# optional small-window export
+cryptoservice universe export \
+  --universe-file ./data/universe.json \
+  --db-path ./data/database/market.db \
+  --export-base-path ./data/exports \
+  --source-freq 5m \
+  --export-freq 5m \
+  --start-date 2024-10-10 \
+  --end-date 2024-10-12
 ```
 
-导出的 `universe.json` 中每个快照会写入：
+## Shell Scripts
 
-- `metadata.daily_existence_check.checked_range`
-- `metadata.daily_existence_check.removed_symbols`
-- `metadata.daily_existence_check.missing_by_date`
-- `metadata.daily_existence_check.missing_by_symbol`
+```bash
+bash scripts/universe_define.sh \
+  --symbols BTCUSDT,ETHUSDT,SOLUSDT \
+  --start-date 2024-10-01 \
+  --end-date 2024-10-31 \
+  --output ./data/universe.json \
+  --api-key "${BINANCE_API_KEY}" \
+  --api-secret "${BINANCE_API_SECRET}"
 
-缺失 symbol 会从该快照的 `symbols` 和 `mean_daily_amounts` 中过滤，不补位。
+bash scripts/universe_download.sh \
+  --universe-file ./data/universe.json \
+  --db-path ./data/database/market.db \
+  --api-key "${BINANCE_API_KEY}" \
+  --api-secret "${BINANCE_API_SECRET}" \
+  --interval 5m \
+  --download-market-metrics
 
-## 2.1 自定义定义（symbols + 时间）
-
-```python
-universe_def = await service.define_custom_universe_with_daily_check(
-    symbols=["BTCUSDT", "ETHUSDT", "SOLUSDT", "BADSYMBOL"],
-    start_date="2024-10-01",
-    end_date="2024-10-31",
-    output_path="./data/universe.json",
-    description="Custom universe (daily checked)",
-    daily_check_workers=8,
-    daily_check_request_delay=0.0,
-)
+bash scripts/universe_export.sh \
+  --universe-file ./data/universe.json \
+  --db-path ./data/database/market.db \
+  --export-base-path ./data/exports \
+  --source-freq 5m \
+  --export-freq 5m
 ```
 
-该方法会把无效 symbol 与过滤结果写进 `universe.json` 的快照 metadata。
+Scripts are pass-through wrappers; consumer must provide all paths and options.
+You can provide credentials via `--api-key/--api-secret`, or via env (`BINANCE_API_KEY`, `BINANCE_API_SECRET`).
+Dotenv option: `uv run --env-file .env cryptoservice universe define ...`.
 
-## 3. 按 Universe 文件下载
+## Failure Rules
 
-```python
-from cryptoservice.config import RetryConfig
-from cryptoservice.models import Freq
-
-await service.download_universe_data(
-    universe_file="./data/universe.json",
-    db_path="./data/database/market.db",
-    retry_config=RetryConfig(max_retries=3),
-    api_request_delay=0.5,
-    vision_request_delay=0.0,
-    download_market_metrics=True,
-    incremental=True,
-    interval=Freq.m5,
-    max_api_workers=1,
-    max_vision_workers=50,
-    custom_start_date="2024-10-01",
-    custom_end_date="2024-10-31",
-)
-```
-
-## 4. 自定义 Universe 下载（symbols + 时间）
-
-```python
-report = await service.download_custom_universe_data(
-    symbols=["BTCUSDT", "ETHUSDT", "SOLUSDT", "BADSYMBOL"],
-    start_date="2024-10-01",
-    end_date="2024-10-31",
-    db_path="./data/database/market.db",
-    retry_config=RetryConfig(max_retries=3),
-    api_request_delay=0.5,
-    vision_request_delay=0.0,
-    download_market_metrics=True,
-    incremental=True,
-    interval=Freq.m5,
-    max_api_workers=1,
-    max_vision_workers=50,
-    universe_output_path="./data/universe.json",
-)
-
-print(report["valid_symbols"])
-print(report["skipped_symbols"])  # 无效或不可交易 symbol
-print(report["universe_file"])     # 下载与导出之间可复用的 universe 文件
-```
-
-## 5. 建议流程
-
-1. 先跑 `define_universe_with_daily_check` 产出高质量 `universe.json`。
-2. 再跑 `download_universe_data` 写库。
-3. 导出阶段使用 `export_universe_data`，查看 `report.json` 中的缺失汇总。
+- API/network failure during `define` aborts the run and writes nothing.
+- Unknown symbols remain in `requested_symbols` and appear in each day's `missing_symbols`.
+- Days with zero `active_symbols` are valid and preserved.
+- `download` / `export` support optional `--start-date` / `--end-date` overrides (inclusive, `YYYY-MM-DD`).
+- Override range must be within `universe.json` range; out-of-bounds or reversed ranges fail fast.
+- If only one bound is provided, the missing bound defaults to the universe boundary.

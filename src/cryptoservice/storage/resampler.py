@@ -54,6 +54,12 @@ class DataResampler:
         "taker_sell_quote_volume": "sum",
     }
 
+    @staticmethod
+    def _validate_nan_warn_ratio_threshold(nan_warn_ratio_threshold: float) -> None:
+        """Validate NaN warning ratio threshold."""
+        if not 0.0 <= nan_warn_ratio_threshold <= 1.0:
+            raise ValueError("nan_warn_ratio_threshold must be between 0.0 and 1.0")
+
     @classmethod
     async def resample(cls, df: pd.DataFrame, target_freq: Freq) -> pd.DataFrame:
         """重采样K线数据到目标频率.
@@ -66,20 +72,19 @@ class DataResampler:
             重采样后的DataFrame，保持相同的索引结构
         """
         if df.empty:
-            logger.warning("输入DataFrame为空，无法重采样")
+            logger.warning("Input DataFrame is empty; cannot resample")
             return df
 
         pandas_freq = cls.FREQ_MAP.get(target_freq)
         if not pandas_freq:
             raise ValueError(f"不支持的目标频率: {target_freq}")
 
-        logger.info(f"开始重采样数据到 {target_freq.value}")
-
+        logger.info(f"Start resampling data to {target_freq.value}")
         # 在线程池中执行重采样操作（CPU密集型）
         loop = asyncio.get_event_loop()
         result_df = await loop.run_in_executor(None, cls._resample_sync, df, pandas_freq, cls.AGG_RULES)
 
-        logger.info("数据重采样完成")
+        logger.info("Data resampling completed")
         return result_df
 
     @staticmethod
@@ -109,7 +114,7 @@ class DataResampler:
             # 过滤出存在于聚合规则中的列
             available_columns = [col for col in symbol_data.columns if col in agg_rules]
             if not available_columns:
-                logger.warning(f"交易对 {symbol} 没有可重采样的列")
+                logger.warning(f"Symbol {symbol} has no columns to resample")
                 continue
 
             # 使用可用列的聚合规则
@@ -123,7 +128,7 @@ class DataResampler:
                 resampled = resampled.dropna(how="all")
 
                 if resampled.empty:
-                    logger.warning(f"交易对 {symbol} 重采样后数据为空")
+                    logger.warning(f"Symbol {symbol} is empty after resampling")
                     continue
 
                 # 将DatetimeIndex转换回时间戳
@@ -135,11 +140,11 @@ class DataResampler:
                 resampled_dfs.append(resampled)
 
             except Exception as e:
-                logger.error(f"重采样交易对 {symbol} 时出错: {e}")
+                logger.error(f"Error resampling symbol {symbol}: {e}")
                 continue
 
         if not resampled_dfs:
-            logger.warning("所有交易对重采样失败，返回空DataFrame")
+            logger.warning("Resampling failed for all symbols; returning empty DataFrame")
             return pd.DataFrame()
 
         # 合并所有交易对的重采样结果
@@ -220,9 +225,7 @@ class DataResampler:
         if df.empty:
             return {freq: pd.DataFrame() for freq in target_frequencies}
 
-        logger.info(f"开始批量重采样到 {len(target_frequencies)} 个频率")
-
-        # 并发执行多个重采样任务
+        logger.info(f"Start batch resampling to {len(target_frequencies)} frequencies")
         tasks = []
         for freq in target_frequencies:
             task = cls.resample(df.copy(), freq)
@@ -234,13 +237,13 @@ class DataResampler:
         resampled_data: dict[Freq, pd.DataFrame] = {}
         for freq, result in zip(target_frequencies, results, strict=False):
             if isinstance(result, Exception):
-                logger.error(f"重采样到 {freq.value} 失败: {result}")
+                logger.error(f"Failed to resample to {freq.value}: {result}")
                 resampled_data[freq] = pd.DataFrame()
             else:
                 assert isinstance(result, pd.DataFrame)  # noqa: S101
                 resampled_data[freq] = result
 
-        logger.info("批量重采样完成")
+        logger.info("Batch resampling completed")
         return resampled_data
 
     @classmethod
@@ -292,7 +295,7 @@ class DataResampler:
             ... )
         """
         if metrics_df.empty:
-            logger.warning("输入 Metrics DataFrame 为空，无法重采样")
+            logger.warning("Input Metrics DataFrame is empty; cannot resample")
             return metrics_df
 
         pandas_freq = cls.FREQ_MAP.get(target_freq)
@@ -338,7 +341,7 @@ class DataResampler:
             # 筛选出存在于数据中的列
             available_columns = [col for col in symbol_data.columns if col in agg_strategy]
             if not available_columns:
-                logger.warning(f"交易对 {symbol} 没有可重采样的列")
+                logger.warning(f"Symbol {symbol} has no columns to resample")
                 continue
 
             # 构建该 symbol 的聚合规则
@@ -352,7 +355,7 @@ class DataResampler:
                 resampled = resampled.dropna(how="all")
 
                 if resampled.empty:
-                    logger.warning(f"交易对 {symbol} 重采样后数据为空")
+                    logger.warning(f"Symbol {symbol} is empty after resampling")
                     continue
 
                 # 转换回毫秒时间戳
@@ -364,11 +367,11 @@ class DataResampler:
                 resampled_dfs.append(resampled)
 
             except Exception as e:
-                logger.error(f"重采样交易对 {symbol} 时出错: {e}")
+                logger.error(f"Error resampling symbol {symbol}: {e}")
                 continue
 
         if not resampled_dfs:
-            logger.warning("所有交易对重采样失败，返回空 DataFrame")
+            logger.warning("Resampling failed for all symbols; returning empty DataFrame")
             return pd.DataFrame()
 
         result_df = pd.concat(resampled_dfs, axis=0).sort_index()
@@ -383,7 +386,8 @@ class DataResampler:
         tolerance_ms: int = 24 * 60 * 60 * 1000,  # 默认容差 24 小时 (86400000 ms)
         return_original_timestamps: bool = False,
         use_close_time: bool = True,
-        include_equal: bool = False,
+        include_equal: bool = True,
+        nan_warn_ratio_threshold: float = 0.0,
     ) -> pd.DataFrame | tuple[pd.DataFrame, pd.DataFrame]:
         """将 Metrics 数据对齐到 Kline 数据的时间点.
 
@@ -403,6 +407,9 @@ class DataResampler:
                 - True: 使用 kline 的 close_time 作为对齐基准，metrics_ts < close_time（或 <=）
                 - False: 使用 kline 的 open_time (timestamp索引) 作为对齐基准
             include_equal: 是否包含与对齐基准相等的时间点（默认 True）
+            nan_warn_ratio_threshold: 缺失值 warning 的比例阈值，范围 [0.0, 1.0]
+                - 0.0: 任何缺失都告警（默认，保持向后兼容）
+                - >0: 仅当缺失比例超过阈值时告警，否则输出 debug
 
         Returns:
             对齐后的 Metrics 数据，时间戳与 kline_df 完全一致
@@ -428,12 +435,14 @@ class DataResampler:
             ...     return_original_timestamps=True,
             ... )
         """
+        cls._validate_nan_warn_ratio_threshold(nan_warn_ratio_threshold)
+
         if metrics_df.empty:
-            logger.warning("Metrics 数据为空，无法对齐")
+            logger.warning("Metrics data is empty and cannot be aligned")
             return metrics_df
 
         if kline_df.empty:
-            logger.warning("Kline 数据为空，无法对齐")
+            logger.warning("Kline data is empty and cannot be aligned")
             return pd.DataFrame()
 
         logger.info(
@@ -441,6 +450,7 @@ class DataResampler:
             method=method,
             use_close_time=use_close_time,
             include_equal=include_equal,
+            nan_warn_ratio_threshold=nan_warn_ratio_threshold,
         )
 
         loop = asyncio.get_event_loop()
@@ -455,6 +465,7 @@ class DataResampler:
                 return_original_timestamps,
                 use_close_time,
                 include_equal,
+                nan_warn_ratio_threshold,
             )
             assert isinstance(result, tuple), "Expected tuple when return_original_timestamps=True"  # noqa: S101
             result_df, original_ts_df = result
@@ -468,11 +479,20 @@ class DataResampler:
             return result_df, original_ts_df
         else:
             result = await loop.run_in_executor(
-                None, cls._align_timestamps_sync, metrics_df, kline_df, method, tolerance_ms, False, use_close_time, include_equal
+                None,
+                cls._align_timestamps_sync,
+                metrics_df,
+                kline_df,
+                method,
+                tolerance_ms,
+                False,
+                use_close_time,
+                include_equal,
+                nan_warn_ratio_threshold,
             )
             # 当 return_original_timestamps=False 时，返回值是 DataFrame
             assert isinstance(result, pd.DataFrame), "Expected DataFrame when return_original_timestamps=False"  # noqa: S101
-            logger.info(f"时间点对齐完成: {len(result)} 条记录")
+            logger.info(f"Time-point alignment completed: {len(result)} records")
             return result
 
     @staticmethod
@@ -484,6 +504,7 @@ class DataResampler:
         return_original_timestamps: bool = False,
         use_close_time: bool = True,
         include_equal: bool = True,
+        nan_warn_ratio_threshold: float = 0.0,
     ) -> pd.DataFrame | tuple[pd.DataFrame, pd.DataFrame]:
         """同步执行时间点对齐.
 
@@ -495,6 +516,7 @@ class DataResampler:
             return_original_timestamps: 是否返回原始timestamp
             use_close_time: 是否使用 close_time 作为对齐基准
             include_equal: 是否包含与对齐基准相等的时间点
+            nan_warn_ratio_threshold: 缺失值 warning 的比例阈值，范围 [0.0, 1.0]
 
         Returns:
             对齐后的 DataFrame，或 (对齐后的DataFrame, 原始timestamp的DataFrame)
@@ -509,13 +531,13 @@ class DataResampler:
         # 只处理两者都有的 symbols
         common_symbols = kline_symbols & metrics_symbols
         if not common_symbols:
-            logger.warning("Kline 和 Metrics 没有共同的交易对")
+            logger.warning("Kline and Metrics have no common symbols")
             return pd.DataFrame()
 
         # 检查是否可以使用 close_time
         has_close_time = "close_time" in kline_df.columns
         if use_close_time and not has_close_time:
-            logger.warning("kline_df 不包含 close_time 列，将使用 open_time (timestamp) 对齐")
+            logger.warning("kline_df does not contain close_time column; using open_time (timestamp) alignment")
             use_close_time = False
 
         aligned_dfs = []
@@ -527,14 +549,21 @@ class DataResampler:
             nan_rows = aligned_df[data_cols].isna().any(axis=1)
             nan_count = int(nan_rows.sum())
             if nan_count:
-                logger.warning(
-                    "对齐结果存在缺失值",
-                    symbol=symbol_value,
-                    method=method,
-                    include_equal=include_equal,
-                    nan_rows=nan_count,
-                    total_rows=len(aligned_df),
-                )
+                total_rows = len(aligned_df)
+                nan_ratio = (nan_count / total_rows) if total_rows > 0 else 0.0
+                log_kwargs = {
+                    "symbol": symbol_value,
+                    "method": method,
+                    "include_equal": include_equal,
+                    "nan_rows": nan_count,
+                    "total_rows": total_rows,
+                    "nan_ratio": nan_ratio,
+                    "nan_warn_ratio_threshold": nan_warn_ratio_threshold,
+                }
+                if nan_warn_ratio_threshold == 0.0 or nan_ratio > nan_warn_ratio_threshold:
+                    logger.warning("Alignment results contain missing values", **log_kwargs)
+                else:
+                    logger.debug("Alignment missing values below warning threshold", **log_kwargs)
 
         for symbol in common_symbols:
             try:
@@ -632,7 +661,7 @@ class DataResampler:
 
                 if len(aligned) != len(kline_symbol):
                     logger.warning(
-                        "对齐结果行数与 kline 不一致",
+                        "The number of rows in the alignment result is inconsistent with kline",
                         symbol=symbol,
                         aligned_rows=len(aligned),
                         kline_rows=len(kline_symbol),
@@ -669,11 +698,11 @@ class DataResampler:
                 aligned_dfs.append(aligned)
 
             except Exception as e:
-                logger.error(f"对齐交易对 {symbol} 时出错: {e}")
+                logger.error(f"Error aligning symbol {symbol}: {e}")
                 continue
 
         if not aligned_dfs:
-            logger.warning("所有交易对对齐失败")
+            logger.warning("Alignment failed for all symbols")
             if return_original_timestamps:
                 return pd.DataFrame(), pd.DataFrame()
             return pd.DataFrame()
@@ -698,6 +727,7 @@ class DataResampler:
         return_original_timestamps: bool = False,
         use_close_time: bool = True,
         include_equal: bool = True,
+        nan_warn_ratio_threshold: float = 0.0,
     ) -> pd.DataFrame | tuple[pd.DataFrame, pd.DataFrame]:
         """一站式：在原始 Metrics 序列上对齐到 Kline 时间点.
 
@@ -719,6 +749,7 @@ class DataResampler:
                 - True: 使用 kline 的 close_time，metrics_ts < close_time（或 <=，由 include_equal 控制）
                 - False: 使用 kline 的 open_time，metrics_ts <= open_time（或 <，由 include_equal 控制）
             include_equal: 是否包含与对齐基准相等的时间点（默认 True）
+            nan_warn_ratio_threshold: 缺失值 warning 的比例阈值，范围 [0.0, 1.0]
 
         Returns:
             对齐后的 Metrics 数据，如果 return_original_timestamps=True，
@@ -734,11 +765,17 @@ class DataResampler:
             ...     use_close_time=True,  # 默认
             ... )
         """
-        logger.info("resample_and_align_start", use_close_time=use_close_time)
+        cls._validate_nan_warn_ratio_threshold(nan_warn_ratio_threshold)
+
+        logger.info(
+            "resample_and_align_start",
+            use_close_time=use_close_time,
+            nan_warn_ratio_threshold=nan_warn_ratio_threshold,
+        )
         logger.info("resample_and_align_skip_resample", target_freq=target_freq, has_agg_strategy=agg_strategy is not None)
 
         if metrics_df.empty:
-            logger.warning("Metrics 数据为空，无法对齐")
+            logger.warning("Metrics data is empty and cannot be aligned")
             if return_original_timestamps:
                 return metrics_df, pd.DataFrame()
             return metrics_df
@@ -753,6 +790,7 @@ class DataResampler:
                 return_original_timestamps=True,
                 use_close_time=use_close_time,
                 include_equal=include_equal,
+                nan_warn_ratio_threshold=nan_warn_ratio_threshold,
             )
             assert isinstance(result, tuple), "Expected tuple when return_original_timestamps=True"  # noqa: S101
             aligned, original_ts = result
@@ -767,11 +805,17 @@ class DataResampler:
             return aligned, original_ts
         else:
             result = await cls.align_to_kline_timestamps(
-                metrics_df, kline_df, align_method, tolerance_ms, use_close_time=use_close_time, include_equal=include_equal
+                metrics_df,
+                kline_df,
+                align_method,
+                tolerance_ms,
+                use_close_time=use_close_time,
+                include_equal=include_equal,
+                nan_warn_ratio_threshold=nan_warn_ratio_threshold,
             )
             # 当 return_original_timestamps=False 时（默认），返回值是 DataFrame
             assert isinstance(result, pd.DataFrame), "Expected DataFrame when return_original_timestamps=False"  # noqa: S101
-            logger.info("对齐完成")
+            logger.info("Alignment completed")
             return result
 
     @classmethod

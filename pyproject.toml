@@ -10,7 +10,7 @@ readme = "README.md"
 license = { text = "MIT" }
 requires-python = ">=3.11,<3.14"
 dependencies = [
-    "python-binance>=1.0.27",
+    "python-binance>=1.0.35",
     "pyyaml>=6.0.2",
     "tomli>=2.2.1",
     "tomli-w>=1.0.0",
@@ -30,6 +30,9 @@ classifiers = [
     "Operating System :: OS Independent",
 ]
 authors = [{ name = "Minnn", email = "minzzzai.s@gmail.com" }]
+
+[project.scripts]
+cryptoservice = "cryptoservice.cli.main:main"
 
 [project.optional-dependencies]
 test = ["pytest>=6.0.0", "pytest-cov>=2.10.0", "pytest-asyncio>=0.21.0"]

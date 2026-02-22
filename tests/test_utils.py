@@ -11,7 +11,8 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from cryptoservice.models import Freq
+from cryptoservice.exceptions import RateLimitError
+from cryptoservice.models import ErrorSeverity, Freq
 from cryptoservice.utils import (
     CacheManager,
     DataConverter,
@@ -147,6 +148,55 @@ def test_enhanced_error_handler_should_retry():
     ValueError("Invalid value")
     # 根据实现，ValueError可能被认为是不可重试的
     # 这里假设它返回False，具体取决于实际实现
+
+
+def test_enhanced_error_handler_classify_by_status_code():
+    """测试错误分类优先使用 status_code."""
+
+    class HttpError(Exception):
+        def __init__(self, status_code: int):
+            self.status_code = status_code
+
+    assert EnhancedErrorHandler.classify_error(HttpError(403)) == ErrorSeverity.CRITICAL
+    assert EnhancedErrorHandler.classify_error(HttpError(429)) == ErrorSeverity.MEDIUM
+    assert EnhancedErrorHandler.classify_error(HttpError(503)) == ErrorSeverity.HIGH
+
+
+def test_enhanced_error_handler_detects_forbidden_throttle_error():
+    """403 + Forbidden HTML 应被识别为限流防护场景."""
+
+    class HttpError(Exception):
+        def __init__(self):
+            self.status_code = 403
+
+        def __str__(self):
+            return "Binance API error (status=403, reason=Forbidden, response_body=<html><title>403 Forbidden</title></html>)"
+
+    assert EnhancedErrorHandler.is_forbidden_throttle_error(HttpError()) is True
+
+
+def test_enhanced_error_handler_does_not_treat_auth_403_as_throttle():
+    """认证类 403 不应进入限流防护分支."""
+
+    class HttpError(Exception):
+        def __init__(self):
+            self.status_code = 403
+
+        def __str__(self):
+            return "Binance API error (status=403, message=Invalid API-key, IP, or permissions for action.)"
+
+    assert EnhancedErrorHandler.is_forbidden_throttle_error(HttpError()) is False
+
+
+def test_enhanced_error_handler_detects_rate_limit_by_status_code():
+    """结构化状态码 418/429 应被识别为限流."""
+
+    class HttpError(Exception):
+        def __init__(self, status_code: int):
+            self.status_code = status_code
+
+    assert EnhancedErrorHandler.is_rate_limit_error(HttpError(418)) is True
+    assert EnhancedErrorHandler.is_rate_limit_error(HttpError(429)) is True
 
 
 # ================= 工具类测试 =================
@@ -310,6 +360,116 @@ async def test_async_rate_limit_manager():
     elapsed = time.time() - start_time
     # 异步方法应该有延迟，但在测试环境中可能很短，调整期望值
     assert elapsed >= 0  # 基本验证方法可以调用
+
+
+@pytest.mark.asyncio
+async def test_async_rate_limit_manager_opens_forbidden_circuit():
+    """连续 403 达到阈值后应打开熔断并阻止后续请求."""
+    from cryptoservice.utils import AsyncRateLimitManager
+
+    manager = AsyncRateLimitManager(
+        base_delay=0.0,
+        forbidden_cooldown_schedule=(0.0, 0.0, 0.0),
+    )
+
+    await manager.handle_forbidden_throttle_error()
+    await manager.handle_forbidden_throttle_error()
+
+    with pytest.raises(RateLimitError):
+        await manager.handle_forbidden_throttle_error()
+
+    with pytest.raises(RateLimitError):
+        await manager.wait_before_request()
+
+
+@pytest.mark.asyncio
+async def test_adaptive_controller_slow_start_and_aimd():
+    """自适应控制器应先慢启动，再进入加法增益阶段."""
+    from cryptoservice.utils import AdaptiveEndpointController, EndpointAdaptivePolicy
+
+    controller = AdaptiveEndpointController(
+        endpoint_key="unit_endpoint",
+        policy=EndpointAdaptivePolicy(
+            min_concurrency=1,
+            max_concurrency=16,
+            slow_start_threshold=8,
+        ),
+    )
+
+    await controller.on_success()
+    assert controller.snapshot()["current_limit"] == 2
+
+    for _ in range(2):
+        await controller.on_success()
+    assert controller.snapshot()["current_limit"] == 4
+
+    for _ in range(4):
+        await controller.on_success()
+    assert controller.snapshot()["current_limit"] == 8
+
+    for _ in range(8):
+        await controller.on_success()
+    assert controller.snapshot()["current_limit"] == 9
+
+
+@pytest.mark.asyncio
+async def test_adaptive_controller_fast_decrease_on_throttle():
+    """限流触发时应快速降并发，Forbidden 时可重置到最小并发."""
+    from cryptoservice.utils import AdaptiveEndpointController, EndpointAdaptivePolicy
+
+    controller = AdaptiveEndpointController(
+        endpoint_key="unit_endpoint",
+        policy=EndpointAdaptivePolicy(
+            min_concurrency=1,
+            max_concurrency=16,
+            slow_start_threshold=8,
+            decrease_factor=0.5,
+            forbidden_hard_reset=True,
+        ),
+    )
+
+    await controller.on_success()
+    for _ in range(2):
+        await controller.on_success()
+    for _ in range(4):
+        await controller.on_success()
+    assert controller.snapshot()["current_limit"] == 8
+
+    await controller.on_throttle("rate_limit")
+    snapshot_after_rate = controller.snapshot()
+    assert snapshot_after_rate["current_limit"] == 4
+    assert snapshot_after_rate["ssthresh"] == 4
+
+    await controller.on_throttle("forbidden")
+    snapshot_after_forbidden = controller.snapshot()
+    assert snapshot_after_forbidden["current_limit"] == 1
+    assert snapshot_after_forbidden["ssthresh"] == 2
+
+
+@pytest.mark.asyncio
+async def test_adaptive_controller_acquire_release_waits_on_limit():
+    """当达到并发上限时，acquire 应等待 release."""
+    from cryptoservice.utils import AdaptiveEndpointController, EndpointAdaptivePolicy
+
+    controller = AdaptiveEndpointController(
+        endpoint_key="unit_endpoint",
+        policy=EndpointAdaptivePolicy(
+            min_concurrency=1,
+            max_concurrency=4,
+            slow_start_threshold=2,
+        ),
+    )
+
+    await controller.acquire()
+    waiting_task = asyncio.create_task(controller.acquire())
+    await asyncio.sleep(0.02)
+    assert not waiting_task.done()
+
+    await controller.release()
+    await asyncio.wait_for(waiting_task, timeout=0.2)
+    await controller.release()
+
+    assert controller.snapshot()["inflight"] == 0
 
 
 @pytest.mark.asyncio

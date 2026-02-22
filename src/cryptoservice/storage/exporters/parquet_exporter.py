@@ -49,23 +49,21 @@ class ParquetExporter:
             compression: 压缩方式
         """
         if not symbols:
-            logger.warning("没有指定交易对")
+            logger.warning("No symbols specified")
             return
 
-        logger.info(f"开始导出Parquet数据: {len(symbols)} 个交易对")
-
-        # 获取数据
+        logger.info(f"Starting Parquet export for {len(symbols)} symbols")
         df = await self.kline_query.select_by_time_range(symbols, start_time, end_time, freq)
 
         if df.empty:
-            logger.warning("没有数据可导出")
+            logger.warning("No data to export")
             return
 
         # 在线程池中处理Parquet导出
         loop = asyncio.get_event_loop()
         await loop.run_in_executor(None, self._process_parquet_export, df, output_path, compression)
 
-        logger.info(f"Parquet数据导出完成: {output_path}")
+        logger.info(f"Parquet export completed: {output_path}")
 
     def _process_parquet_export(self, df: pd.DataFrame, output_path: Path, compression: Literal["snappy", "gzip", "brotli", "lz4", "zstd"]) -> None:
         """处理Parquet导出（同步）.

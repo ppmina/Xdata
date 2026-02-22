@@ -46,7 +46,7 @@ class KlineQuery:
             包含K线数据的DataFrame，使用(symbol, timestamp)作为多级索引
         """
         if not symbols:
-            logger.warning("没有指定交易对")
+            logger.warning("No symbols specified")
             return pd.DataFrame()
 
         # 默认查询的数据列（不包括主键列）
@@ -87,7 +87,7 @@ class KlineQuery:
             rows = await cursor.fetchall()
 
         if not rows:
-            logger.info(f"未找到K线数据: {symbols}, {start_time} - {end_time}, {freq.value}")
+            logger.info(f"No Kline data found: {symbols}, {start_time} - {end_time}, {freq.value}")
             # 返回空DataFrame但保持正确的结构
             empty_df = pd.DataFrame(columns=query_columns)
             empty_df = empty_df.set_index(["symbol", "timestamp"])

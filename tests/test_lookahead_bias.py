@@ -12,7 +12,7 @@ import pandas as pd
 import pytest
 
 from cryptoservice.models import Freq
-from cryptoservice.models.universe import UniverseConfig, UniverseDefinition, UniverseSnapshot
+from cryptoservice.models.universe import UniverseDailySnapshot, UniverseDefinition
 from cryptoservice.storage.resampler import DataResampler
 
 # ==============================================================================
@@ -299,109 +299,71 @@ class TestKlineResamplingLookaheadBias:
 class TestUniverseSelectionLookaheadBias:
     """测试 Universe 选择时的 Lookahead Bias 检测."""
 
-    def test_universe_snapshot_period_consistency(self):
-        """测试 Universe 快照的时间周期一致性.
-
-        验证：
-        - calculated_t1_end (计算周期结束) <= effective_date
-        - start_date (使用开始) > effective_date
-        """
-        snapshot = UniverseSnapshot.create_with_inferred_periods(
-            effective_date="2024-01-31",
-            t1_months=1,
-            symbols=["BTCUSDT", "ETHUSDT"],
-            mean_daily_amounts={"BTCUSDT": 1000000.0, "ETHUSDT": 500000.0},
-        )
-
-        effective_dt = pd.to_datetime(snapshot.effective_date)
-        calculated_t1_end_dt = pd.to_datetime(snapshot.calculated_t1_end)
-        start_dt = pd.to_datetime(snapshot.start_date)
-
-        # 计算周期结束 <= 重平衡日期
-        assert calculated_t1_end_dt <= effective_dt, (
-            f"Lookahead bias: calculated_t1_end ({snapshot.calculated_t1_end}) > effective_date ({snapshot.effective_date})"
-        )
-
-        # 使用周期开始 > 重平衡日期
-        assert start_dt > effective_dt, f"Lookahead bias: start_date ({snapshot.start_date}) <= effective_date ({snapshot.effective_date})"
-
-    def test_universe_snapshot_no_future_data_in_calculation(self):
-        """测试 Universe 快照的计算期不包含未来数据.
-
-        验证：用于计算 Universe 的数据周期必须严格在重平衡日期之前或当天。
-        """
-        # 模拟多个月的 universe 快照
-        snapshots = []
-        for month in range(1, 4):  # 1月到3月
-            effective_date = f"2024-0{month}-{28 + month % 2}"  # 月末
-            snapshot = UniverseSnapshot.create_with_inferred_periods(
-                effective_date=effective_date,
-                t1_months=1,
-                symbols=["BTCUSDT"],
-                mean_daily_amounts={"BTCUSDT": 1000000.0},
-            )
-            snapshots.append(snapshot)
-
-        for snapshot in snapshots:
-            effective_ts = int(snapshot.calculated_t1_end_ts)
-            calculated_t1_end_ts = int(snapshot.calculated_t1_end_ts)
-
-            # 确保计算周期结束时间戳 <= 重平衡生效时间戳
-            assert calculated_t1_end_ts <= effective_ts, (
-                f"Lookahead bias in universe calculation: calculated_t1_end_ts ({calculated_t1_end_ts}) > effective timestamp ({effective_ts})"
-            )
-
-    def test_universe_definition_temporal_ordering(self):
-        """测试 UniverseDefinition 中快照的时间顺序正确性.
-
-        验证：每个快照的 start_date 应该在前一个快照的 end_date 之后或当天。
-        """
-        config = UniverseConfig(
-            start_date="2024-01-01",
-            end_date="2024-03-31",
-            t1_months=1,
-            t2_months=1,
-            t3_months=3,
-            top_k=10,
-            delay_days=0,
-            quote_asset="USDT",
-        )
-
-        # 创建连续的快照
-        snapshots = []
-        effective_dates = ["2024-01-31", "2024-02-29", "2024-03-31"]
-
-        for i, eff_date in enumerate(effective_dates):
-            next_eff = effective_dates[i + 1] if i + 1 < len(effective_dates) else None
-            snapshot = UniverseSnapshot.create_with_inferred_periods(
-                effective_date=eff_date,
-                t1_months=1,
-                symbols=["BTCUSDT", "ETHUSDT"],
-                mean_daily_amounts={"BTCUSDT": 1000000.0, "ETHUSDT": 500000.0},
-                next_effective_date=next_eff,
-            )
-            snapshots.append(snapshot)
-
+    def test_daily_partition_invariants(self):
+        """v2 daily snapshots should partition requested symbols exactly."""
         universe_def = UniverseDefinition(
-            config=config,
-            snapshots=snapshots,
-            creation_time=pd.Timestamp.now().to_pydatetime(),
+            schema_version="2.0",
+            requested_symbols=["BTCUSDT", "ETHUSDT"],
+            start_date="2024-01-01",
+            end_date="2024-01-03",
+            daily_snapshots=[
+                UniverseDailySnapshot(
+                    date="2024-01-01",
+                    active_symbols=["BTCUSDT"],
+                    missing_symbols={"ETHUSDT": "not_available_on_date"},
+                ),
+                UniverseDailySnapshot(
+                    date="2024-01-02",
+                    active_symbols=["BTCUSDT", "ETHUSDT"],
+                    missing_symbols={},
+                ),
+                UniverseDailySnapshot(
+                    date="2024-01-03",
+                    active_symbols=["ETHUSDT"],
+                    missing_symbols={"BTCUSDT": "not_available_on_date"},
+                ),
+            ],
+            created_at=pd.Timestamp.now(tz="UTC").to_pydatetime(),
             description="Test universe",
         )
 
-        # 验证时间顺序
-        for i in range(1, len(universe_def.snapshots)):
-            prev_snapshot = universe_def.snapshots[i - 1]
-            curr_snapshot = universe_def.snapshots[i]
+        requested = set(universe_def.requested_symbols)
+        for snapshot in universe_def.daily_snapshots:
+            assert set(snapshot.active_symbols).union(set(snapshot.missing_symbols)) == requested
+            assert set(snapshot.active_symbols).isdisjoint(set(snapshot.missing_symbols))
 
-            prev_end_dt = pd.to_datetime(prev_snapshot.end_date)
-            curr_start_dt = pd.to_datetime(curr_snapshot.start_date)
+    def test_universe_definition_temporal_ordering(self):
+        """v2 snapshots should be continuous and strictly daily ordered."""
+        universe_def = UniverseDefinition(
+            schema_version="2.0",
+            requested_symbols=["BTCUSDT"],
+            start_date="2024-02-01",
+            end_date="2024-02-03",
+            daily_snapshots=[
+                UniverseDailySnapshot(
+                    date="2024-02-01",
+                    active_symbols=["BTCUSDT"],
+                    missing_symbols={},
+                ),
+                UniverseDailySnapshot(
+                    date="2024-02-02",
+                    active_symbols=["BTCUSDT"],
+                    missing_symbols={},
+                ),
+                UniverseDailySnapshot(
+                    date="2024-02-03",
+                    active_symbols=["BTCUSDT"],
+                    missing_symbols={},
+                ),
+            ],
+            created_at=pd.Timestamp.now(tz="UTC").to_pydatetime(),
+            description="Test universe",
+        )
 
-            # 当前快照的使用开始日期应该 >= 前一个快照的使用结束日期
-            # 允许1天的重叠（月末/月初）
-            assert curr_start_dt >= prev_end_dt - pd.Timedelta(days=1), (
-                f"Temporal ordering violated: snapshot {i} start ({curr_snapshot.start_date}) < snapshot {i - 1} end ({prev_snapshot.end_date})"
-            )
+        dates = [pd.to_datetime(snapshot.date) for snapshot in universe_def.daily_snapshots]
+        assert dates == sorted(dates)
+        for i in range(1, len(dates)):
+            assert dates[i] - dates[i - 1] == pd.Timedelta(days=1)
 
 
 # ==============================================================================
@@ -556,6 +518,34 @@ class TestLookaheadBiasEdgeCases:
             else:
                 if not pd.isna(original_ts):
                     assert original_ts <= kline_ts
+
+    @pytest.mark.asyncio
+    async def test_asof_keeps_nan_when_no_history_within_tolerance(self):
+        """当容差窗口内没有历史 metrics 时，应保持 NaN 而不是强行填充."""
+        symbols = ["BTCUSDT"]
+        hour_ms = 3600000
+        day_ms = 24 * hour_ms
+
+        start_ts = 1700006400000
+        end_ts = start_ts + day_ms * 2
+
+        # 日线 kline（2天）
+        kline_df = create_mock_kline_df(symbols, start_ts, end_ts, day_ms)
+
+        # metrics 从第二天中午开始，两个日线时间点都找不到 <= kline_ts 且在 6h 容差内的数据
+        metrics_start_ts = start_ts + day_ms + 12 * hour_ms
+        metrics_df = create_mock_metrics_df(symbols, metrics_start_ts, end_ts, hour_ms, "funding_rate")
+
+        aligned_df, original_ts_df = await DataResampler.align_to_kline_timestamps(
+            metrics_df,
+            kline_df,
+            method="asof",
+            tolerance_ms=6 * hour_ms,
+            return_original_timestamps=True,
+        )
+
+        assert aligned_df["funding_rate"].isna().all()
+        assert original_ts_df["original_timestamp"].isna().all()
 
     @pytest.mark.asyncio
     async def test_timezone_boundary_no_lookahead(self):

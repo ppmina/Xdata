@@ -476,12 +476,11 @@ class Database:
         if not self._initialized:
             await self.initialize()
 
-        logger.info("开始数据库优化")
+        logger.info("Starting database optimization")
         async with self.pool.get_connection() as conn:
             await conn.execute("VACUUM")
-        logger.info("数据库优化完成")
+        logger.info("Database optimization completed")
 
-    @property
     def is_initialized(self) -> bool:
         """检查是否已初始化."""
         return self._initialized

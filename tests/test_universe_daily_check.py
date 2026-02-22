@@ -1,71 +1,77 @@
-"""Universe 日级存在性校验测试."""
+"""Universe manager v2 daily classification tests."""
 
 from unittest.mock import AsyncMock, Mock
 
 import pytest
 
-from cryptoservice.models import UniverseSnapshot
 from cryptoservice.services.processors import UniverseManager
 
 
 @pytest.mark.asyncio
-async def test_validate_snapshot_daily_existence_filters_missing_symbols():
-    """存在缺失日期时，应过滤 symbol 并写入 metadata."""
-    manager = UniverseManager(Mock())
+async def test_classify_symbols_for_date_builds_partition() -> None:
+    """Classification should split requested symbols into active and missing."""
+    service = Mock()
 
-    snapshot = UniverseSnapshot.create_with_dates_and_timestamps(
-        usage_t1_start="2024-01-01",
-        usage_t1_end="2024-01-03",
-        calculated_t1_start="2023-12-01",
-        calculated_t1_end="2023-12-31",
-        symbols=["BTCUSDT", "ETHUSDT"],
-        mean_daily_amounts={"BTCUSDT": 100.0, "ETHUSDT": 50.0},
+    async def fake_check(symbol: str, date: str, strict: bool = False) -> bool:
+        return symbol != "ETHUSDT"
+
+    service.check_symbol_exists_on_date = AsyncMock(side_effect=fake_check)
+    manager = UniverseManager(service)
+
+    snapshot = await manager._classify_symbols_for_date(
+        requested_symbols=["BTCUSDT", "ETHUSDT", "BADSYMBOL"],
+        valid_symbol_set={"BTCUSDT", "ETHUSDT"},
+        target_date="2024-01-01",
+        daily_check_workers=3,
+        daily_check_request_delay=0.0,
     )
 
-    async def fake_check(symbol: str, start_date: str, end_date: str, request_delay: float = 0.0) -> list[str]:
-        if symbol == "ETHUSDT":
-            return ["2024-01-02"]
-        return []
-
-    manager._check_symbol_daily_existence = AsyncMock(side_effect=fake_check)
-
-    summary = await manager._validate_snapshot_daily_existence(snapshot, daily_check_workers=2)
-
-    assert snapshot.symbols == ["BTCUSDT"]
-    assert snapshot.mean_daily_amounts == {"BTCUSDT": 100.0}
-    assert summary["removed_symbols"] == ["ETHUSDT"]
-    assert summary["missing_by_date"] == {"2024-01-02": ["ETHUSDT"]}
-
-    metadata = snapshot.metadata or {}
-    check_data = metadata.get("daily_existence_check", {})
-    assert check_data.get("removed_symbols") == ["ETHUSDT"]
-    assert check_data.get("missing_by_symbol") == {"ETHUSDT": ["2024-01-02"]}
+    assert snapshot.active_symbols == ["BTCUSDT"]
+    assert snapshot.missing_symbols == {
+        "ETHUSDT": "not_available_on_date",
+        "BADSYMBOL": "invalid_symbol",
+    }
 
 
 @pytest.mark.asyncio
-async def test_validate_snapshot_daily_existence_keeps_symbols_when_no_missing():
-    """无缺失日期时，symbols 与 mean_daily_amounts 应保持不变."""
-    manager = UniverseManager(Mock())
+async def test_define_universe_fails_without_file_write_on_api_error(tmp_path) -> None:
+    """Define should abort and keep output absent when API checks fail."""
+    service = Mock()
+    service._normalize_symbols = staticmethod(lambda symbols: [symbol.upper() for symbol in symbols])
+    service.get_perpetual_symbols = AsyncMock(return_value=["BTCUSDT"])
+    service.check_symbol_exists_on_date = AsyncMock(side_effect=RuntimeError("network failure"))
 
-    snapshot = UniverseSnapshot.create_with_dates_and_timestamps(
-        usage_t1_start="2024-02-01",
-        usage_t1_end="2024-02-02",
-        calculated_t1_start="2024-01-01",
-        calculated_t1_end="2024-01-31",
-        symbols=["BTCUSDT", "ETHUSDT"],
-        mean_daily_amounts={"BTCUSDT": 100.0, "ETHUSDT": 50.0},
-    )
+    manager = UniverseManager(service)
+    output_path = tmp_path / "universe.json"
 
-    manager._check_symbol_daily_existence = AsyncMock(return_value=[])
+    with pytest.raises(RuntimeError, match="network failure"):
+        await manager.define_universe(
+            symbols=["BTCUSDT"],
+            start_date="2024-01-01",
+            end_date="2024-01-01",
+            output_path=output_path,
+        )
 
-    summary = await manager._validate_snapshot_daily_existence(snapshot)
+    assert not output_path.exists()
 
-    assert snapshot.symbols == ["BTCUSDT", "ETHUSDT"]
-    assert snapshot.mean_daily_amounts == {"BTCUSDT": 100.0, "ETHUSDT": 50.0}
-    assert summary["removed_symbols"] == []
-    assert summary["missing_by_date"] == {}
 
-    metadata = snapshot.metadata or {}
-    check_data = metadata.get("daily_existence_check", {})
-    assert check_data.get("removed_symbols") == []
-    assert check_data.get("missing_by_date") == {}
+@pytest.mark.asyncio
+async def test_define_universe_fails_without_file_write_on_symbol_list_error(tmp_path) -> None:
+    """Define should abort and keep output absent when symbol list query fails."""
+    service = Mock()
+    service._normalize_symbols = staticmethod(lambda symbols: [symbol.upper() for symbol in symbols])
+    service.get_perpetual_symbols = AsyncMock(side_effect=RuntimeError("symbol endpoint down"))
+    service.check_symbol_exists_on_date = AsyncMock()
+
+    manager = UniverseManager(service)
+    output_path = tmp_path / "universe.json"
+
+    with pytest.raises(RuntimeError, match="symbol endpoint down"):
+        await manager.define_universe(
+            symbols=["BTCUSDT"],
+            start_date="2024-01-01",
+            end_date="2024-01-01",
+            output_path=output_path,
+        )
+
+    assert not output_path.exists()

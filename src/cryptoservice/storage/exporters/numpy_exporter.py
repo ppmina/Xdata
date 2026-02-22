@@ -67,6 +67,17 @@ class NumpyExporter:
 
     # 所有支持的 LSR 类型
     ALL_LSR_TYPES = ["toptrader_account", "toptrader_position", "global_account", "taker_vol"]
+    METRICS_LOOKBACK_DAYS = {
+        "funding_rate": 3,
+        "open_interest": 1,
+        "long_short_ratio": 1,
+    }
+    METRICS_TOLERANCE_MS = {
+        "funding_rate": 48 * 60 * 60 * 1000,
+        "open_interest": 6 * 60 * 60 * 1000,
+        "long_short_ratio": 6 * 60 * 60 * 1000,
+    }
+    METRICS_MISSING_WARN_THRESHOLD = 0.05
 
     def __init__(
         self,
@@ -108,7 +119,7 @@ class NumpyExporter:
             chunk_days: 分块天数，用于大数据集处理
         """
         if not symbols:
-            logger.warning("没有指定交易对")
+            logger.warning("No symbols specified")
             return
 
         output_path = Path(output_path)
@@ -120,7 +131,7 @@ class NumpyExporter:
         df = await self.kline_query.select_by_time_range(symbols, start_time, end_time, freq)
 
         if df.empty:
-            logger.warning("没有数据可导出")
+            logger.warning("No data to export")
             return
 
         # 重采样（如果需要）
@@ -440,7 +451,7 @@ class NumpyExporter:
                     logger.debug("export_timestamps_complete", type=ts_name, shape=ts_array.shape)
 
                 if not merged_columns:
-                    logger.debug("没有 timestamp 数据可导出")
+                    logger.debug("No timestamp data available for export")
                     return
 
                 # 使用 open_timestamp 或 close_timestamp 作为基准形状
@@ -611,7 +622,7 @@ class NumpyExporter:
             feature_mapping: 特征映射 {原始列名: 导出文件名}
         """
         if not symbols:
-            logger.warning("没有指定交易对")
+            logger.warning("No symbols specified")
             return
 
         # 默认特征映射（使用简短名称）
@@ -641,7 +652,7 @@ class NumpyExporter:
         df = await self.kline_query.select_by_time_range(symbols, start_time, end_time, freq, columns=columns)
 
         if df.empty:
-            logger.warning("没有数据可导出")
+            logger.warning("No data to export")
             return
 
         # 重命名列
@@ -713,7 +724,7 @@ class NumpyExporter:
         include_metrics: bool = True,
         metrics_config: dict[str, Any] | None = None,
         field_mapping: dict[str, str] | None = None,
-    ) -> None:
+    ) -> dict[str, Any]:
         """导出 Kline + Metrics 合并数据.
 
         这是统一的导出接口，支持同时导出 K线和指标数据，
@@ -789,8 +800,8 @@ class NumpyExporter:
             ... )
         """
         if not symbols:
-            logger.warning("没有指定交易对")
-            return
+            logger.warning("No symbols specified")
+            return {"metrics_missing_coverage": {}}
 
         output_path = Path(output_path)
         output_path.mkdir(parents=True, exist_ok=True)
@@ -811,7 +822,7 @@ class NumpyExporter:
             kline_df = await self.kline_query.select_by_time_range(symbols, start_time, end_time, source_freq)
 
             if kline_df.empty:
-                error_msg = f"数据库中不存在频率为 {source_freq.value} 的 K线数据。请先下载该频率的数据，或更改 source_freq 参数。"
+                error_msg = f"The database does not contain {source_freq.value} Kline data. Download that frequency first or change the source_freq parameter."
                 logger.error(error_msg)
                 raise ValueError(error_msg)
 
@@ -829,6 +840,7 @@ class NumpyExporter:
 
         # 2. 合并 Metrics 数据（如果需要）
         timestamp_dfs = {}  # 存储各类数据的原始 timestamp
+        metrics_missing_coverage: dict[str, dict[str, Any]] = {}
 
         # 提取 K线的 open_timestamp
         if not combined_df.empty:
@@ -842,11 +854,12 @@ class NumpyExporter:
                 timestamp_dfs["close_timestamp"] = close_timestamps
                 logger.info("close_timestamp_extracted", shape=close_timestamps.shape)
             else:
-                logger.warning("close_time_column_missing - timestamp 将只有 4 维而非 5 维")
-
-        # 先合并 Metrics 数据（需要 close_time 列进行对齐）
+                logger.warning("close_time_column_missing - timestamp will only have 4 dimensions instead of 5")
+        # 合并 Metrics 数据（需要 close_time 列进行对齐）
         if include_metrics and self.metrics_query and not combined_df.empty:
-            metrics_df, metrics_timestamps = await self._fetch_and_merge_metrics(combined_df, symbols, start_time, end_time, export_freq, metrics_config)
+            metrics_df, metrics_timestamps, metrics_missing_coverage = await self._fetch_and_merge_metrics(
+                combined_df, symbols, start_time, end_time, export_freq, metrics_config
+            )
             if not metrics_df.empty:
                 # 合并到 combined_df
                 combined_df = pd.concat([combined_df, metrics_df], axis=1, join="outer")
@@ -859,8 +872,8 @@ class NumpyExporter:
             combined_df = combined_df.drop(columns=["close_time"])
 
         if combined_df.empty:
-            logger.warning("没有数据可导出")
-            return
+            logger.warning("No data to export")
+            return {"metrics_missing_coverage": metrics_missing_coverage}
 
         # 3. 重命名字段为缩写形式
         if field_mapping is None:
@@ -873,6 +886,7 @@ class NumpyExporter:
 
         logger.info("export_combined_data_complete", columns=len(combined_df.columns), records=len(combined_df))
         logger.info("export_combined_data_timestamp_types", types=list(timestamp_dfs.keys()))
+        return {"metrics_missing_coverage": metrics_missing_coverage}
 
     async def _fetch_and_merge_metrics(  # noqa: C901
         self,
@@ -882,7 +896,7 @@ class NumpyExporter:
         end_time: str,
         target_freq: Freq,
         metrics_config: dict[str, Any] | None = None,
-    ) -> tuple[pd.DataFrame, dict[str, pd.DataFrame]]:
+    ) -> tuple[pd.DataFrame, dict[str, pd.DataFrame], dict[str, dict[str, Any]]]:
         """获取并合并 Metrics 数据到 K线时间点.
 
         优化版：并行查询和处理所有 metrics 数据。
@@ -906,17 +920,26 @@ class NumpyExporter:
             }
 
         if not self.metrics_query or not self.resampler:
-            logger.warning("MetricsQuery 或 Resampler 未初始化，跳过 Metrics 数据")
-            return pd.DataFrame(), {}
+            logger.warning("MetricsQuery or Resampler is not initialized; skipping Metrics data")
+            return pd.DataFrame(), {}, {}
 
         # 收集所有需要执行的任务
         tasks = []
         task_names = []
+        task_specs: list[dict[str, Any]] = []
 
         # 资金费率任务
         if metrics_config.get("funding_rate"):
             tasks.append(self._fetch_funding_rate(symbols, start_time, end_time, kline_df, target_freq))
             task_names.append("funding_rate")
+            task_specs.append(
+                {
+                    "family": "funding_rate",
+                    "columns": ["funding_rate"],
+                    "lookback_days": self.METRICS_LOOKBACK_DAYS["funding_rate"],
+                    "tolerance_ms": self.METRICS_TOLERANCE_MS["funding_rate"],
+                }
+            )
 
         # 持仓量任务
         oi_config = metrics_config.get("open_interest")
@@ -924,6 +947,17 @@ class NumpyExporter:
             include_value = oi_config is True or (isinstance(oi_config, dict) and oi_config.get("include_value", True))
             tasks.append(self._fetch_open_interest(symbols, start_time, end_time, kline_df, target_freq, include_value))
             task_names.append("open_interest")
+            oi_columns = ["open_interest"]
+            if include_value:
+                oi_columns.append("open_interest_value")
+            task_specs.append(
+                {
+                    "family": "open_interest",
+                    "columns": oi_columns,
+                    "lookback_days": self.METRICS_LOOKBACK_DAYS["open_interest"],
+                    "tolerance_ms": self.METRICS_TOLERANCE_MS["open_interest"],
+                }
+            )
 
         # 多空比例任务（并行处理所有类型）
         lsr_config = metrics_config.get("long_short_ratio")
@@ -932,9 +966,17 @@ class NumpyExporter:
             for ratio_type in lsr_types:
                 tasks.append(self._fetch_long_short_ratio(symbols, start_time, end_time, kline_df, target_freq, ratio_type))
                 task_names.append(f"lsr_{ratio_type}")
+                task_specs.append(
+                    {
+                        "family": "long_short_ratio",
+                        "columns": [self.RATIO_TYPE_TO_EXPORT_NAME[ratio_type]],
+                        "lookback_days": self.METRICS_LOOKBACK_DAYS["long_short_ratio"],
+                        "tolerance_ms": self.METRICS_TOLERANCE_MS["long_short_ratio"],
+                    }
+                )
 
         if not tasks:
-            return pd.DataFrame(), {}
+            return pd.DataFrame(), {}, {}
 
         # 并行执行所有任务
         logger.info("fetch_metrics_parallel_start", tasks=len(tasks))
@@ -944,16 +986,86 @@ class NumpyExporter:
         metrics_dfs = []
         timestamp_dfs = {}
         lsr_ts_saved = False
+        expected_rows = len(kline_df)
+        metrics_missing_coverage: dict[str, dict[str, Any]] = {}
 
-        for name, result in zip(task_names, results, strict=False):
+        def _record_coverage(
+            *,
+            column: str,
+            family: str,
+            missing_count: int,
+            total_count: int,
+            lookback_days: int,
+            tolerance_ms: int,
+        ) -> None:
+            missing_ratio = (missing_count / total_count) if total_count > 0 else 0.0
+            metrics_missing_coverage[column] = {
+                "metric_family": family,
+                "missing_count": missing_count,
+                "total_count": total_count,
+                "missing_ratio": missing_ratio,
+                "lookback_days": lookback_days,
+                "tolerance_ms": tolerance_ms,
+            }
+            if missing_ratio > self.METRICS_MISSING_WARN_THRESHOLD:
+                logger.warning(
+                    "metrics_missing_coverage_high",
+                    metric=column,
+                    family=family,
+                    missing_count=missing_count,
+                    total_count=total_count,
+                    missing_ratio=missing_ratio,
+                    warn_threshold=self.METRICS_MISSING_WARN_THRESHOLD,
+                )
+
+        for name, task_spec, result in zip(task_names, task_specs, results, strict=False):
+            columns = task_spec["columns"]
+            family = task_spec["family"]
+            lookback_days = int(task_spec["lookback_days"])
+            tolerance_ms = int(task_spec["tolerance_ms"])
+
             if isinstance(result, BaseException):
                 logger.warning(f"fetch_{name}_failed", error=str(result))
+                for column in columns:
+                    _record_coverage(
+                        column=column,
+                        family=family,
+                        missing_count=expected_rows,
+                        total_count=expected_rows,
+                        lookback_days=lookback_days,
+                        tolerance_ms=tolerance_ms,
+                    )
                 continue
 
             # result is tuple[pd.DataFrame | None, pd.DataFrame | None, str]
             df, ts_df, ts_key = result
             if df is not None and not df.empty:
                 metrics_dfs.append(df)
+                for column in columns:
+                    if column in df.columns:
+                        total_count = len(df[column])
+                        missing_count = int(df[column].isna().sum())
+                    else:
+                        total_count = expected_rows
+                        missing_count = expected_rows
+                    _record_coverage(
+                        column=column,
+                        family=family,
+                        missing_count=missing_count,
+                        total_count=total_count,
+                        lookback_days=lookback_days,
+                        tolerance_ms=tolerance_ms,
+                    )
+            else:
+                for column in columns:
+                    _record_coverage(
+                        column=column,
+                        family=family,
+                        missing_count=expected_rows,
+                        total_count=expected_rows,
+                        lookback_days=lookback_days,
+                        tolerance_ms=tolerance_ms,
+                    )
 
             if ts_df is not None and not ts_df.empty:
                 # LSR 只保存第一个类型的时间戳
@@ -967,12 +1079,12 @@ class NumpyExporter:
         logger.info("fetch_metrics_parallel_complete", metrics_dfs=len(metrics_dfs), timestamp_dfs=len(timestamp_dfs))
 
         if not metrics_dfs:
-            logger.warning("没有 Metrics 数据可合并")
-            return pd.DataFrame(), timestamp_dfs
+            logger.warning("No metrics data to merge")
+            return pd.DataFrame(), timestamp_dfs, metrics_missing_coverage
 
         # 合并所有 metrics 数据
         merged_metrics = pd.concat(metrics_dfs, axis=1, join="outer")
-        return merged_metrics, timestamp_dfs
+        return merged_metrics, timestamp_dfs, metrics_missing_coverage
 
     async def _fetch_funding_rate(
         self, symbols: list[str], start_time: str, end_time: str, kline_df: pd.DataFrame, target_freq: Freq
@@ -981,7 +1093,7 @@ class NumpyExporter:
         try:
             assert self.metrics_query is not None and self.resampler is not None  # noqa: S101
             logger.info("fetch_funding_rate_data_start")
-            expanded_start_time = shift_date(start_time, -1)
+            expanded_start_time = shift_date(start_time, -self.METRICS_LOOKBACK_DAYS["funding_rate"])
             fr_df_raw = await self.metrics_query.select_funding_rates(symbols, expanded_start_time, end_time, columns=["funding_rate"])
             if fr_df_raw.empty:
                 return None, None, "fr_timestamp"
@@ -992,8 +1104,10 @@ class NumpyExporter:
                 target_freq,
                 agg_strategy={"funding_rate": "last"},
                 align_method="asof",
+                tolerance_ms=self.METRICS_TOLERANCE_MS["funding_rate"],
                 return_original_timestamps=True,
                 use_close_time=True,
+                nan_warn_ratio_threshold=self.METRICS_MISSING_WARN_THRESHOLD,
             )
             assert isinstance(result, tuple)  # noqa: S101
             fr_df, fr_original_ts = result
@@ -1022,7 +1136,7 @@ class NumpyExporter:
                 agg_strategy["open_interest_value"] = "last"
 
             logger.info("fetch_open_interest_data_start", columns=oi_columns)
-            expanded_start_time = shift_date(start_time, -1)
+            expanded_start_time = shift_date(start_time, -self.METRICS_LOOKBACK_DAYS["open_interest"])
             oi_df_raw = await self.metrics_query.select_open_interests(symbols, expanded_start_time, end_time, columns=oi_columns)
             if oi_df_raw.empty:
                 return None, None, "oi_timestamp"
@@ -1033,8 +1147,10 @@ class NumpyExporter:
                 target_freq,
                 agg_strategy=agg_strategy,
                 align_method="asof",
+                tolerance_ms=self.METRICS_TOLERANCE_MS["open_interest"],
                 return_original_timestamps=True,
                 use_close_time=True,
+                nan_warn_ratio_threshold=self.METRICS_MISSING_WARN_THRESHOLD,
             )
             assert isinstance(result, tuple)  # noqa: S101
             oi_df, oi_original_ts = result
@@ -1059,7 +1175,7 @@ class NumpyExporter:
             export_name = self.RATIO_TYPE_TO_EXPORT_NAME[ratio_type]
             logger.info("fetch_long_short_ratio_data_start", ratio_type=ratio_type, export_name=export_name)
 
-            expanded_start_time = shift_date(start_time, -1)
+            expanded_start_time = shift_date(start_time, -self.METRICS_LOOKBACK_DAYS["long_short_ratio"])
             lsr_df_raw = await self.metrics_query.select_long_short_ratio_by_type(
                 symbols, expanded_start_time, end_time, ratio_type=ratio_type, rename_to_export_name=True
             )
@@ -1072,8 +1188,10 @@ class NumpyExporter:
                 target_freq,
                 agg_strategy={export_name: "last"},
                 align_method="asof",
+                tolerance_ms=self.METRICS_TOLERANCE_MS["long_short_ratio"],
                 return_original_timestamps=True,
                 use_close_time=True,
+                nan_warn_ratio_threshold=self.METRICS_MISSING_WARN_THRESHOLD,
             )
             assert isinstance(result, tuple)  # noqa: S101
             lsr_df, lsr_original_ts = result
@@ -1116,7 +1234,7 @@ class NumpyExporter:
                 new_type = type_mapping.get(old_type, old_type)
                 if new_type in self.ALL_LSR_TYPES:
                     return [new_type]
-                logger.warning(f"未知的 ratio_type: {old_type}")
+                logger.warning(f"Unknown ratio_type: {old_type}")
                 return []
 
             # 新版配置格式 {"toptrader_account": True, "taker_vol": True, ...}

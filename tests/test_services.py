@@ -4,15 +4,15 @@
 使用mock避免实际网络请求。
 """
 
+import asyncio
+import time
 from decimal import Decimal
 from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
+from binance.exceptions import BinanceAPIException
 
-from cryptoservice.models import (
-    PerpetualMarketTicker,
-    UniverseConfig,
-)
+from cryptoservice.models import PerpetualMarketTicker
 
 # ================= 服务基础测试 =================
 
@@ -287,6 +287,39 @@ async def test_downloader_error_handling():
 
 
 @pytest.mark.asyncio
+async def test_base_downloader_formats_binance_invalid_json_exception():
+    """测试 Binance 异步异常的格式化，避免输出 bound method."""
+    from cryptoservice.services.downloaders import BaseDownloader
+
+    class TestDownloader(BaseDownloader):
+        async def download(self, *args, **kwargs):
+            return "test_data"
+
+    class FakeResponse:
+        def __init__(self):
+            self.status = 403
+            self.reason = "Forbidden"
+            self.method = "GET"
+            self.url = "https://fapi.binance.com/fapi/v1/fundingRate?symbol=ETHWUSDT"
+            self._body = b"<html>forbidden</html>"
+
+        async def text(self):
+            return "<html>forbidden</html>"
+
+    downloader = TestDownloader(AsyncMock())
+    error = BinanceAPIException(FakeResponse(), 403, "<html>forbidden</html>")
+
+    message = downloader._format_exception_message(error)
+
+    assert "Binance API error" in message
+    assert "status=403" in message
+    assert "reason=Forbidden" in message
+    assert "request=GET https://fapi.binance.com/fapi/v1/fundingRate?symbol=ETHWUSDT" in message
+    assert "response_body=<html>forbidden</html>" in message
+    assert "bound method" not in message
+
+
+@pytest.mark.asyncio
 async def test_rate_limiting_in_downloaders():
     """测试下载器中的速率限制."""
     from cryptoservice.services.downloaders import KlineDownloader
@@ -298,6 +331,389 @@ async def test_rate_limiting_in_downloaders():
 
     # 验证速率限制管理器配置
     assert downloader.rate_limit_manager is not None
+
+
+@pytest.mark.asyncio
+async def test_base_downloader_forbidden_throttle_fail_fast():
+    """连续 Forbidden 403 应触发终止型限流错误."""
+    from cryptoservice.config import RetryConfig
+    from cryptoservice.exceptions import RateLimitError
+    from cryptoservice.services.downloaders import BaseDownloader
+
+    class TestDownloader(BaseDownloader):
+        async def download(self, *args, **kwargs):
+            return "test_data"
+
+    class ForbiddenThrottleError(Exception):
+        status_code = 403
+
+        def __str__(self):
+            return "Binance API error (status=403, reason=Forbidden, response_body=<html>403 Forbidden</html>)"
+
+    downloader = TestDownloader(AsyncMock(), request_delay=0.0)
+    downloader.async_rate_limit_manager.forbidden_cooldown_schedule = (0.0, 0.0, 0.0)
+
+    attempts = {"count": 0}
+
+    async def request_func():
+        attempts["count"] += 1
+        raise ForbiddenThrottleError()
+
+    with pytest.raises(RateLimitError):
+        await downloader._handle_async_request_with_retry(
+            request_func,
+            retry_config=RetryConfig(max_retries=10, base_delay=0.0, max_delay=0.0, jitter=False),
+        )
+
+    assert attempts["count"] == 3
+
+
+@pytest.mark.asyncio
+async def test_endpoint_circuit_isolation_between_endpoints():
+    """一个 endpoint 熔断不应影响其他 endpoint 请求."""
+    from cryptoservice.config import RetryConfig
+    from cryptoservice.exceptions import RateLimitError
+    from cryptoservice.services.downloaders import BaseDownloader
+
+    class TestDownloader(BaseDownloader):
+        async def download(self, *args, **kwargs):
+            return "test_data"
+
+    class ForbiddenThrottleError(Exception):
+        status_code = 403
+
+        def __str__(self):
+            return "Binance API error (status=403, reason=Forbidden, response_body=<html>403 Forbidden</html>)"
+
+    downloader = TestDownloader(AsyncMock(), request_delay=0.0)
+    funding_manager = downloader._get_async_rate_manager("fapi_funding_rate")
+    funding_manager.forbidden_cooldown_schedule = (0.0, 0.0, 0.0)
+
+    async def forbidden_request():
+        raise ForbiddenThrottleError()
+
+    with pytest.raises(RateLimitError):
+        await downloader._handle_async_request_with_retry(
+            forbidden_request,
+            endpoint_key="fapi_funding_rate",
+            endpoint_max_workers=4,
+            retry_config=RetryConfig(max_retries=10, base_delay=0.0, max_delay=0.0, jitter=False),
+        )
+
+    async def ok_request():
+        return "ok"
+
+    result = await downloader._handle_async_request_with_retry(
+        ok_request,
+        endpoint_key="fapi_klines",
+        endpoint_max_workers=4,
+    )
+    assert result == "ok"
+
+    with pytest.raises(RateLimitError):
+        await downloader._handle_async_request_with_retry(
+            ok_request,
+            endpoint_key="fapi_funding_rate",
+            endpoint_max_workers=4,
+        )
+
+
+@pytest.mark.asyncio
+async def test_base_downloader_429_triggers_adaptive_scale_down():
+    """429 应触发自适应并发快速下降，并在重试后恢复请求."""
+    from cryptoservice.config import RetryConfig
+    from cryptoservice.services.downloaders import BaseDownloader
+
+    class TestDownloader(BaseDownloader):
+        async def download(self, *args, **kwargs):
+            return "test_data"
+
+    class RateLimit429Error(Exception):
+        status_code = 429
+        code = -1003
+
+        def __str__(self):
+            return "Binance API error (status=429, code=-1003, message=Too many requests)"
+
+    endpoint_key = "fapi_funding_rate"
+    downloader = TestDownloader(AsyncMock(), request_delay=0.0)
+    manager = downloader._get_async_rate_manager(endpoint_key)
+
+    async def fast_handle_rate_limit_error() -> float:
+        manager.consecutive_errors += 1
+        manager.consecutive_forbidden_errors = 0
+        manager.request_count = 0
+        manager.window_start_time = time.time()
+        manager.cooldown_until = time.time()
+        return 0.0
+
+    manager.handle_rate_limit_error = fast_handle_rate_limit_error  # type: ignore[assignment]
+
+    limiter = await downloader._get_async_limiter(endpoint_key, hard_cap=8)
+    for _ in range(16):
+        await limiter.on_success()
+    before_limit = int(limiter.snapshot()["current_limit"])
+    assert before_limit >= 4
+
+    attempts = {"count": 0}
+
+    async def flaky_request():
+        attempts["count"] += 1
+        if attempts["count"] == 1:
+            raise RateLimit429Error()
+        return "ok"
+
+    result = await downloader._handle_async_request_with_retry(
+        flaky_request,
+        endpoint_key=endpoint_key,
+        endpoint_max_workers=8,
+        retry_config=RetryConfig(max_retries=3, base_delay=0.0, max_delay=0.0, jitter=False),
+    )
+
+    after_limit = int(limiter.snapshot()["current_limit"])
+    assert result == "ok"
+    assert attempts["count"] == 2
+    assert after_limit < before_limit
+
+
+@pytest.mark.asyncio
+async def test_base_downloader_adaptive_policy_uses_max_workers_as_ssthresh():
+    """自适应策略应使用 max_workers 作为慢启动阈值."""
+    from cryptoservice.services.downloaders import BaseDownloader
+
+    class TestDownloader(BaseDownloader):
+        async def download(self, *args, **kwargs):
+            return "test_data"
+
+    downloader = TestDownloader(AsyncMock(), request_delay=0.0)
+    limiter = await downloader._get_async_limiter("fapi_klines", hard_cap=10)
+    snapshot = limiter.snapshot()
+
+    assert snapshot["max_concurrency"] == 10
+    assert snapshot["ssthresh"] == 10
+    assert snapshot["current_limit"] == 1
+
+
+@pytest.mark.asyncio
+async def test_metrics_batch_aborts_on_terminal_rate_limit_error():
+    """批量任务中出现终止型限流错误后应快速中断."""
+    from cryptoservice.exceptions import RateLimitError
+    from cryptoservice.services.downloaders import MetricsDownloader
+
+    downloader = MetricsDownloader(AsyncMock(), request_delay=0.0)
+    downloader.db = AsyncMock()
+    downloader.db.initialize = AsyncMock()
+    downloader.db.insert_funding_rates = AsyncMock(return_value=0)
+
+    call_count = {"BTCUSDT": 0, "ETHUSDT": 0}
+    started = asyncio.Event()
+
+    async def fake_download_funding_rate(*, symbol, **kwargs):
+        call_count[symbol] += 1
+        if symbol == "BTCUSDT":
+            started.set()
+            raise RateLimitError("terminal rate-limit circuit open")
+
+        await started.wait()
+        await asyncio.sleep(5.0)
+        return []
+
+    downloader.download_funding_rate = fake_download_funding_rate
+
+    begin = time.perf_counter()
+    with pytest.raises(RateLimitError):
+        await downloader.download_funding_rate_batch(
+            symbols=["BTCUSDT", "ETHUSDT"],
+            start_time="2024-01-01",
+            end_time="2024-01-01",
+            db_path=":memory:",
+            request_delay=0.0,
+            max_workers=2,
+            incremental=False,
+        )
+    elapsed = time.perf_counter() - begin
+
+    assert elapsed < 2.0
+    assert call_count["BTCUSDT"] == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("method_name", "extra_kwargs", "data_type", "expected_start_date"),
+    [
+        ("download_funding_rate_batch", {}, "funding_rate", "2024-09-28"),
+        ("download_open_interest_batch", {}, "open_interest", "2024-09-30"),
+        ("download_long_short_ratio_batch", {"ratio_type": "account"}, "long_short_ratio", "2024-09-30"),
+    ],
+)
+async def test_metrics_incremental_planner_uses_metric_specific_lookback(method_name, extra_kwargs, data_type, expected_start_date):
+    """指标增量规划应使用指标级 warmup lookback 配置."""
+    from cryptoservice.services.downloaders import MetricsDownloader
+
+    downloader = MetricsDownloader(AsyncMock(), request_delay=0.0)
+    downloader.db = AsyncMock()
+    downloader.db.initialize = AsyncMock()
+    downloader.db.plan_metrics_download = AsyncMock(return_value={})
+
+    method = getattr(downloader, method_name)
+    await method(
+        symbols=["BTCUSDT"],
+        start_time="2024-10-01",
+        end_time="2024-10-01",
+        db_path=":memory:",
+        request_delay=0.0,
+        max_workers=1,
+        incremental=True,
+        **extra_kwargs,
+    )
+
+    kwargs = downloader.db.plan_metrics_download.await_args.kwargs
+    assert kwargs["data_type"] == data_type
+    assert kwargs["start_date"] == expected_start_date
+    assert kwargs["end_date"] == "2024-10-01"
+
+
+@pytest.mark.asyncio
+async def test_funding_incremental_range_uses_configured_3d_lookback():
+    """资金费率增量区间应使用 D-3 warmup，而不是额外重复前移."""
+    from cryptoservice.services.downloaders import MetricsDownloader
+    from cryptoservice.utils.time_utils import date_to_timestamp_end, date_to_timestamp_start
+
+    downloader = MetricsDownloader(AsyncMock(), request_delay=0.0)
+
+    db = AsyncMock()
+    db.initialize = AsyncMock()
+
+    async def fake_plan_metrics_download(*, start_date, end_date, **kwargs):
+        assert start_date == "2024-09-28"
+        return {
+            "BTCUSDT": {
+                "start_ts": date_to_timestamp_start(start_date),
+                "end_ts": date_to_timestamp_end(end_date),
+                "missing_count": 1,
+            }
+        }
+
+    db.plan_metrics_download = AsyncMock(side_effect=fake_plan_metrics_download)
+    downloader.db = db
+
+    observed: dict[str, int] = {}
+
+    async def fake_download_funding_rate(*, symbol, start_ts, end_ts, **kwargs):
+        observed["symbol"] = symbol
+        observed["start_ts"] = int(start_ts)
+        observed["end_ts"] = int(end_ts)
+        return []
+
+    downloader.download_funding_rate = fake_download_funding_rate
+
+    await downloader.download_funding_rate_batch(
+        symbols=["BTCUSDT"],
+        start_time="2024-10-01",
+        end_time="2024-10-01",
+        db_path=":memory:",
+        request_delay=0.0,
+        max_workers=1,
+        incremental=True,
+    )
+
+    assert observed["symbol"] == "BTCUSDT"
+    assert observed["start_ts"] == date_to_timestamp_start("2024-09-28")
+    assert observed["end_ts"] == date_to_timestamp_end("2024-10-01")
+
+
+@pytest.mark.asyncio
+async def test_metrics_failed_downloads_are_run_scoped_and_reset_each_batch():
+    """连续批量运行不应继承上一次 failed_downloads 状态."""
+    from cryptoservice.services.downloaders import MetricsDownloader
+
+    downloader = MetricsDownloader(AsyncMock(), request_delay=0.0)
+    downloader.db = AsyncMock()
+    downloader.db.initialize = AsyncMock()
+    downloader.db.insert_funding_rates = AsyncMock(return_value=0)
+
+    calls = {"count": 0}
+
+    async def flaky_download(*, symbol, **kwargs):
+        calls["count"] += 1
+        if calls["count"] == 1:
+            raise RuntimeError("first-run failure")
+        return []
+
+    downloader.download_funding_rate = flaky_download
+
+    await downloader.download_funding_rate_batch(
+        symbols=["BTCUSDT"],
+        start_time="2024-10-01",
+        end_time="2024-10-01",
+        db_path=":memory:",
+        request_delay=0.0,
+        max_workers=1,
+        incremental=False,
+    )
+    assert "BTCUSDT" in downloader.get_failed_downloads()
+
+    await downloader.download_funding_rate_batch(
+        symbols=["BTCUSDT"],
+        start_time="2024-10-02",
+        end_time="2024-10-02",
+        db_path=":memory:",
+        request_delay=0.0,
+        max_workers=1,
+        incremental=False,
+    )
+    assert downloader.get_failed_downloads() == {}
+
+
+@pytest.mark.asyncio
+async def test_shared_endpoint_controls_propagate_circuit_state_across_downloaders():
+    """共享 endpoint 控制器时，一个下载器触发熔断后其他实例应感知相同状态."""
+    from cryptoservice.config import RetryConfig
+    from cryptoservice.exceptions import RateLimitError
+    from cryptoservice.services.downloaders import BaseDownloader, EndpointControlRegistry
+
+    class TestDownloader(BaseDownloader):
+        async def download(self, *args, **kwargs):
+            return "test_data"
+
+    class ForbiddenThrottleError(Exception):
+        status_code = 403
+
+        def __str__(self):
+            return "Binance API error (status=403, reason=Forbidden, response_body=<html>403 Forbidden</html>)"
+
+    shared_controls = EndpointControlRegistry(base_delay=0.0)
+    first = TestDownloader(AsyncMock(), request_delay=0.0, endpoint_controls=shared_controls)
+    second = TestDownloader(AsyncMock(), request_delay=0.0, endpoint_controls=shared_controls)
+
+    first_manager = first._get_async_rate_manager("fapi_funding_rate")
+    first_manager.forbidden_cooldown_schedule = (0.0, 0.0, 0.0)
+
+    async def forbidden_request():
+        raise ForbiddenThrottleError()
+
+    with pytest.raises(RateLimitError):
+        await first._handle_async_request_with_retry(
+            forbidden_request,
+            endpoint_key="fapi_funding_rate",
+            endpoint_max_workers=2,
+            retry_config=RetryConfig(max_retries=10, base_delay=0.0, max_delay=0.0, jitter=False),
+        )
+
+    attempts = {"count": 0}
+
+    async def ok_request():
+        attempts["count"] += 1
+        return "ok"
+
+    with pytest.raises(RateLimitError):
+        await second._handle_async_request_with_retry(
+            ok_request,
+            endpoint_key="fapi_funding_rate",
+            endpoint_max_workers=2,
+        )
+
+    assert attempts["count"] == 0
 
 
 # ================= 并发下载测试 =================
@@ -326,23 +742,12 @@ async def test_concurrent_downloading():
 # ================= 配置和设置测试 =================
 
 
-def test_universe_config_integration():
-    """测试Universe配置集成."""
-    config = UniverseConfig(
-        start_date="2024-01-01",
-        end_date="2024-01-31",
-        t1_months=1,
-        t2_months=1,
-        t3_months=3,
-        top_k=10,
-        delay_days=7,
-        quote_asset="USDT",
-    )
+def test_symbol_normalization_helper():
+    """测试 symbol 标准化辅助函数."""
+    from cryptoservice.services import MarketDataService
 
-    # 验证配置可以被服务使用
-    assert config.start_date == "2024-01-01"
-    assert config.top_k == 10
-    assert config.quote_asset == "USDT"
+    symbols = MarketDataService._normalize_symbols(["btcusdt", "ETHUSDT", "BTCUSDT", " "])
+    assert symbols == ["BTCUSDT", "ETHUSDT"]
 
 
 if __name__ == "__main__":

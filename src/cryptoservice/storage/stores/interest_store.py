@@ -55,7 +55,7 @@ class InterestStore:
             插入的记录数
         """
         if not open_interests:
-            logger.warning("没有持仓量数据需要插入")
+            logger.warning("No open interest data to insert")
             return 0
 
         # 转换为记录格式
@@ -104,7 +104,7 @@ class InterestStore:
 
             await conn.commit()
 
-        logger.info(f"持仓量数据插入完成: {total_inserted} 条记录")
+        logger.info(f"Open interest insert completed: {total_inserted} records")
         return total_inserted
 
     async def delete_by_time_range(self, symbols: list[str], start_time: str, end_time: str, interval: str | None = None) -> int:
@@ -145,7 +145,7 @@ class InterestStore:
             deleted_count = cursor.rowcount
             await conn.commit()
 
-        logger.info(f"删除持仓量数据: {deleted_count} 条记录")
+        logger.info(f"Deleted open interest data: {deleted_count} records")
         return deleted_count
 
     async def delete_by_symbol(self, symbol: str, interval: str | None = None) -> int:
@@ -170,7 +170,7 @@ class InterestStore:
             deleted_count = cursor.rowcount
             await conn.commit()
 
-        logger.info(f"删除交易对 {symbol} 的持仓量数据: {deleted_count} 条记录")
+        logger.info(f"Deleted open interest data for {symbol}: {deleted_count} records")
         return deleted_count
 
     async def count(self, symbol: str | None = None, interval: str | None = None) -> int:

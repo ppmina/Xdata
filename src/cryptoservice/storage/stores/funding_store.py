@@ -56,7 +56,7 @@ class FundingStore:
             插入的记录数
         """
         if not funding_rates:
-            logger.warning("没有资金费率数据需要插入")
+            logger.warning("No funding rate data to insert")
             return 0
 
         # 转换为记录格式
@@ -106,7 +106,7 @@ class FundingStore:
 
             await conn.commit()
 
-        logger.info(f"资金费率数据插入完成: {total_inserted} 条记录")
+        logger.debug("funding_insert_done", rows=total_inserted)
         return total_inserted
 
     async def delete_by_time_range(self, symbols: list[str], start_time: str, end_time: str) -> int:
@@ -141,7 +141,7 @@ class FundingStore:
             deleted_count = cursor.rowcount
             await conn.commit()
 
-        logger.info(f"删除资金费率数据: {deleted_count} 条记录")
+        logger.info(f"Deleted funding rate data: {deleted_count} records")
         return deleted_count
 
     async def delete_by_symbol(self, symbol: str) -> int:
@@ -160,7 +160,7 @@ class FundingStore:
             deleted_count = cursor.rowcount
             await conn.commit()
 
-        logger.info(f"删除交易对 {symbol} 的资金费率数据: {deleted_count} 条记录")
+        logger.info(f"Deleted funding rate data for {symbol}: {deleted_count} records")
         return deleted_count
 
     async def count(self, symbol: str | None = None) -> int:

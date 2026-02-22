@@ -21,7 +21,6 @@ import pytest_asyncio
 from cryptoservice.models import Freq, PerpetualMarketTicker
 from cryptoservice.storage import (
     ConnectionPool,
-    Database,
     DatabaseSchema,
     KlineQuery,
     KlineStore,

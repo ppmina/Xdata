@@ -9,9 +9,13 @@
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
+from unittest.mock import AsyncMock
 
 import numpy as np
+import pandas as pd
 import pytest
+
+from cryptoservice.storage import NumpyExporter
 
 # 检查结果类型别名
 type CheckResults = dict[str, Any]
@@ -372,6 +376,30 @@ def get_export_paths() -> list[Path]:
 
 
 EXPORT_PATHS = get_export_paths()
+
+
+@pytest.mark.asyncio
+async def test_export_timestamps_optimized_converts_missing_to_zero(tmp_path):
+    """Timestamp 导出应将缺失值转换为 0（缺失 mask 语义）."""
+    exporter = NumpyExporter(AsyncMock())
+
+    index = pd.MultiIndex.from_tuples(
+        [("BTCUSDT", 1704067200000), ("BTCUSDT", 1704070800000)],
+        names=["symbol", "timestamp"],
+    )
+    fr_ts_df = pd.DataFrame({"timestamp": [np.nan, 1704067200000]}, index=index)
+
+    await exporter._export_timestamps_optimized(
+        timestamp_dfs={"fr_timestamp": fr_ts_df},
+        output_path=tmp_path,
+        date_str="20240101",
+    )
+
+    arr = np.load(tmp_path / "timestamp" / "20240101.npy")
+    assert arr.shape == (1, 1, 2)
+    assert arr.dtype == np.int64
+    assert arr[0, 0, 0] == 0
+    assert arr[0, 0, 1] == 1704067200000
 
 
 @pytest.mark.skipif(len(EXPORT_PATHS) == 0, reason="No exported data found")

@@ -1,14 +1,14 @@
-"""Service 导出能力测试."""
+"""Service export v2 tests."""
 
 import json
 from datetime import UTC, datetime
 from pathlib import Path
 from unittest.mock import AsyncMock
 
-import pandas as pd
 import pytest
 
-from cryptoservice.models import Freq, UniverseConfig, UniverseDefinition, UniverseSnapshot
+from cryptoservice.models import Freq
+from cryptoservice.models.universe import UniverseDailySnapshot, UniverseDefinition
 from cryptoservice.services import MarketDataService
 
 
@@ -35,14 +35,26 @@ class _FakeNumpyExporter:
             with open(symbol_file, encoding="utf-8") as fp:
                 payload = json.load(fp)
 
-        days = pd.date_range(start=start_time, end=end_time, freq="D", tz="UTC")
-        for idx, day in enumerate(days):
-            date_key = day.strftime("%Y%m%d")
-            if idx == 0 and symbols:
-                payload[date_key] = [symbols[0]]
+        date_key = start_time.replace("-", "")
+        payload[date_key] = [symbols[0]] if symbols else []
 
         with open(symbol_file, "w", encoding="utf-8") as fp:
             json.dump(payload, fp, ensure_ascii=False, indent=2)
+
+        if include_metrics:
+            return {
+                "metrics_missing_coverage": {
+                    "funding_rate": {
+                        "metric_family": "funding_rate",
+                        "missing_count": 1,
+                        "total_count": 2,
+                        "missing_ratio": 0.5,
+                        "lookback_days": 3,
+                        "tolerance_ms": 172800000,
+                    }
+                }
+            }
+        return {"metrics_missing_coverage": {}}
 
 
 class _FakeDatabase:
@@ -57,42 +69,34 @@ class _FakeDatabase:
         return None
 
 
-@pytest.mark.asyncio
-async def test_export_universe_definition_writes_report_and_merges_missing(monkeypatch, tmp_path):
-    """_export_universe_definition 应产出 report.json 并正确合并缺失来源."""
-    service = MarketDataService(AsyncMock())
-
-    config = UniverseConfig(
+def _build_universe() -> UniverseDefinition:
+    return UniverseDefinition(
+        schema_version="2.0",
+        requested_symbols=["BTCUSDT", "ETHUSDT"],
         start_date="2024-01-01",
         end_date="2024-01-02",
-        t1_months=1,
-        t2_months=1,
-        t3_months=1,
-        delay_days=7,
-        quote_asset="USDT",
-        top_k=2,
-    )
-    snapshot = UniverseSnapshot.create_with_dates_and_timestamps(
-        usage_t1_start="2024-01-01",
-        usage_t1_end="2024-01-02",
-        calculated_t1_start="2023-12-01",
-        calculated_t1_end="2023-12-31",
-        symbols=["BTCUSDT", "ETHUSDT"],
-        mean_daily_amounts={"BTCUSDT": 100.0, "ETHUSDT": 50.0},
-        metadata={
-            "daily_existence_check": {
-                "missing_by_date": {
-                    "2024-01-01": ["ETHUSDT"],
-                }
-            }
-        },
-    )
-    universe_def = UniverseDefinition(
-        config=config,
-        snapshots=[snapshot],
-        creation_time=datetime.now(tz=UTC),
+        daily_snapshots=[
+            UniverseDailySnapshot(
+                date="2024-01-01",
+                active_symbols=["BTCUSDT"],
+                missing_symbols={"ETHUSDT": "not_available_on_date"},
+            ),
+            UniverseDailySnapshot(
+                date="2024-01-02",
+                active_symbols=["BTCUSDT", "ETHUSDT"],
+                missing_symbols={},
+            ),
+        ],
+        created_at=datetime.now(tz=UTC),
         description="test",
     )
+
+
+@pytest.mark.asyncio
+async def test_export_universe_definition_writes_report_and_merges_missing(monkeypatch, tmp_path):
+    """Export report should merge define-time and export-time missing maps."""
+    service = MarketDataService(AsyncMock())
+    universe_def = _build_universe()
 
     import cryptoservice.services.market_service as market_service_module
 
@@ -108,33 +112,32 @@ async def test_export_universe_definition_writes_report_and_merges_missing(monke
         include_metrics=False,
         metrics_config=None,
         field_mapping=None,
+        universe_file=str(tmp_path / "universe.json"),
     )
 
-    report_path = Path(report["report_path"])
-    assert report_path.exists()
-
-    assert report["define_missing"]["2024-01-01"] == ["ETHUSDT"]
-    assert "2024-01-01" in report["export_missing"]
-    assert "2024-01-02" in report["export_missing"]
-    assert set(report["merged_missing"]["2024-01-01"]) == {"ETHUSDT"}
-    assert set(report["merged_missing"]["2024-01-02"]) == {"BTCUSDT", "ETHUSDT"}
+    assert Path(report["report_path"]).exists()
+    assert report["define_missing"]["2024-01-01"] == {"ETHUSDT": "not_available_on_date"}
+    assert report["export_missing"]["2024-01-02"] == ["ETHUSDT"]
+    assert report["merged_missing"]["2024-01-01"]["ETHUSDT"] == "not_available_on_date"
+    assert report["merged_missing"]["2024-01-02"]["ETHUSDT"] == "missing_in_export"
 
 
 @pytest.mark.asyncio
-async def test_export_custom_universe_data_returns_report(monkeypatch, tmp_path):
-    """export_custom_universe_data 应返回报告并包含 symbols 划分信息."""
+async def test_export_universe_data_reads_v2_file(monkeypatch, tmp_path):
+    """Public export API should read universe file and produce report."""
     service = MarketDataService(AsyncMock())
+    universe = _build_universe()
 
-    service.get_perpetual_symbols = AsyncMock(return_value=["BTCUSDT", "ETHUSDT"])
+    universe_path = tmp_path / "universe.json"
+    universe.save_to_file(universe_path)
+    before_payload = universe_path.read_text(encoding="utf-8")
 
     import cryptoservice.services.market_service as market_service_module
 
     monkeypatch.setattr(market_service_module, "Database", _FakeDatabase)
 
-    report = await service.export_custom_universe_data(
-        symbols=["btcusdt", "BADSYMBOL", "ETHUSDT"],
-        start_date="2024-01-01",
-        end_date="2024-01-02",
+    report = await service.export_universe_data(
+        universe_file=universe_path,
         db_path=tmp_path / "market.db",
         export_base_path=tmp_path / "exports",
         source_freq=Freq.h1,
@@ -143,10 +146,143 @@ async def test_export_custom_universe_data_returns_report(monkeypatch, tmp_path)
         include_metrics=False,
     )
 
-    assert report["requested_symbols"] == 3
-    assert report["normalized_symbols"] == ["BTCUSDT", "BADSYMBOL", "ETHUSDT"]
-    assert report["valid_symbols"] == ["BTCUSDT", "ETHUSDT"]
-    assert report["skipped_symbols"] == ["BADSYMBOL"]
-    assert Path(report["universe_file"]).exists()
+    assert "output_path" not in report
+    assert "db_path" not in report
+    assert "universe_file" not in report
+    assert "source_freq" not in report
+    assert "export_freq" not in report
     assert Path(report["report_path"]).exists()
-    assert Path(report["output_path"]).exists()
+    after_payload = universe_path.read_text(encoding="utf-8")
+    assert after_payload == before_payload
+
+
+@pytest.mark.asyncio
+async def test_export_universe_data_applies_date_override_and_updates_report(monkeypatch, tmp_path):
+    """Export should process subset dates and reflect effective range in report/path."""
+    service = MarketDataService(AsyncMock())
+    universe = _build_universe()
+
+    universe_path = tmp_path / "universe_override.json"
+    universe.save_to_file(universe_path)
+    before_payload = universe_path.read_text(encoding="utf-8")
+
+    import cryptoservice.services.market_service as market_service_module
+
+    monkeypatch.setattr(market_service_module, "Database", _FakeDatabase)
+
+    report = await service.export_universe_data(
+        universe_file=universe_path,
+        db_path=tmp_path / "market.db",
+        export_base_path=tmp_path / "exports",
+        source_freq=Freq.h1,
+        export_freq=Freq.h1,
+        include_klines=True,
+        include_metrics=False,
+        start_date="2024-01-02",
+        end_date="2024-01-02",
+    )
+
+    report_path = Path(report["report_path"])
+    assert report_path.exists()
+    assert "univ_2024-01-02_2024-01-02_2" in report_path.as_posix()
+    assert report["total_days"] == 1
+    assert report["date_range"]["requested_start_date"] == "2024-01-01"
+    assert report["date_range"]["requested_end_date"] == "2024-01-02"
+    assert report["date_range"]["effective_start_date"] == "2024-01-02"
+    assert report["date_range"]["effective_end_date"] == "2024-01-02"
+    assert report["export_context"]["override_applied"] is True
+    assert report["export_context"]["override_start_date"] == "2024-01-02"
+    assert report["export_context"]["override_end_date"] == "2024-01-02"
+
+    after_payload = universe_path.read_text(encoding="utf-8")
+    assert after_payload == before_payload
+
+
+@pytest.mark.asyncio
+async def test_export_universe_data_partial_override_fills_missing_bound(monkeypatch, tmp_path):
+    """Export should fill omitted bound from universe range."""
+    service = MarketDataService(AsyncMock())
+    universe = _build_universe()
+
+    universe_path = tmp_path / "universe_partial.json"
+    universe.save_to_file(universe_path)
+
+    import cryptoservice.services.market_service as market_service_module
+
+    monkeypatch.setattr(market_service_module, "Database", _FakeDatabase)
+
+    report = await service.export_universe_data(
+        universe_file=universe_path,
+        db_path=tmp_path / "market.db",
+        export_base_path=tmp_path / "exports",
+        source_freq=Freq.h1,
+        export_freq=Freq.h1,
+        include_klines=True,
+        include_metrics=False,
+        end_date="2024-01-01",
+    )
+
+    assert report["date_range"]["effective_start_date"] == "2024-01-01"
+    assert report["date_range"]["effective_end_date"] == "2024-01-01"
+    assert report["export_context"]["override_start_date"] is None
+    assert report["export_context"]["override_end_date"] == "2024-01-01"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("start_date", "end_date", "pattern"),
+    [
+        ("2023-12-31", "2024-01-01", "within universe range"),
+        ("2024-01-02", "2024-01-01", "must be <= end_date"),
+    ],
+)
+async def test_export_universe_data_rejects_invalid_override_range(monkeypatch, tmp_path, start_date, end_date, pattern):
+    """Export should fail fast for out-of-range or reversed override windows."""
+    service = MarketDataService(AsyncMock())
+    universe = _build_universe()
+    universe_path = tmp_path / "universe_invalid_range.json"
+    universe.save_to_file(universe_path)
+
+    import cryptoservice.services.market_service as market_service_module
+
+    monkeypatch.setattr(market_service_module, "Database", _FakeDatabase)
+
+    with pytest.raises(ValueError, match=pattern):
+        await service.export_universe_data(
+            universe_file=universe_path,
+            db_path=tmp_path / "market.db",
+            export_base_path=tmp_path / "exports",
+            source_freq=Freq.h1,
+            export_freq=Freq.h1,
+            include_klines=True,
+            include_metrics=False,
+            start_date=start_date,
+            end_date=end_date,
+        )
+
+
+@pytest.mark.asyncio
+async def test_export_universe_data_includes_metrics_missing_coverage(monkeypatch, tmp_path):
+    """Report should contain per-day metrics missing coverage when exporter returns it."""
+    service = MarketDataService(AsyncMock())
+    universe = _build_universe()
+    universe_path = tmp_path / "universe_metrics_coverage.json"
+    universe.save_to_file(universe_path)
+
+    import cryptoservice.services.market_service as market_service_module
+
+    monkeypatch.setattr(market_service_module, "Database", _FakeDatabase)
+
+    report = await service.export_universe_data(
+        universe_file=universe_path,
+        db_path=tmp_path / "market.db",
+        export_base_path=tmp_path / "exports",
+        source_freq=Freq.h1,
+        export_freq=Freq.h1,
+        include_klines=True,
+        include_metrics=True,
+    )
+
+    assert "metrics_missing_coverage" in report
+    assert "2024-01-01" in report["metrics_missing_coverage"]
+    assert report["metrics_missing_coverage"]["2024-01-01"]["funding_rate"]["missing_ratio"] == 0.5

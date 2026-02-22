@@ -180,9 +180,7 @@ class DataValidator:
         sample_symbols = successful_symbols[: min(5, len(successful_symbols))]
 
         if start_time == end_time:
-            logger.debug("检测到单日测试数据，跳过详细完整性检查")
-            return 0, []
-
+            logger.debug("Detected single-day test data; skipping detailed integrity checks")
         db = AsyncMarketDB(str(db_file_path))
         for symbol in sample_symbols:
             try:
@@ -254,7 +252,7 @@ class DataValidator:
                 recommendations.extend(detailed_issues[:3])
             if len(failed_symbols) > total_symbols * 0.3:
                 recommendations.append("🌐 失败率较高，建议检查网络连接和API限制")
-            logger.info(f"✅ 完整性检查完成: 质量分数 {final_quality_score:.1%}")
+            logger.info(f"Integrity check completed: quality score {final_quality_score:.1%}")
             return IntegrityReport(
                 total_symbols=total_symbols,
                 successful_symbols=success_count,

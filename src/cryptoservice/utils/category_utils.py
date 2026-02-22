@@ -50,12 +50,11 @@ class CategoryUtils:
             # 提取矩阵数据
             matrix = df.iloc[:, 1:].values.astype(int)
 
-            logger.info(f"读取分类矩阵: {len(symbols)} symbols × {len(categories)} categories")
-
+            logger.info(f"Read category matrix: {len(symbols)} symbols x {len(categories)} categories")
             return symbols, categories, matrix
 
         except Exception as e:
-            logger.error(f"读取分类CSV文件失败: {e}")
+            logger.error(f"Failed to read category CSV file: {e}")
             raise
 
     @staticmethod
@@ -85,8 +84,7 @@ class CategoryUtils:
                 if target_cat in categories:
                     category_indices.append(categories.index(target_cat))
                 else:
-                    logger.warning(f"分类 '{target_cat}' 不存在")
-
+                    logger.warning(f"Category '{target_cat}' does not exist")
             if not category_indices:
                 return []
 
@@ -104,12 +102,11 @@ class CategoryUtils:
                     if np.any(symbol_categories == 1):
                         filtered_symbols.append(symbol)
 
-            logger.info(f"根据分类筛选: {len(filtered_symbols)}/{len(symbols)} 个交易对符合条件")
-
+            logger.info(f"Filter by category: {len(filtered_symbols)}/{len(symbols)} symbols match criteria")
             return filtered_symbols
 
         except Exception as e:
-            logger.error(f"根据分类筛选交易对失败: {e}")
+            logger.error(f"Failed to filter symbols by category: {e}")
             raise
 
     @staticmethod
@@ -178,7 +175,7 @@ class CategoryUtils:
             return stats
 
         except Exception as e:
-            logger.error(f"获取分类统计信息失败: {e}")
+            logger.error(f"Failed to fetch category statistics: {e}")
             raise
 
     @staticmethod
@@ -218,8 +215,7 @@ class CategoryUtils:
                     symbol_indices.append(symbols.index(target_symbol))
                     valid_target_symbols.append(target_symbol)
                 else:
-                    logger.warning(f"交易对 '{target_symbol}' 不存在")
-
+                    logger.warning(f"Symbol '{target_symbol}' does not exist")
             category_indices = []
             valid_target_categories = []
             for target_category in target_categories:
@@ -227,17 +223,15 @@ class CategoryUtils:
                     category_indices.append(categories.index(target_category))
                     valid_target_categories.append(target_category)
                 else:
-                    logger.warning(f"分类 '{target_category}' 不存在")
-
+                    logger.warning(f"Category '{target_category}' does not exist")
             # 创建子集矩阵
             subset_matrix = matrix[np.ix_(symbol_indices, category_indices)] if symbol_indices and category_indices else np.array([]).reshape(0, 0)
 
-            logger.info(f"创建子集矩阵: {len(valid_target_symbols)} symbols × {len(valid_target_categories)} categories")
-
+            logger.info(f"Create subset matrix: {len(valid_target_symbols)} symbols x {len(valid_target_categories)} categories")
             return valid_target_symbols, valid_target_categories, subset_matrix
 
         except Exception as e:
-            logger.error(f"创建分类子集矩阵失败: {e}")
+            logger.error(f"Failed to create category subset matrix: {e}")
             raise
 
     @staticmethod
@@ -348,13 +342,12 @@ class CategoryUtils:
                     symbol_details_df = pd.DataFrame(symbol_details)
                     symbol_details_df.to_excel(writer, sheet_name="交易对详情", index=False)
 
-                logger.info(f"Excel分析报告已保存: {excel_file}")
-
+                logger.info(f"Excel analysis report saved: {excel_file}")
             except ImportError:
-                logger.info("未安装 openpyxl，跳过 Excel 报告生成")
+                logger.info("openpyxl is not installed, skipping Excel report generation")
 
-            logger.info(f"分类分析报告已保存: {report_file}")
+            logger.info(f"Category analysis report saved: {report_file}")
 
         except Exception as e:
-            logger.error(f"导出分类分析报告失败: {e}")
+            logger.error(f"Failed to export category analysis report: {e}")
             raise

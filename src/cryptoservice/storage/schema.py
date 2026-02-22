@@ -131,8 +131,7 @@ class DatabaseSchema:
         async with connection_pool.get_connection() as conn:
             for table_config in cls.ALL_TABLES:
                 table_name = table_config["name"]
-                logger.debug(f"创建表: {table_name}")
-
+                logger.debug(f"Create table: {table_name}")
                 # 创建表
                 await conn.execute(table_config["ddl"])
 
@@ -140,8 +139,7 @@ class DatabaseSchema:
                 for index_sql in table_config["indexes"]:
                     await conn.execute(index_sql)
 
-                logger.debug(f"表 {table_name} 创建完成")
-
+                logger.debug(f"Table {table_name} created")
             # 提交事务
             await conn.commit()
 
@@ -154,17 +152,15 @@ class DatabaseSchema:
         Args:
             connection_pool: 数据库连接池
         """
-        logger.warning("开始删除所有数据库表")
-
+        logger.warning("Start dropping all database tables")
         async with connection_pool.get_connection() as conn:
             for table_config in cls.ALL_TABLES:
                 table_name = table_config["name"]
                 await conn.execute(f"DROP TABLE IF EXISTS {table_name}")
-                logger.debug(f"表 {table_name} 已删除")
-
+                logger.debug(f"Table {table_name} dropped")
             await conn.commit()
 
-        logger.warning("所有数据库表已删除")
+        logger.warning("All database tables have been dropped")
 
     @classmethod
     async def get_table_info(cls, connection_pool: "ConnectionPool", table_name: str) -> list:

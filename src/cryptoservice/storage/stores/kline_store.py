@@ -72,7 +72,7 @@ class KlineStore:
             插入的记录数
         """
         if not klines:
-            logger.warning("没有K线数据需要插入")
+            logger.warning("No Kline data to insert")
             return 0
 
         # 转换为记录格式
@@ -139,7 +139,7 @@ class KlineStore:
 
         symbol = records[0][0] if records else "unknown"
         freq = records[0][2] if records else "unknown"
-        logger.info(f"K线数据插入完成: {total_inserted} 条记录 ({symbol}, {freq})")
+        logger.info(f"Kline insert completed: {total_inserted} records ({symbol}, {freq})")
         return total_inserted
 
     async def upsert(self, klines: list[PerpetualMarketTicker], freq: Freq) -> int:
@@ -190,7 +190,7 @@ class KlineStore:
             deleted_count = cursor.rowcount
             await conn.commit()
 
-        logger.info(f"删除K线数据: {deleted_count} 条记录")
+        logger.info(f"Deleted Kline data: {deleted_count} records")
         return deleted_count
 
     async def delete_by_symbol(self, symbol: str, freq: Freq | None = None) -> int:
@@ -215,7 +215,7 @@ class KlineStore:
             deleted_count = cursor.rowcount
             await conn.commit()
 
-        logger.info(f"删除交易对 {symbol} 的K线数据: {deleted_count} 条记录")
+        logger.info(f"Deleted Kline data for {symbol}: {deleted_count} records")
         return deleted_count
 
     async def count(self, symbol: str | None = None, freq: Freq | None = None) -> int:

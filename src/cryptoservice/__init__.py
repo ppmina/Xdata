@@ -1,6 +1,7 @@
 """Cryptocurrency trading bot package."""
 
 from importlib import metadata
+from typing import Any
 
 try:
     __version__ = metadata.version("cryptoservice")
@@ -15,11 +16,6 @@ __author__ = "Minnn"
 import decimal
 import sqlite3
 
-from .client import BinanceClientFactory
-from .config import Environment, LogLevel, get_logger, setup_logging
-from .services import MarketDataService
-from .storage import AsyncMarketDB
-
 
 def adapt_decimal(d: decimal.Decimal) -> str:
     """Adapt decimal.Decimal to string for SQLite."""
@@ -27,6 +23,34 @@ def adapt_decimal(d: decimal.Decimal) -> str:
 
 
 sqlite3.register_adapter(decimal.Decimal, adapt_decimal)
+
+
+def __getattr__(name: str) -> Any:
+    """Lazily import heavy modules so package import stays lightweight."""
+    if name == "BinanceClientFactory":
+        from .client import BinanceClientFactory
+
+        return BinanceClientFactory
+    if name == "MarketDataService":
+        from .services import MarketDataService
+
+        return MarketDataService
+    if name == "AsyncMarketDB":
+        from .storage import AsyncMarketDB
+
+        return AsyncMarketDB
+    if name in {"setup_logging", "get_logger", "LogLevel", "Environment"}:
+        from .config import Environment, LogLevel, get_logger, setup_logging
+
+        mapping = {
+            "setup_logging": setup_logging,
+            "get_logger": get_logger,
+            "LogLevel": LogLevel,
+            "Environment": Environment,
+        }
+        return mapping[name]
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
 
 # 定义对外暴露的模块
 __all__ = [

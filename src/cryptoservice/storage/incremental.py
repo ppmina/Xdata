@@ -3,7 +3,9 @@
 提供增量下载计划和缺失数据分析功能。
 """
 
-from typing import TYPE_CHECKING, Any
+from collections.abc import Callable
+from dataclasses import dataclass
+from typing import TYPE_CHECKING, Any, TypeVar
 
 import pandas as pd
 
@@ -15,6 +17,63 @@ if TYPE_CHECKING:
     from .queries import KlineQuery, MetricsQuery
 
 logger = get_logger(__name__)
+
+TPoint = TypeVar("TPoint")
+
+
+def rewrite_points_fixed_point(
+    points: list[TPoint],
+    *,
+    is_continuous: Callable[[TPoint, TPoint], bool],
+    can_merge: Callable[[list[TPoint]], bool],
+    merge: Callable[[list[TPoint]], TPoint],
+    make_filler: Callable[[list[TPoint], TPoint], TPoint | None],
+    max_passes: int = 10000,
+) -> list[TPoint]:
+    """Rewrite points until a full pass produces no merges."""
+    if max_passes <= 0:
+        raise ValueError("max_passes must be a positive integer")
+
+    current = list(points)
+    pass_count = 0
+    while True:
+        if pass_count >= max_passes:
+            raise ValueError(f"rewrite_points_fixed_point did not converge within {max_passes} passes")
+
+        pass_count += 1
+        changed = False
+        rewritten: list[TPoint] = []
+        i = 0
+        total = len(current)
+
+        while i < total:
+            j = i
+            while j + 1 < total and is_continuous(current[j], current[j + 1]):
+                j += 1
+
+            run = current[i : j + 1]
+            if can_merge(run):
+                merged = merge(run)
+                filler = make_filler(run, merged)
+                if filler is not None:
+                    rewritten.append(filler)
+                rewritten.append(merged)
+                i = j + 1
+                changed = True
+            else:
+                rewritten.append(current[i])
+                i += 1
+
+        if not changed:
+            return rewritten
+        current = rewritten
+
+
+@dataclass(frozen=True)
+class _MetricsRewritePoint:
+    start_ts: int
+    end_ts: int
+    kind: str
 
 
 class IncrementalManager:
@@ -53,12 +112,11 @@ class IncrementalManager:
             {symbol: {"start_ts": int, "end_ts": int, "start_time": str, "end_time": str, "missing_count": int}}
         """
         if not symbols:
-            logger.debug("K线增量计划跳过：未提供交易对。")
+            logger.debug("Kline incremental plan skipped: no symbols provided.")
             return {}
 
-        logger.debug(f"开始生成 K 线增量计划（频率 {freq.value}，范围 {start_date} ~ {end_date}，{len(symbols)} 个交易对）")
-
-        plan: dict[str, dict[str, Any]] = {}
+        logger.debug(f"Start generating Kline incremental plan (frequency {freq.value}, range {start_date} ~ {end_date}, {len(symbols)} symbols)")
+        plan = {}
         step_ms = self._get_freq_milliseconds(freq)
 
         # 转换日期为时间戳（只转换一次边界值）
@@ -100,7 +158,7 @@ class IncrementalManager:
                     )
 
             except Exception as e:
-                logger.error(f"[kline-{freq.value}] 检查 {symbol} 缺失数据时出错: {e}")
+                logger.error(f"[kline-{freq.value}] error checking missing data for {symbol}: {e}")
                 continue
 
         total_missing = sum(int(entry.get("missing_count", 0)) for entry in plan.values())
@@ -123,13 +181,13 @@ class IncrementalManager:
             if top_examples:
                 log_kwargs["missing_examples"] = ", ".join(top_examples)
         if not plan:
-            logger.debug(f"K 线增量计划：全部 {len(symbols)} 个交易对数据已最新，无需下载。")
+            logger.debug(f"Kline incremental plan: all {len(symbols)} symbols are up to date; no download needed.")
         else:
             example_text = log_kwargs.get("missing_examples")
             if example_text:
-                logger.debug(f"K 线增量计划：{len(plan)} 个交易对存在缺失数据（示例：{example_text}）。")
+                logger.debug(f"Kline incremental plan: {len(plan)} symbols have missing data (examples: {example_text}).")
             else:
-                logger.debug(f"K 线增量计划：{len(plan)} 个交易对存在缺失数据。")
+                logger.debug(f"Kline incremental plan: {len(plan)} symbols have missing data.")
 
         return plan
 
@@ -150,15 +208,14 @@ class IncrementalManager:
             {symbol: {"start_date": str, "end_date": str, "missing_dates": list[str], "missing_count": int}}
         """
         if not symbols:
-            logger.debug("Vision 指标增量计划跳过：未提供交易对。")
+            logger.debug("Vision metrics incremental plan skipped: no symbols provided.")
             return {}
 
         display_name = self._METRICS_LABELS["vision-metrics"]
-        logger.debug(f"开始生成 {display_name} 增量计划（范围 {start_date} ~ {end_date}，{len(symbols)} 个交易对）")
-
+        logger.debug(f"Start generating {display_name} incremental plan (range {start_date} ~ {end_date}, {len(symbols)} symbols)")
         date_range = pd.date_range(start=start_date, end=end_date, freq="D", tz="UTC")
         if date_range.empty:
-            logger.warning(f"{display_name} 增量计划失败：日期范围为空（{start_date} ~ {end_date}）。")
+            logger.warning(f"{display_name} incremental plan failed: date range is empty ({start_date} ~ {end_date}).")
             return {}
 
         plan, complete_count = await self._collect_vision_plan(symbols, date_range)
@@ -185,10 +242,10 @@ class IncrementalManager:
             if top_examples:
                 log_kwargs["missing_examples"] = ", ".join(top_examples)
         if not plan:
-            logger.debug(f"{display_name} 增量计划：所有数据已最新，无需下载。")
+            logger.debug(f"{display_name} incremental plan: all data is up to date; no download needed.")
         else:
             missing_days = log_kwargs.get("missing_days", 0)
-            logger.debug(f"{display_name} 增量计划：{len(plan)} 个交易对缺少数据（缺失日期共 {missing_days} 天）。")
+            logger.debug(f"{display_name} incremental plan: {len(plan)} symbols are missing data (total missing days {missing_days}).")
 
         return plan
 
@@ -230,7 +287,7 @@ class IncrementalManager:
                 try:
                     status = await self.metrics_query.get_daily_metrics_status(symbol, date_str)
                 except Exception as exc:  # noqa: BLE001
-                    logger.error(f"[vision-metrics] 检查 {symbol} {date_str} 时出错: {exc}")
+                    logger.error(f"[vision-metrics] error checking {symbol} {date_str}: {exc}")
                     self._register_missing_day(plan, symbol, date_str)
                     continue
 
@@ -238,7 +295,7 @@ class IncrementalManager:
                 lsr_count = status.get("long_short_ratio", 0)
 
                 if oi_count > 0 and lsr_count > 0:
-                    logger.debug(f"[vision-metrics] {symbol} {date_str}: 数据完整 (OI: {oi_count}, LSR: {lsr_count})")
+                    logger.debug(f"[vision-metrics] {symbol} {date_str}: data complete (OI: {oi_count}, LSR: {lsr_count})")
                     complete_count += 1
                 else:
                     self._register_missing_day(plan, symbol, date_str)
@@ -275,15 +332,15 @@ class IncrementalManager:
             }
         """
         if not symbols:
-            logger.debug(f"{data_type} 增量计划跳过：未提供交易对。")
+            logger.debug(f"{data_type} incremental plan skipped: no symbols provided.")
             return {}
 
         display_name = self._METRICS_LABELS.get(data_type, data_type)
         expanded_start_date = shift_date(start_date, -1)
         # 显示间隔（分钟或小时）
-        interval_display = f"{int(interval_hours * 60)} 分钟" if interval_hours < 1 else f"{interval_hours:.1f} 小时"
+        interval_display = f"{int(interval_hours * 60)} minutes" if interval_hours < 1 else f"{interval_hours:.1f} hours"
         logger.debug(
-            f"{display_name} incremental plan（{start_date} ~ {end_date}，start: {expanded_start_date}，interval: {interval_display}，len: {len(symbols)} ）"
+            f"{display_name} incremental plan ({start_date} ~ {end_date}, start: {expanded_start_date}, interval: {interval_display}, len: {len(symbols)})"
         )
 
         plan: dict[str, dict[str, Any]] = {}
@@ -299,7 +356,7 @@ class IncrementalManager:
                 # 传递 float 值以支持分钟级间隔（如 5/60 = 5分钟）
                 missing_timestamps = await self.metrics_query.get_missing_timestamps(data_type, symbol, start_ts, end_ts, interval_hours)
                 if missing_timestamps:
-                    segment = self._build_single_segment(
+                    segment = self._build_metric_segment_with_rewrite(
                         missing_timestamps,
                         interval_ms,
                         start_ts,
@@ -330,7 +387,7 @@ class IncrementalManager:
                     )
 
             except Exception as e:
-                logger.error(f"[{data_type}] 检查 {symbol} 缺失数据时出错: {e}")
+                logger.error(f"[{data_type}] error checking missing data for {symbol}: {e}")
                 continue
 
         total_missing = sum(int(entry.get("missing_count", 0)) for entry in plan.values())
@@ -353,14 +410,14 @@ class IncrementalManager:
             if top_examples:
                 log_kwargs["missing_examples"] = ", ".join(top_examples)
         if not plan:
-            logger.debug(f"{display_name} 增量计划：全部 {len(symbols)} 个交易对数据已最新。")
+            logger.debug(f"{display_name} incremental plan: all {len(symbols)} symbol data is up to date.")
         else:
             missing_points = log_kwargs.get("missing_days") or log_kwargs.get("missing_points")
             example_text = log_kwargs.get("missing_examples")
             if example_text:
-                logger.debug(f"{display_name} 增量计划：{len(plan)} 个交易对需要补齐数据（示例：{example_text}）。")
+                logger.debug(f"{display_name} incremental plan: {len(plan)} symbols need backfill (examples: {example_text}).")
             else:
-                logger.debug(f"{display_name} 增量计划：{len(plan)} 个交易对需要补齐数据（缺口数量 {missing_points}）。")
+                logger.debug(f"{display_name} incremental plan: {len(plan)} symbols need backfill (missing points {missing_points}).")
 
         return plan
 
@@ -376,8 +433,7 @@ class IncrementalManager:
         Returns:
             覆盖率报告字典
         """
-        logger.info(f"生成K线数据覆盖率报告: {len(symbols)} 个交易对")
-
+        logger.info(f"Generate Kline data coverage report: {len(symbols)} symbols")
         total_expected = self._count_expected_records(start_date, end_date, freq)
         if total_expected == 0:
             return {"error": "时间范围无效"}
@@ -429,14 +485,14 @@ class IncrementalManager:
                     total_actual += record_count
 
             except Exception as e:
-                logger.error(f"获取 {symbol} 覆盖率信息时出错: {e}")
+                logger.error(f"Error getting coverage info for {symbol}: {e}")
                 report["symbols"][symbol] = {"error": str(e), "status": "error"}
 
         # 计算总体覆盖率
         if total_possible > 0:
             report["summary"]["overall_coverage"] = round((total_actual / total_possible) * 100, 2)
 
-        logger.info(f"覆盖率报告生成完成: 总体覆盖率 {report['summary']['overall_coverage']}%")
+        logger.info(f"Coverage report generation completed: overall coverage {report['summary']['overall_coverage']}%")
         return report
 
     async def get_data_gaps(self, symbol: str, start_date: str, end_date: str, freq: Freq, max_gap_hours: int = 24) -> list[dict]:
@@ -452,8 +508,7 @@ class IncrementalManager:
         Returns:
             间隙信息列表
         """
-        logger.info(f"分析 {symbol} 数据间隙: {start_date} - {end_date}")
-
+        logger.info(f"Analyze {symbol} data gaps: {start_date} - {end_date}")
         # 获取现有时间戳
         df = await self.kline_query.select_by_time_range([symbol], start_date, end_date, freq, columns=["close_price"])
 
@@ -485,7 +540,7 @@ class IncrementalManager:
                 }
                 gaps.append(gap_info)
 
-        logger.info(f"{symbol} 数据间隙分析完成: 发现 {len(gaps)} 个间隙")
+        logger.info(f"{symbol} data gap analysis completed: found {len(gaps)} gaps")
         return gaps
 
     def _count_expected_records(self, start_date: str, end_date: str, freq: Freq) -> int:
@@ -530,7 +585,7 @@ class IncrementalManager:
             return len(time_range)
 
         except Exception as e:
-            logger.error(f"计算预期记录数量失败: {e}")
+            logger.error(f"Failed to calculate expected record count: {e}")
             return 0
 
     def _get_freq_milliseconds(self, freq: Freq) -> int:
@@ -567,6 +622,102 @@ class IncrementalManager:
         if hours is None or hours <= 0:
             return 60 * 60 * 1000  # 默认1小时
         return max(int(round(hours * 60 * 60 * 1000)), 60 * 1000)
+
+    @staticmethod
+    def _make_metrics_rewrite_filler(
+        *,
+        merged: _MetricsRewritePoint,
+        start_bound: int,
+        step_ms: int,
+    ) -> _MetricsRewritePoint | None:
+        filler_start = max(start_bound, merged.start_ts - step_ms)
+        filler_end = merged.start_ts
+        if filler_end <= filler_start:
+            return None
+        return _MetricsRewritePoint(
+            start_ts=filler_start,
+            end_ts=filler_end,
+            kind="filler",
+        )
+
+    def _build_metric_segment_with_rewrite(
+        self,
+        missing_timestamps: list[int],
+        step_ms: int,
+        start_bound: int,
+        end_bound: int,
+    ) -> dict[str, Any]:
+        """根据缺失时间戳构建下载区间（固定点重写版本）."""
+        if not missing_timestamps:
+            return self._build_single_segment(
+                missing_timestamps=missing_timestamps,
+                step_ms=step_ms,
+                start_bound=start_bound,
+                end_bound=end_bound,
+            )
+
+        unique_missing = sorted({int(ts) for ts in missing_timestamps})
+        raw_points: list[_MetricsRewritePoint] = []
+        for ts in unique_missing:
+            point_start = max(ts, start_bound)
+            if point_start >= end_bound:
+                continue
+
+            point_end = min(point_start + step_ms, end_bound)
+            if point_end <= point_start:
+                continue
+
+            raw_points.append(
+                _MetricsRewritePoint(
+                    start_ts=point_start,
+                    end_ts=point_end,
+                    kind="raw",
+                )
+            )
+
+        if not raw_points:
+            return self._build_single_segment(
+                missing_timestamps=unique_missing,
+                step_ms=step_ms,
+                start_bound=start_bound,
+                end_bound=end_bound,
+            )
+
+        rewritten_points = rewrite_points_fixed_point(
+            raw_points,
+            is_continuous=lambda a, b: b.start_ts <= a.end_ts,
+            can_merge=lambda run: len(run) >= 2 and all(point.kind == "raw" for point in run),
+            merge=lambda run: _MetricsRewritePoint(
+                start_ts=min(point.start_ts for point in run),
+                end_ts=max(point.end_ts for point in run),
+                kind="merged",
+            ),
+            make_filler=lambda _run, merged: self._make_metrics_rewrite_filler(
+                merged=merged,
+                start_bound=start_bound,
+                step_ms=step_ms,
+            ),
+        )
+
+        if not rewritten_points:
+            return self._build_single_segment(
+                missing_timestamps=unique_missing,
+                step_ms=step_ms,
+                start_bound=start_bound,
+                end_bound=end_bound,
+            )
+
+        start_ts = max(min(point.start_ts for point in rewritten_points), start_bound)
+        end_ts = min(max(point.end_ts for point in rewritten_points), end_bound)
+        if end_ts <= start_ts:
+            end_ts = min(start_ts + step_ms, end_bound)
+
+        return {
+            "start_ts": start_ts,
+            "end_ts": end_ts,
+            "start_time": self._format_timestamp(start_ts),
+            "end_time": self._format_timestamp(end_ts),
+        }
 
     def _build_single_segment(
         self,
@@ -615,8 +766,7 @@ class IncrementalManager:
         Returns:
             按优先级排序的下载建议列表
         """
-        logger.info(f"生成下载优先级建议: {len(symbols)} 个交易对")
-
+        logger.info(f"Generate download priority recommendations: {len(symbols)} symbols")
         priorities = []
 
         for symbol in symbols:
@@ -656,12 +806,12 @@ class IncrementalManager:
                     )
 
             except Exception as e:
-                logger.error(f"获取 {symbol} 优先级信息时出错: {e}")
+                logger.error(f"Error getting priority info for {symbol}: {e}")
                 priorities.append({"symbol": symbol, "priority": "high", "reason": "error", "error": str(e)})
 
         # 按优先级排序（高 -> 中 -> 低）
         priority_order = {"high": 0, "medium": 1, "low": 2}
         priorities.sort(key=lambda x: (priority_order.get(str(x["priority"]), 3), x["symbol"]))
 
-        logger.info(f"优先级建议生成完成: {len(priorities)} 条建议")
+        logger.info(f"Priority recommendations generated: {len(priorities)} suggestions")
         return priorities

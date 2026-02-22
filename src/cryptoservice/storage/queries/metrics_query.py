@@ -24,6 +24,15 @@ class MetricsQuery:
     专注于指标数据的查询操作。
     """
 
+    # 读兼容：canonical type -> legacy aliases
+    _RATIO_TYPE_EQUIVALENTS: dict[str, tuple[str, ...]] = {
+        "toptrader_account": ("toptrader_account", "account"),
+        "toptrader_position": ("toptrader_position", "position"),
+        "global_account": ("global_account", "global"),
+        "taker_vol": ("taker_vol", "taker"),
+    }
+    _RATIO_TYPE_CANONICAL: dict[str, str] = {alias: canonical for canonical, aliases in _RATIO_TYPE_EQUIVALENTS.items() for alias in aliases}
+
     def __init__(self, connection_pool: "ConnectionPool"):
         """初始化指标数据查询器.
 
@@ -31,6 +40,17 @@ class MetricsQuery:
             connection_pool: 数据库连接池
         """
         self.pool = connection_pool
+
+    @classmethod
+    def _normalize_ratio_type(cls, ratio_type: str) -> str:
+        """将 ratio_type 归一化为 canonical 名称."""
+        return cls._RATIO_TYPE_CANONICAL.get(ratio_type, ratio_type)
+
+    @classmethod
+    def _expand_ratio_type_aliases(cls, ratio_type: str) -> tuple[str, ...]:
+        """扩展 ratio_type 过滤条件（canonical + legacy aliases）."""
+        canonical = cls._normalize_ratio_type(ratio_type)
+        return cls._RATIO_TYPE_EQUIVALENTS.get(canonical, (ratio_type,))
 
     async def select_funding_rates(self, symbols: list[str], start_time: str, end_time: str, columns: list[str] | None = None) -> pd.DataFrame:
         """查询资金费率数据.
@@ -45,7 +65,7 @@ class MetricsQuery:
             包含资金费率数据的DataFrame
         """
         if not symbols:
-            logger.warning("没有指定交易对")
+            logger.warning("No symbols specified")
             return pd.DataFrame()
 
         # 默认查询的数据列
@@ -72,7 +92,7 @@ class MetricsQuery:
             rows = await cursor.fetchall()
 
         if not rows:
-            logger.info(f"未找到资金费率数据: {symbols}, {start_time} - {end_time}")
+            logger.info(f"No funding rate data found: {symbols}, {start_time} - {end_time}")
             empty_df = pd.DataFrame(columns=query_columns)
             empty_df = empty_df.set_index(["symbol", "timestamp"])
             return empty_df
@@ -105,7 +125,7 @@ class MetricsQuery:
             包含持仓量数据的DataFrame
         """
         if not symbols:
-            logger.warning("没有指定交易对")
+            logger.warning("No symbols specified")
             return pd.DataFrame()
 
         # 默认查询的数据列
@@ -131,7 +151,7 @@ class MetricsQuery:
             rows = await cursor.fetchall()
 
         if not rows:
-            logger.info(f"未找到持仓量数据: {symbols}, {start_time} - {end_time}")
+            logger.info(f"No open interest data found: {symbols}, {start_time} - {end_time}")
             empty_df = pd.DataFrame(columns=query_columns)
             empty_df = empty_df.set_index(["symbol", "timestamp"])
             return empty_df
@@ -166,7 +186,7 @@ class MetricsQuery:
             包含多空比例数据的DataFrame
         """
         if not symbols:
-            logger.warning("没有指定交易对")
+            logger.warning("No symbols specified")
             return pd.DataFrame()
 
         # 默认查询的数据列
@@ -186,7 +206,11 @@ class MetricsQuery:
             builder = builder.where("period = ?", period)
 
         if ratio_type:
-            builder = builder.where("ratio_type = ?", ratio_type)
+            ratio_filters = self._expand_ratio_type_aliases(ratio_type)
+            if len(ratio_filters) == 1:
+                builder = builder.where("ratio_type = ?", ratio_filters[0])
+            else:
+                builder = builder.where("(ratio_type = ? OR ratio_type = ?)", ratio_filters[0], ratio_filters[1])
 
         sql, params = builder.order_by("symbol, timestamp").build()
 
@@ -195,7 +219,7 @@ class MetricsQuery:
             rows = await cursor.fetchall()
 
         if not rows:
-            logger.info(f"未找到多空比例数据: {symbols}, {start_time} - {end_time}")
+            logger.info(f"No long-short ratio data found: {symbols}, {start_time} - {end_time}")
             empty_df = pd.DataFrame(columns=query_columns)
             empty_df = empty_df.set_index(["symbol", "timestamp"])
             return empty_df
@@ -451,10 +475,17 @@ class MetricsQuery:
             # 使用短板效应：返回最少的数量，确保所有类型都有数据
             lsr_counts = []
             for ratio_type in self.REQUIRED_RATIO_TYPES:
-                cursor = await conn.execute(
-                    "SELECT COUNT(*) FROM long_short_ratios WHERE symbol = ? AND timestamp >= ? AND timestamp < ? AND ratio_type = ?",
-                    (symbol, start_ts, end_ts, ratio_type),
-                )
+                ratio_filters = self._expand_ratio_type_aliases(ratio_type)
+                if len(ratio_filters) == 1:
+                    cursor = await conn.execute(
+                        "SELECT COUNT(*) FROM long_short_ratios WHERE symbol = ? AND timestamp >= ? AND timestamp < ? AND ratio_type = ?",
+                        (symbol, start_ts, end_ts, ratio_filters[0]),
+                    )
+                else:
+                    cursor = await conn.execute(
+                        "SELECT COUNT(*) FROM long_short_ratios WHERE symbol = ? AND timestamp >= ? AND timestamp < ? AND (ratio_type = ? OR ratio_type = ?)",
+                        (symbol, start_ts, end_ts, ratio_filters[0], ratio_filters[1]),
+                    )
                 row = await cursor.fetchone()
                 count = row[0] if row else 0
                 lsr_counts.append(count)
@@ -501,11 +532,12 @@ class MetricsQuery:
             包含多空比例数据的 DataFrame，索引为 (symbol, timestamp)
         """
         if not symbols:
-            logger.warning("没有指定交易对")
+            logger.warning("No symbols specified")
             return pd.DataFrame()
 
+        canonical_ratio_type = self._normalize_ratio_type(ratio_type)
         valid_types = list(self.RATIO_TYPE_TO_EXPORT_NAME.keys())
-        if ratio_type not in valid_types:
+        if canonical_ratio_type not in valid_types:
             raise ValueError(f"不支持的 ratio_type: {ratio_type}，支持的类型: {valid_types}")
 
         # 只查询 long_short_ratio 列
@@ -513,7 +545,7 @@ class MetricsQuery:
             symbols=symbols,
             start_time=start_time,
             end_time=end_time,
-            ratio_type=ratio_type,
+            ratio_type=canonical_ratio_type,
             columns=["long_short_ratio"],
         )
 
@@ -522,12 +554,12 @@ class MetricsQuery:
 
         # 可选：重命名列为导出字段名
         if rename_to_export_name:
-            export_name = self.RATIO_TYPE_TO_EXPORT_NAME[ratio_type]
+            export_name = self.RATIO_TYPE_TO_EXPORT_NAME[canonical_ratio_type]
             df = df.rename(columns={"long_short_ratio": export_name})
 
         logger.debug(
             "select_long_short_ratio_by_type_complete",
-            ratio_type=ratio_type,
+            ratio_type=canonical_ratio_type,
             records=len(df),
         )
         return df

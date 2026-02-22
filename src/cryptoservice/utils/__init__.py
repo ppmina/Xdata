@@ -1,5 +1,6 @@
 """工具包，提供缓存、数据转换、错误处理等通用模块."""
 
+from .adaptive_concurrency import AdaptiveEndpointController, EndpointAdaptivePolicy
 from .cache_manager import CacheManager
 from .data_converter import DataConverter
 from .error_handler import AsyncExponentialBackoff, EnhancedErrorHandler, ExponentialBackoff
@@ -23,6 +24,8 @@ from .time_utils import (
 
 __all__ = [
     "CacheManager",
+    "AdaptiveEndpointController",
+    "EndpointAdaptivePolicy",
     "DataConverter",
     "generate_run_id",
     "load_symbols_from_txt",

@@ -43,9 +43,7 @@ class CategoryManager:
             if use_cache and self.categories_cache and self.cache_timestamp and (datetime.now() - self.cache_timestamp).seconds < 3600:
                 return self.categories_cache
 
-            logger.info("获取 Binance 交易对分类信息...")
-
-            # 调用 Binance 分类 API
+            logger.info("Fetching Binance symbol category metadata...")
             url = "https://www.binance.com/bapi/composite/v1/public/marketing/symbol/list"
             response = self._session.get(url, timeout=30)
             response.raise_for_status()
@@ -68,11 +66,11 @@ class CategoryManager:
             self.categories_cache = symbol_categories
             self.cache_timestamp = datetime.now()
 
-            logger.info(f"成功获取 {len(symbol_categories)} 个交易对的分类信息")
+            logger.info(f"Successfully fetched category metadata for {len(symbol_categories)} symbols")
             return symbol_categories
 
         except Exception as e:
-            logger.error(f"获取交易对分类信息失败: {e}")
+            logger.error(f"Failed to fetch symbol category metadata: {e}")
             raise
 
     def get_all_categories(self) -> list[str]:
@@ -89,7 +87,7 @@ class CategoryManager:
             return sorted(all_tags)
 
         except Exception as e:
-            logger.error(f"获取分类标签失败: {e}")
+            logger.error(f"Failed to fetch category tags: {e}")
             raise
 
     def create_category_matrix(self, symbols: list[str], categories: list[str] | None = None) -> tuple[list[str], list[str], list[list[int]]]:
@@ -112,12 +110,11 @@ class CategoryManager:
                 row = [1 if category in symbol_tags else 0 for category in categories]
                 matrix.append(row)
 
-            logger.info(f"创建分类矩阵: {len(valid_symbols)} symbols × {len(categories)} categories")
-
+            logger.info(f"Create category matrix: {len(valid_symbols)} symbols x {len(categories)} categories")
             return valid_symbols, categories, matrix
 
         except Exception as e:
-            logger.error(f"创建分类矩阵失败: {e}")
+            logger.error(f"Failed to create category matrix: {e}")
             raise
 
     def save_category_matrix_csv(
@@ -152,11 +149,10 @@ class CategoryManager:
                     row = [symbol] + matrix[i]
                     writer.writerow(row)
 
-            logger.info(f"成功保存分类矩阵到: {file_path}")
-            logger.info(f"矩阵大小: {len(valid_symbols)} symbols × {len(sorted_categories)} categories")
-
+            logger.info(f"Successfully saved category matrix to: {file_path}")
+            logger.info(f"Matrix size: {len(valid_symbols)} symbols x {len(sorted_categories)} categories")
         except Exception as e:
-            logger.error(f"保存分类矩阵失败: {e}")
+            logger.error(f"Failed to save category matrix: {e}")
             raise
 
     def download_and_save_categories_for_universe(
@@ -179,14 +175,14 @@ class CategoryManager:
 
             logger.info(
                 "category_download_started",
-                snapshots=len(universe_def.snapshots),
+                snapshots=len(universe_def.daily_snapshots),
                 output_dir=str(output_path_obj),
             )
 
             # 收集所有交易对
             all_symbols = set()
-            for snapshot in universe_def.snapshots:
-                all_symbols.update(snapshot.symbols)
+            for snapshot in universe_def.daily_snapshots:
+                all_symbols.update(snapshot.active_symbols)
 
             all_symbols_list = sorted(all_symbols)
             logger.debug("category_symbol_pool", symbols=len(all_symbols_list))
@@ -196,26 +192,26 @@ class CategoryManager:
             logger.debug("category_fetch_reference", current_date=current_date)
 
             # 为每个快照日期保存分类矩阵
-            for i, snapshot in enumerate(universe_def.snapshots):
+            for i, snapshot in enumerate(universe_def.daily_snapshots):
                 logger.debug(
                     "category_snapshot_processing",
                     snapshot_index=i + 1,
-                    total=len(universe_def.snapshots),
-                    effective_date=snapshot.effective_date,
-                    symbols=len(snapshot.symbols),
+                    total=len(universe_def.daily_snapshots),
+                    effective_date=snapshot.date,
+                    symbols=len(snapshot.active_symbols),
                 )
 
                 # 使用快照的有效日期
-                snapshot_date = snapshot.effective_date
+                snapshot_date = snapshot.date
 
                 # 保存该快照的分类矩阵
                 self.save_category_matrix_csv(
                     output_path=output_path_obj,
-                    symbols=snapshot.symbols,
+                    symbols=snapshot.active_symbols,
                     date_str=snapshot_date,
                 )
 
-                logger.debug("category_snapshot_saved", symbols=len(snapshot.symbols))
+                logger.debug("category_snapshot_saved", symbols=len(snapshot.active_symbols))
 
             # 也保存一个当前分类的完整矩阵（包含所有交易对，用作参考）
             logger.debug("category_reference_saved", current_date=current_date)
@@ -228,7 +224,7 @@ class CategoryManager:
             logger.info("category_download_completed", output_dir=str(output_path_obj))
 
         except Exception as e:
-            logger.error(f"为 universe 下载分类信息失败: {e}")
+            logger.error(f"Failed to download category metadata for universe: {e}")
             raise
 
     def _validate_and_prepare_path(self, path: Path | str, is_file: bool = False, file_name: str | None = None) -> Path:

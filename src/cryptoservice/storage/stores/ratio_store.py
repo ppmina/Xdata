@@ -57,7 +57,7 @@ class RatioStore:
             插入的记录数
         """
         if not long_short_ratios:
-            logger.warning("没有多空比例数据需要插入")
+            logger.warning("No long-short ratio data to insert")
             return 0
 
         # 转换为记录格式
@@ -108,7 +108,7 @@ class RatioStore:
 
             await conn.commit()
 
-        logger.info(f"多空比例数据插入完成: {total_inserted} 条记录")
+        logger.info(f"Long-short ratio insert completed: {total_inserted} records")
         return total_inserted
 
     async def delete_by_time_range(
@@ -161,7 +161,7 @@ class RatioStore:
             deleted_count = cursor.rowcount
             await conn.commit()
 
-        logger.info(f"删除多空比例数据: {deleted_count} 条记录")
+        logger.info(f"Deleted long-short ratio data: {deleted_count} records")
         return deleted_count
 
     async def delete_by_symbol(self, symbol: str, period: str | None = None, ratio_type: str | None = None) -> int:
@@ -193,7 +193,7 @@ class RatioStore:
             deleted_count = cursor.rowcount
             await conn.commit()
 
-        logger.info(f"删除交易对 {symbol} 的多空比例数据: {deleted_count} 条记录")
+        logger.info(f"Deleted long-short ratio data for {symbol}: {deleted_count} records")
         return deleted_count
 
     async def count(self, symbol: str | None = None, period: str | None = None, ratio_type: str | None = None) -> int:

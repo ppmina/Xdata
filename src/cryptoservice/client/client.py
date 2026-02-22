@@ -3,6 +3,7 @@
 import asyncio
 
 from binance import AsyncClient, Client
+from requests.utils import get_environ_proxies
 
 from cryptoservice.config import get_logger, settings
 from cryptoservice.exceptions import MarketDataError
@@ -39,12 +40,12 @@ class BinanceClientFactory:
                 # 获取代理配置
                 proxies = settings.get_proxy_config()
                 if proxies:
-                    logger.debug("使用代理创建 Binance 同步客户端", proxies=proxies)
+                    logger.debug("Create Binance sync client using proxy", proxies=proxies)
                     cls._instance = Client(api_key, api_secret, proxies=proxies)
-                    logger.info("Binance 同步客户端已就绪（已启用代理）。")
+                    logger.info("Binance sync client is ready (proxy enabled).")
                 else:
                     cls._instance = Client(api_key, api_secret)
-                    logger.info("Binance 同步客户端已就绪。")
+                    logger.info("Binance sync client is ready.")
             except Exception as e:
                 logger.error("client_create_error", client_type="sync", error=str(e))
                 raise MarketDataError(f"Failed to initialize Binance client: {e}") from e
@@ -73,25 +74,30 @@ class BinanceClientFactory:
                 https_proxy = None
 
                 if proxies:
-                    logger.debug("检测到代理配置", proxies=proxies)
+                    logger.debug("Proxy configuration detected", proxies=proxies)
 
                     # 使用 HTTPS 代理
                     if "https" in proxies:
                         https_proxy = proxies["https"]
-                        logger.debug("使用 HTTPS 代理连接 Binance", proxy=https_proxy)
+                        logger.debug("Connect to Binance using HTTPS proxy", proxy=https_proxy)
                     # 如果只有 HTTP 代理，也用作 HTTPS
                     elif "http" in proxies:
                         https_proxy = proxies["http"]
-                        logger.debug("使用 HTTP 代理连接 Binance", proxy=https_proxy)
+                        logger.debug("Connect to Binance using HTTP proxy", proxy=https_proxy)
+                else:
+                    # 与 requests 一致：在未显式配置时读取系统代理配置（macOS/Windows 平台可用）
+                    system_proxies = get_environ_proxies("https://api.binance.com")
+                    https_proxy = system_proxies.get("https") or system_proxies.get("http")
+                    if https_proxy:
+                        logger.debug("Connect to Binance using system proxy", proxy=https_proxy)
 
                 # 创建 AsyncClient
                 if https_proxy:
                     cls._async_instance = await AsyncClient.create(api_key=api_key, api_secret=api_secret, https_proxy=https_proxy)
-                    logger.info("Binance 异步客户端已就绪（已启用代理）。")
+                    logger.info("Binance async client is ready (proxy enabled).")
                 else:
                     cls._async_instance = await AsyncClient.create(api_key=api_key, api_secret=api_secret)
-                    logger.info("Binance 异步客户端已就绪。")
-
+                    logger.info("Binance async client is ready.")
             except Exception as e:
                 logger.error("client_create_error", client_type="async", error=str(e))
                 raise MarketDataError(f"Failed to initialize Binance async client: {e}") from e
@@ -119,7 +125,7 @@ class BinanceClientFactory:
             finally:
                 cls._async_instance = None
 
-        logger.debug("Binance 异步客户端连接已关闭。")
+        logger.debug("Binance async client connection closed.")
 
     @classmethod
     def get_client(cls) -> Client | None:

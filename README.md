@@ -28,45 +28,117 @@ BINANCE_API_SECRET=your_api_secret
 ### 2. 基本使用
 ```python
 import asyncio
+import os
 from cryptoservice import MarketDataService
+from cryptoservice.models import Freq
 
 async def main():
-    # 创建服务实例
-    service = MarketDataService()
+    api_key = os.getenv("BINANCE_API_KEY")
+    api_secret = os.getenv("BINANCE_API_SECRET")
+    if not api_key or not api_secret:
+        raise RuntimeError("BINANCE_API_KEY / BINANCE_API_SECRET are required")
 
-    # 获取实时行情
-    ticker = await service.get_ticker("BTCUSDT")
-    print(f"BTC价格: {ticker.price}")
+    async with await MarketDataService.create(api_key=api_key, api_secret=api_secret) as service:
+        # 获取实时行情
+        ticker = await service.get_symbol_ticker("BTCUSDT")
+        print(f"BTC价格: {ticker.price}")
 
-    # 下载历史数据
-    await service.download_klines("BTCUSDT", "1d", "2024-01-01", "2024-12-31")
+        # 获取历史K线（示例区间）
+        klines = await service.get_historical_klines(
+            symbol="BTCUSDT",
+            start_time="2024-01-01",
+            end_time="2024-01-31",
+            interval=Freq.d1,
+        )
+        print(f"K线数量: {len(klines)}")
 
 asyncio.run(main())
 ```
 
 ## 📋 完整工作流程演示
 
-`demo/` 目录提供了完整的端到端工作流程示例，从定义交易宇宙到数据分析的全流程：
+`demo/` 目录提供 v2 的端到端工作流程，基于不可变 `universe.json`：
 
 ```bash
-# 步骤1: 定义交易宇宙（筛选符合条件的交易对）
+# 步骤1: 定义 universe.json（symbols + start/end）
 python demo/define_universe.py
 
-# 步骤2: 下载历史数据到数据库（增量模式）
+# 步骤2: 严格按 daily_snapshots 下载到数据库
 python demo/download_data.py
 
-# 步骤3: 导出数据到numpy/CSV格式
+# 步骤3: 严格按 daily_snapshots 导出并生成 report.json
 python demo/export_data.py
 
 # 额外: WebSocket实时数据流
 python demo/websocket.py
 ```
 
+### ✅ CLI Shell 脚本（最终交付用法）
+
+```bash
+bash scripts/universe_define.sh \
+  --symbols BTCUSDT,ETHUSDT,SOLUSDT \
+  --start-date 2024-10-01 \
+  --end-date 2024-10-31 \
+  --output ./data/universe.json \
+  --api-key "${BINANCE_API_KEY}" \
+  --api-secret "${BINANCE_API_SECRET}"
+
+bash scripts/universe_download.sh \
+  --universe-file ./data/universe.json \
+  --db-path ./data/database/market.db \
+  --api-key "${BINANCE_API_KEY}" \
+  --api-secret "${BINANCE_API_SECRET}" \
+  --interval 5m \
+  --download-market-metrics
+
+# 可选：仅下载小时间窗用于验证/可视化
+bash scripts/universe_download.sh \
+  --universe-file ./data/universe.json \
+  --db-path ./data/database/market.db \
+  --start-date 2024-10-10 \
+  --end-date 2024-10-12 \
+  --interval 5m
+
+bash scripts/universe_export.sh \
+  --universe-file ./data/universe.json \
+  --db-path ./data/database/market.db \
+  --export-base-path ./data/exports \
+  --source-freq 5m \
+  --export-freq 5m
+
+# 可选：仅导出小时间窗
+bash scripts/universe_export.sh \
+  --universe-file ./data/universe.json \
+  --db-path ./data/database/market.db \
+  --export-base-path ./data/exports \
+  --source-freq 5m \
+  --export-freq 5m \
+  --start-date 2024-10-10 \
+  --end-date 2024-10-12
+```
+
+Scripts are pass-through wrappers; consumer must provide all paths and options.
+Credentials can be passed via `--api-key/--api-secret`, or via env (`BINANCE_API_KEY`, `BINANCE_API_SECRET`).
+Dotenv option: `uv run --env-file .env cryptoservice universe define ...`.
+
+`define` 也支持从 txt 导入 symbols，例如：
+
+```bash
+bash scripts/universe_define.sh \
+  --symbols BTCUSDT,@./symbols.txt,ETHUSDT \
+  --start-date 2024-10-01 \
+  --end-date 2024-10-31 \
+  --output ./data/universe.json \
+  --api-key "${BINANCE_API_KEY}" \
+  --api-secret "${BINANCE_API_SECRET}"
+```
+
 ### 演示脚本说明
 
-- **define_universe.py**: 定义加密货币交易宇宙，根据成交量、存续期等条件筛选交易对
-- **download_data.py**: 批量下载历史K线数据和市场指标（资金费率、持仓量、多空比例）
-- **export_data.py**: 导出数据为numpy数组格式，便于量化分析和机器学习
+- **define_universe.py**: 生成 v2 `universe.json`（每日 `active_symbols` / `missing_symbols`）
+- **download_data.py**: 仅读取 `universe.json` 执行严格日级下载计划
+- **export_data.py**: 仅读取 `universe.json` 导出并生成缺失覆盖报告
 - **websocket.py**: WebSocket客户端示例，展示实时数据流处理
 
 详细使用说明请参考 [`demo/README.md`](demo/README.md)

@@ -5,7 +5,6 @@
 
 import asyncio
 import secrets
-import time
 
 from cryptoservice.config import RetryConfig, get_logger
 from cryptoservice.models import ErrorSeverity
@@ -46,8 +45,7 @@ class ExponentialBackoff:
 
         self.attempt += 1
 
-        logger.debug(f"指数退避: 第{self.attempt}次重试, 等待{delay:.2f}秒")
-        time.sleep(delay)
+        logger.debug(f"Exponential backoff: retry #{self.attempt}, waiting {delay:.2f}s")
 
         return delay
 
@@ -85,7 +83,7 @@ class AsyncExponentialBackoff:
 
         self.attempt += 1
 
-        logger.debug(f"指数退避: 第{self.attempt}次重试, 等待{delay:.2f}秒")
+        logger.debug(f"Exponential backoff: retry #{self.attempt}, waiting {delay:.2f}s")
         await asyncio.sleep(delay)
 
         return delay
@@ -97,6 +95,16 @@ class EnhancedErrorHandler:
     @staticmethod
     def classify_error(error: Exception) -> ErrorSeverity:
         """错误分类."""
+        # 优先使用结构化状态码，避免依赖不稳定的异常字符串
+        status_code = getattr(error, "status_code", None)
+        if isinstance(status_code, int):
+            if status_code in {401, 403}:
+                return ErrorSeverity.CRITICAL
+            if status_code == 429:
+                return ErrorSeverity.MEDIUM
+            if status_code >= 500:
+                return ErrorSeverity.HIGH
+
         error_str = str(error).lower()
 
         # API频率限制
@@ -112,7 +120,7 @@ class EnhancedErrorHandler:
         ):
             return ErrorSeverity.MEDIUM
 
-        # SSL相关错误 - 通常是网络不稳定，可重试
+        # SSL/网络相关错误
         if any(
             keyword in error_str
             for keyword in [
@@ -164,12 +172,13 @@ class EnhancedErrorHandler:
                 "broken pipe",
                 "connection timed out",
                 "connection refused",
+                "connection",
+                "timeout",
+                "network",
+                "dns",
+                "socket",
             ]
         ):
-            return ErrorSeverity.MEDIUM
-
-        # 网络相关错误
-        if any(keyword in error_str for keyword in ["connection", "timeout", "network", "dns", "socket"]):
             return ErrorSeverity.MEDIUM
 
         # 无效交易对
@@ -240,5 +249,58 @@ class EnhancedErrorHandler:
     @staticmethod
     def is_rate_limit_error(error: Exception) -> bool:
         """判断是否为频率限制错误."""
+        status_code = getattr(error, "status_code", None)
+        if isinstance(status_code, int) and status_code in {418, 429}:
+            return True
+
+        error_code = getattr(error, "code", None)
+        if error_code == -1003:
+            return True
+
         error_str = str(error).lower()
-        return any(keyword in error_str for keyword in ["too many requests", "rate limit", "429", "-1003"])
+        return any(keyword in error_str for keyword in ["too many requests", "rate limit", "429", "-1003", "418"])
+
+    @staticmethod
+    def is_forbidden_throttle_error(error: Exception) -> bool:
+        """判断是否为应按限流处理的 403 Forbidden 错误."""
+        status_code = getattr(error, "status_code", None)
+        error_str = str(error).lower()
+        response = getattr(error, "response", None)
+        response_reason = str(getattr(response, "reason", "") or "").lower() if response else ""
+        response_body = getattr(response, "_body", None) if response else None
+
+        response_body_text = ""
+        if isinstance(response_body, bytes | bytearray):
+            response_body_text = response_body.decode("utf-8", errors="replace").lower()
+        elif isinstance(response_body, str):
+            response_body_text = response_body.lower()
+
+        combined_text = f"{error_str} {response_reason} {response_body_text}".strip()
+
+        has_forbidden_status = status_code == 403 or "status=403" in combined_text
+        if not has_forbidden_status:
+            return False
+
+        # 典型认证失败场景不归为限流控制
+        auth_markers = [
+            "api key",
+            "signature",
+            "unauthorized",
+            "invalid api-key",
+            "permission",
+            "recvwindow",
+        ]
+        if any(marker in combined_text for marker in auth_markers):
+            return False
+
+        forbidden_throttle_markers = [
+            "forbidden",
+            "response_body=<html",
+            "<html>",
+            "access denied",
+            "cloudflare",
+            "waf",
+            "captcha",
+            "request blocked",
+        ]
+        return any(marker in combined_text for marker in forbidden_throttle_markers)
