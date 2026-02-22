@@ -1312,7 +1312,7 @@ class NumpyExporter:
     def _normalize_metrics_config(self, metrics_config: dict[str, Any] | None) -> dict[str, Any]:
         """Normalize metrics config and ensure reliability policy is present."""
         if metrics_config is None:
-            normalized = {
+            normalized: dict[str, Any] = {
                 "funding_rate": True,
                 "open_interest": True,
                 "long_short_ratio": True,
