@@ -113,23 +113,53 @@ jobs:
       - name: Notify webhook
         env:
           WEBHOOK_URL: ${{ secrets.WEBHOOK_URL }}
+          COMMIT_SHA: ${{ github.sha }}
+          REPO: ${{ github.repository }}
         run: |
           python - <<'PY'
-          import json, os, urllib.request
+          import json, os, re, urllib.request
 
-          content = open("RELEASE_BODY.md", "r", encoding="utf-8").read()
-          tag = os.environ.get("TAG_NAME")
+          raw = open("RELEASE_BODY.md", "r", encoding="utf-8").read()
+          tag = os.environ.get("TAG_NAME", "")
+          version = tag.lstrip("v")
+          commit_full = os.environ.get("COMMIT_SHA", "")
+          commit = commit_full[:7]
+          repo = os.environ.get("REPO", "")
 
-          # 飞书通知格式
-          text = f"🚀 发布 {tag} 到 PyPI\n\n{content}\n\n查看: https://pypi.org/project/cryptoservice/"
-          body = {"msg_type": "text", "content": {"text": text}}
+          section_icons = {
+              "features": "✨", "bug fixes": "🐛", "fixes": "🐛",
+              "breaking": "⚠️", "breaking changes": "⚠️",
+              "refactors": "♻️", "refactor": "♻️",
+              "docs": "📝", "documentation": "📝",
+              "other changes": "📋", "misc": "📋",
+          }
+
+          def replace_heading(m):
+              title = m.group(1)
+              icon = section_icons.get(title.lower(), "📌")
+              return f"---\n**{icon} {title}**"
+
+          changelog = re.sub(r"^###\s+(.+)$", replace_heading, raw, flags=re.MULTILINE).strip()
+          changelog = re.sub(r"^---\n", "", changelog)
+
+          pypi = f"https://pypi.org/project/cryptoservice/{version}/"
+          release = f"https://github.com/{repo}/releases/tag/{tag}"
+
+          body = (
+              f"📦 **cryptoservice** · {version} · 🪪 [{commit}](https://github.com/{repo}/commit/{commit_full})\n\n"
+              f"{changelog}\n\n"
+              f"---\n"
+              f"[📦 PyPI]({pypi})  ·  [📝 Release Notes]({release})"
+          )
+
+          payload = {"body": body}
 
           webhook_url = os.environ.get("WEBHOOK_URL", "")
           if webhook_url:
               req = urllib.request.Request(
                   webhook_url,
-                  data=json.dumps(body).encode(),
-                  headers={"Content-Type": "application/json"}
+                  data=json.dumps(payload).encode(),
+                  headers={"Content-Type": "application/json"},
               )
               resp = urllib.request.urlopen(req)
               print(f"Notification sent: {resp.status}")
