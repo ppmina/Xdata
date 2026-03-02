@@ -55,17 +55,10 @@ def _run_command(cmd: list[str], cwd: Path, retries: int = 3, delay_seconds: flo
     assert last_result is not None
     combined_output = f"{last_result.stdout}\n{last_result.stderr}"
     if _is_transient_network_error(combined_output):
-        pytest.skip(
-            "Real e2e skipped due external network/connectivity instability "
-            f"after {retries} attempts while running: {' '.join(cmd)}"
-        )
+        pytest.skip(f"Real e2e skipped due external network/connectivity instability after {retries} attempts while running: {' '.join(cmd)}")
 
     raise AssertionError(
-        "Command failed.\n"
-        f"cmd: {' '.join(cmd)}\n"
-        f"exit_code: {last_result.returncode}\n"
-        f"stdout:\n{last_result.stdout}\n"
-        f"stderr:\n{last_result.stderr}"
+        f"Command failed.\ncmd: {' '.join(cmd)}\nexit_code: {last_result.returncode}\nstdout:\n{last_result.stdout}\nstderr:\n{last_result.stderr}"
     )
 
 

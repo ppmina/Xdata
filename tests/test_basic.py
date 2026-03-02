@@ -6,7 +6,7 @@ from decimal import Decimal
 import pytest
 
 from cryptoservice.models.enums import Freq, HistoricalKlinesType, SortBy
-from cryptoservice.models.market_ticker import DailyMarketTicker, FuturesKlineTicker, SpotKlineTicker, SymbolTicker
+from cryptoservice.models.market_ticker import FuturesKlineTicker
 from cryptoservice.models.universe import UniverseDailySnapshot, UniverseDefinition
 
 
@@ -93,7 +93,6 @@ def test_freq_enum() -> None:
 
 def test_historical_klines_type_enum() -> None:
     """HistoricalKlinesType should expose Binance SDK values."""
-    assert HistoricalKlinesType.SPOT.value is not None
     assert HistoricalKlinesType.FUTURES.value is not None
     assert HistoricalKlinesType.FUTURES_COIN.value is not None
 
@@ -104,68 +103,6 @@ def test_sort_by_enum() -> None:
     assert SortBy.PRICE_CHANGE.value == "price_change"
     assert SortBy.PRICE_CHANGE_PERCENT.value == "price_change_percent"
     assert SortBy.QUOTE_VOLUME.value == "quote_volume"
-
-
-def test_market_ticker_models() -> None:
-    """SymbolTicker conversion should work."""
-    ticker_data = {"symbol": "BTCUSDT", "price": "50000.0"}
-    symbol_ticker = SymbolTicker.from_binance_ticker(ticker_data)
-    assert symbol_ticker.symbol == "BTCUSDT"
-    assert symbol_ticker.last_price == Decimal("50000.0")
-
-    ticker_dict = symbol_ticker.to_dict()
-    assert ticker_dict["symbol"] == "BTCUSDT"
-    assert ticker_dict["last_price"] == "50000.0"
-
-
-def test_daily_market_ticker() -> None:
-    """DailyMarketTicker conversion should work."""
-    ticker_24h = {
-        "symbol": "BTCUSDT",
-        "lastPrice": "50000.0",
-        "priceChange": "1000.0",
-        "priceChangePercent": "2.0",
-        "volume": "100.0",
-        "quoteVolume": "5000000.0",
-        "weightedAvgPrice": "100.0",
-        "prevClosePrice": "100.0",
-        "bidPrice": "100.0",
-        "askPrice": "100.0",
-        "bidQty": "100.0",
-        "askQty": "100.0",
-        "openPrice": "100.0",
-        "highPrice": "100.0",
-        "lowPrice": "100.0",
-        "openTime": 1234567890000,
-        "closeTime": 1234567890000,
-        "firstId": 1234567890000,
-        "lastId": 1234567890000,
-        "count": 100,
-    }
-    ticker = DailyMarketTicker.from_binance_ticker(ticker_24h)
-    assert ticker.symbol == "BTCUSDT"
-    assert ticker.last_price == Decimal("50000.0")
-
-
-def test_spot_market_ticker() -> None:
-    """SpotKlineTicker conversion should work."""
-    kline_data = [
-        1234567890000,
-        "49000.0",
-        "51000.0",
-        "48000.0",
-        "50000.0",
-        "100.0",
-        1234567890000,
-        "5000000.0",
-        1000,
-        "50.0",
-        "2500000.0",
-        "0",
-    ]
-    ticker = SpotKlineTicker.from_binance_kline("BTCUSDT", kline_data)
-    assert ticker.symbol == "BTCUSDT"
-    assert ticker.last_price == Decimal("50000.0")
 
 
 def test_perpetual_market_ticker() -> None:

@@ -1321,6 +1321,8 @@ class NumpyExporter:
             if not isinstance(metrics_config, dict):
                 raise TypeError("metrics_config must be dict[str, Any] or None")
             normalized = dict(metrics_config)
+            for key in ("funding_rate", "open_interest", "long_short_ratio"):
+                normalized.setdefault(key, True)
 
         normalized["reliability_policy"] = self._resolve_reliability_policy(normalized.get("reliability_policy"))
         return normalized

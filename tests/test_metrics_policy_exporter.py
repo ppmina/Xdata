@@ -93,10 +93,12 @@ async def test_fetch_open_interest_and_lsr_use_1d_lookback_and_6h_tolerance():
     mock_metrics_query = AsyncMock()
     mock_metrics_query.select_open_interests = AsyncMock(return_value=_make_single_metric_df("open_interest"))
     mock_metrics_query.select_long_short_ratio_by_type = AsyncMock(return_value=_make_single_metric_df("lsr_ta"))
-    mock_resampler.resample_and_align = AsyncMock(side_effect=[
-        _make_alignment_result(kline_df.index, "open_interest"),
-        _make_alignment_result(kline_df.index, "lsr_ta"),
-    ])
+    mock_resampler.resample_and_align = AsyncMock(
+        side_effect=[
+            _make_alignment_result(kline_df.index, "open_interest"),
+            _make_alignment_result(kline_df.index, "lsr_ta"),
+        ]
+    )
 
     exporter = NumpyExporter(mock_kline_query, mock_resampler, mock_metrics_query)
 
@@ -229,3 +231,47 @@ def test_strict_invariant_raises_when_required_metric_nan_survives():
 
     with pytest.raises(ValueError, match="strict_100 invariant violated"):
         NumpyExporter._validate_strict_required_columns(combined_df, ["funding_rate"])
+
+
+class TestNormalizeMetricsConfig:
+    """Verify _normalize_metrics_config fills default metric toggles."""
+
+    def _make_exporter(self) -> NumpyExporter:
+        return NumpyExporter(AsyncMock(), AsyncMock(), AsyncMock())
+
+    def test_none_input_returns_all_defaults(self):
+        exporter = self._make_exporter()
+        result = exporter._normalize_metrics_config(None)
+        assert result["funding_rate"] is True
+        assert result["open_interest"] is True
+        assert result["long_short_ratio"] is True
+        assert "reliability_policy" in result
+
+    def test_policy_only_dict_fills_missing_toggles(self):
+        """Reproduces the CLI bug: _inject_metrics_reliability_policy wraps None
+        into {"reliability_policy": {...}}, which must still get default toggles."""
+        exporter = self._make_exporter()
+        result = exporter._normalize_metrics_config({"reliability_policy": {"mode": "strict_100"}})
+        assert result["funding_rate"] is True
+        assert result["open_interest"] is True
+        assert result["long_short_ratio"] is True
+
+    def test_explicit_false_toggle_is_preserved(self):
+        exporter = self._make_exporter()
+        result = exporter._normalize_metrics_config({"funding_rate": False})
+        assert result["funding_rate"] is False
+        assert result["open_interest"] is True
+        assert result["long_short_ratio"] is True
+
+    def test_explicit_dict_toggle_is_preserved(self):
+        exporter = self._make_exporter()
+        config = {"open_interest": {"include_value": False}}
+        result = exporter._normalize_metrics_config(config)
+        assert result["open_interest"] == {"include_value": False}
+        assert result["funding_rate"] is True
+        assert result["long_short_ratio"] is True
+
+    def test_invalid_type_raises(self):
+        exporter = self._make_exporter()
+        with pytest.raises(TypeError, match="metrics_config must be dict"):
+            exporter._normalize_metrics_config("bad")

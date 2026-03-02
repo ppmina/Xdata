@@ -829,17 +829,21 @@ def test_cli_returns_nonzero_on_runtime_error(monkeypatch) -> None:
     assert exit_code == 1
 
 
-def test_cli_define_missing_credentials_returns_nonzero_with_clear_message(monkeypatch, tmp_path, capsys) -> None:
-    """`define` should return a clear credential error when CLI and env are both missing."""
+def test_cli_define_missing_credentials_uses_public_mode(monkeypatch, tmp_path) -> None:
+    """`define` should work without API credentials via public Vision mode."""
     import cryptoservice.cli.universe as universe_cli
 
     monkeypatch.setattr(universe_cli.settings, "BINANCE_API_KEY", "")
     monkeypatch.setattr(universe_cli.settings, "BINANCE_API_SECRET", "")
 
-    def _unexpected_service_cls():
-        raise AssertionError("service should not be created when credentials are missing")
+    service = AsyncMock()
+    service.define_universe = AsyncMock(return_value=_build_universe())
+    create_public_mock = AsyncMock(return_value=_AsyncServiceContext(service))
 
-    monkeypatch.setattr(universe_cli, "_get_market_service_cls", _unexpected_service_cls)
+    class _FakeMarketDataService:
+        create_public = staticmethod(create_public_mock)
+
+    monkeypatch.setattr(universe_cli, "_get_market_service_cls", lambda: _FakeMarketDataService)
 
     exit_code = main(
         [
@@ -856,11 +860,9 @@ def test_cli_define_missing_credentials_returns_nonzero_with_clear_message(monke
         ]
     )
 
-    captured = capsys.readouterr()
-    assert exit_code == 1
-    assert "Missing Binance credentials for universe define" in captured.err
-    assert "--api-key/--api-secret" in captured.err
-    assert "BINANCE_API_KEY/BINANCE_API_SECRET" in captured.err
+    assert exit_code == 0
+    create_public_mock.assert_awaited_once_with()
+    service.define_universe.assert_awaited_once()
 
 
 def test_cli_download_missing_credentials_returns_nonzero_with_clear_message(monkeypatch, tmp_path, capsys) -> None:

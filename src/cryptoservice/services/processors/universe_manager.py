@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import inspect
 import time
 from datetime import UTC, datetime
 from pathlib import Path
@@ -11,8 +12,10 @@ from typing import TYPE_CHECKING
 from cryptoservice.config.logging import get_logger
 from cryptoservice.models import UniverseDailySnapshot, UniverseDefinition
 from cryptoservice.models.universe import (
+    MISSING_REASON_MISSING_METRICS_PREDATA_FOR_ASOF,
     MISSING_REASON_NO_KLINE_ON_DATE,
     MISSING_REASON_NOT_IN_CURRENT_TRADING_LIST,
+    MISSING_REASON_VISION_DAY_UNAVAILABLE,
     SCHEMA_VERSION,
 )
 
@@ -60,18 +63,9 @@ class UniverseManager:
         if not all_dates:
             raise ValueError(f"Invalid date range: {standardized_start} ~ {standardized_end}")
 
-        valid_symbol_set = set(await self.market_service.get_perpetual_symbols(only_trading=True))
-        valid_requested_count = len([symbol for symbol in standardized_symbols if symbol in valid_symbol_set])
         total_days = len(all_dates)
         workers = max(1, daily_check_workers)
-        request_delay = max(0.0, daily_check_request_delay)
-        max_rpm = max(1, daily_check_max_requests_per_minute)
         run_started = time.monotonic()
-
-        self.market_service._configure_symbol_check_rate(
-            base_delay=request_delay,
-            max_requests_per_minute=max_rpm,
-        )
 
         logger.info(
             "universe_define_started",
@@ -79,22 +73,24 @@ class UniverseManager:
             end_date=standardized_end,
             total_days=total_days,
             requested_symbols=len(standardized_symbols),
-            valid_requested_symbols=valid_requested_count,
             daily_check_workers=workers,
-            daily_check_request_delay=request_delay,
-            daily_check_max_requests_per_minute=max_rpm,
+        )
+
+        symbol_available_dates = await self._collect_vision_available_dates_for_range(
+            symbols=standardized_symbols,
+            start_date=standardized_start,
+            end_date=standardized_end,
+            daily_check_workers=workers,
         )
 
         snapshots: list[UniverseDailySnapshot] = []
         for day_index, date_str in enumerate(all_dates, start=1):
             day_started = time.monotonic()
             logger.info("universe_define_day_started", day=day_index, total_days=total_days, date=date_str)
-            snapshot = await self._classify_symbols_for_date(
-                requested_symbols=standardized_symbols,
-                valid_symbol_set=valid_symbol_set,
-                target_date=date_str,
-                daily_check_workers=workers,
-            )
+            active_symbols = [symbol for symbol in standardized_symbols if date_str in symbol_available_dates.get(symbol, set())]
+            active_set = set(active_symbols)
+            missing_symbols = {symbol: MISSING_REASON_VISION_DAY_UNAVAILABLE for symbol in standardized_symbols if symbol not in active_set}
+            snapshot = UniverseDailySnapshot(date=date_str, active_symbols=active_symbols, missing_symbols=missing_symbols)
             snapshots.append(snapshot)
             logger.info(
                 "universe_define_day_completed",
@@ -129,12 +125,68 @@ class UniverseManager:
 
         return universe_def
 
+    async def _collect_vision_available_dates_for_range(
+        self,
+        *,
+        symbols: list[str],
+        start_date: str,
+        end_date: str,
+        daily_check_workers: int,
+    ) -> dict[str, set[str]]:
+        """Collect per-symbol available dates from Vision kline listing."""
+        if not symbols:
+            return {}
+
+        semaphore = asyncio.Semaphore(max(1, daily_check_workers))
+
+        async def _collect(symbol: str) -> tuple[str, set[str]]:
+            async with semaphore:
+                available_dates = await self.market_service._get_vision_kline_available_dates(
+                    symbol=symbol,
+                    start_date=start_date,
+                    end_date=end_date,
+                    interval="1m",
+                )
+                return symbol, set(available_dates)
+
+        results = await asyncio.gather(*[_collect(symbol) for symbol in symbols])
+        return dict(results)
+
+    async def _collect_symbol_statuses_for_range(
+        self,
+        *,
+        symbols: list[str],
+        start_date: str,
+        end_date: str,
+        daily_check_workers: int,
+    ) -> dict[str, dict[str, str]] | None:
+        """Collect per-symbol, per-date status using range-based scans."""
+        if not symbols:
+            return None
+
+        scanner = getattr(self.market_service, "_scan_symbol_date_statuses", None)
+        if not callable(scanner) or not inspect.iscoroutinefunction(scanner):
+            return None
+
+        async def _scan(symbol: str) -> tuple[str, dict[str, str]]:
+            statuses = await scanner(
+                symbol=symbol,
+                start_date=start_date,
+                end_date=end_date,
+                endpoint_max_workers=daily_check_workers,
+            )
+            return symbol, statuses
+
+        results = await asyncio.gather(*[_scan(symbol) for symbol in symbols])
+        return dict(results)
+
     async def _classify_symbols_for_date(
         self,
         requested_symbols: list[str],
         valid_symbol_set: set[str],
         target_date: str,
         daily_check_workers: int,
+        symbol_status_by_date: dict[str, dict[str, str]] | None = None,
     ) -> UniverseDailySnapshot:
         """Classify requested symbols into active and missing for one day.
 
@@ -142,17 +194,27 @@ class UniverseManager:
         controller for the symbol-check endpoint key (configured before
         the date loop in define_universe).
         """
-        valid_requested = [symbol for symbol in requested_symbols if symbol in valid_symbol_set]
+        symbol_status_map: dict[str, str]
+        if symbol_status_by_date is None:
+            valid_requested = [symbol for symbol in requested_symbols if symbol in valid_symbol_set]
 
-        async def _check_symbol(symbol: str) -> tuple[str, str]:
-            status = await self.market_service._check_symbol_date_status(symbol, target_date, endpoint_max_workers=daily_check_workers)
-            return symbol, status
+            async def _check_symbol(symbol: str) -> tuple[str, str]:
+                status = await self.market_service._check_symbol_date_status(symbol, target_date, endpoint_max_workers=daily_check_workers)
+                return symbol, status
 
-        checks = await asyncio.gather(*[_check_symbol(symbol) for symbol in valid_requested])
-        symbol_status_map = dict(checks)
+            checks = await asyncio.gather(*[_check_symbol(symbol) for symbol in valid_requested])
+            symbol_status_map = dict(checks)
+        else:
+            symbol_status_map = {
+                symbol: symbol_status_by_date.get(symbol, {}).get(target_date, MISSING_REASON_NO_KLINE_ON_DATE)
+                for symbol in requested_symbols
+                if symbol in valid_symbol_set
+            }
 
         active_symbols: list[str] = []
         missing_symbols: dict[str, str] = {}
+
+        metrics_checker = getattr(self.market_service, "_check_metrics_asof_ready_on_date", None)
 
         for symbol in requested_symbols:
             if symbol not in valid_symbol_set:
@@ -161,6 +223,12 @@ class UniverseManager:
 
             status = symbol_status_map.get(symbol)
             if status == "active":
+                if callable(metrics_checker):
+                    readiness_result = metrics_checker(symbol, target_date)
+                    metrics_ready = await readiness_result if inspect.isawaitable(readiness_result) else bool(readiness_result)
+                    if not metrics_ready:
+                        missing_symbols[symbol] = MISSING_REASON_MISSING_METRICS_PREDATA_FOR_ASOF
+                        continue
                 active_symbols.append(symbol)
             else:
                 missing_symbols[symbol] = status or MISSING_REASON_NO_KLINE_ON_DATE

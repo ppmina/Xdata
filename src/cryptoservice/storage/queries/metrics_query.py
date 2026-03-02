@@ -424,8 +424,11 @@ class MetricsQuery:
         latest_ts = time_range["latest_timestamp"]
 
         # 检查是否需要扩展下载范围
-        # 如果数据库中的数据完全覆盖请求范围，则不需要下载
-        if earliest_ts <= start_ts and latest_ts >= end_ts:
+        # funding_rate 是事件型序列，最后一个点通常落在区间尾部之前（例如 8h 周期）。
+        # 这里按“尾部容差”判断覆盖，避免把完整的历史区间误判为缺失。
+        coverage_tolerance_ms = 8 * 60 * 60 * 1000
+        coverage_end_threshold = max(start_ts, end_ts - coverage_tolerance_ms)
+        if earliest_ts <= start_ts and latest_ts >= coverage_end_threshold:
             return []
 
         # 否则需要下载整个请求区间，确保规划覆盖完整范围

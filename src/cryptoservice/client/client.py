@@ -1,139 +1,111 @@
 """Binance API 客户端工厂，用于创建和管理客户端实例."""
 
-import asyncio
+from __future__ import annotations
 
-from binance import AsyncClient, Client
+import asyncio
+from urllib.parse import urlparse
+
+from binance_common.configuration import ConfigurationRestAPI
+from binance_sdk_derivatives_trading_usds_futures.rest_api import DerivativesTradingUsdsFuturesRestAPI
 from requests.utils import get_environ_proxies
 
 from cryptoservice.config import get_logger, settings
 from cryptoservice.exceptions import MarketDataError
 
-# 使用统一的日志配置
+from .gateway import BinanceGateway, OfficialBinanceGateway
+
 logger = get_logger(__name__)
 
 
 class BinanceClientFactory:
     """Binance客户端工厂类."""
 
-    _instance: Client | None = None
-    _async_instance: AsyncClient | None = None
+    _rest_instance: DerivativesTradingUsdsFuturesRestAPI | None = None
+
+    @staticmethod
+    def _proxy_url_to_sdk_proxy(proxy_url: str) -> dict[str, object] | None:
+        parsed = urlparse(proxy_url)
+        if not parsed.hostname or not parsed.port:
+            return None
+
+        proxy: dict[str, object] = {
+            "protocol": parsed.scheme or "https",
+            "host": parsed.hostname,
+            "port": parsed.port,
+        }
+        if parsed.username or parsed.password:
+            proxy["auth"] = {
+                "username": parsed.username or "",
+                "password": parsed.password or "",
+            }
+        return proxy
 
     @classmethod
-    def create_client(cls, api_key: str, api_secret: str) -> Client:
-        """创建或获取Binance客户端实例（单例模式）.
-
-        Args:
-            api_key: API密钥
-            api_secret: API密钥对应的secret
-
-        Returns:
-            Client: Binance客户端实例
-
-        Raises:
-            MarketDataError: 当客户端初始化失败时抛出
-        """
-        if not cls._instance:
-            try:
-                if not api_key or not api_secret:
-                    raise ValueError("Missing Binance API credentials")
-
-                # 获取代理配置
-                proxies = settings.get_proxy_config()
-                if proxies:
-                    logger.debug("Create Binance sync client using proxy", proxies=proxies)
-                    cls._instance = Client(api_key, api_secret, proxies=proxies)
-                    logger.info("Binance sync client is ready (proxy enabled).")
-                else:
-                    cls._instance = Client(api_key, api_secret)
-                    logger.info("Binance sync client is ready.")
-            except Exception as e:
-                logger.error("client_create_error", client_type="sync", error=str(e))
-                raise MarketDataError(f"Failed to initialize Binance client: {e}") from e
-        return cls._instance
-
-    @classmethod
-    async def create_async_client(cls, api_key: str, api_secret: str) -> AsyncClient:
-        """创建或获取Binance异步客户端实例（单例模式）.
-
-        Args:
-            api_key: API密钥
-            api_secret: API密钥对应的secret
-
-        Returns:
-            AsyncClient: Binance异步客户端实例
-
-        Raises:
-            MarketDataError: 当客户端初始化失败时抛出
-        """
-        if not cls._async_instance:
+    async def create_rest_client(cls, api_key: str, api_secret: str) -> DerivativesTradingUsdsFuturesRestAPI:
+        """创建或获取官方 USDs Futures REST 客户端（单例模式）."""
+        if not cls._rest_instance:
             try:
                 if not api_key or not api_secret:
                     raise ValueError("Missing Binance API credentials")
 
                 proxies = settings.get_proxy_config()
-                https_proxy = None
-
+                https_proxy_url: str | None = None
                 if proxies:
-                    logger.debug("Proxy configuration detected", proxies=proxies)
-
-                    # 使用 HTTPS 代理
-                    if "https" in proxies:
-                        https_proxy = proxies["https"]
-                        logger.debug("Connect to Binance using HTTPS proxy", proxy=https_proxy)
-                    # 如果只有 HTTP 代理，也用作 HTTPS
-                    elif "http" in proxies:
-                        https_proxy = proxies["http"]
-                        logger.debug("Connect to Binance using HTTP proxy", proxy=https_proxy)
+                    https_proxy_url = proxies.get("https") or proxies.get("http")
                 else:
-                    # 与 requests 一致：在未显式配置时读取系统代理配置（macOS/Windows 平台可用）
-                    system_proxies = get_environ_proxies("https://api.binance.com")
-                    https_proxy = system_proxies.get("https") or system_proxies.get("http")
-                    if https_proxy:
-                        logger.debug("Connect to Binance using system proxy", proxy=https_proxy)
+                    system_proxies = get_environ_proxies("https://fapi.binance.com")
+                    https_proxy_url = system_proxies.get("https") or system_proxies.get("http")
 
-                # 创建 AsyncClient
-                if https_proxy:
-                    cls._async_instance = await AsyncClient.create(api_key=api_key, api_secret=api_secret, https_proxy=https_proxy)
-                    logger.info("Binance async client is ready (proxy enabled).")
-                else:
-                    cls._async_instance = await AsyncClient.create(api_key=api_key, api_secret=api_secret)
-                    logger.info("Binance async client is ready.")
+                config_kwargs: dict[str, object] = {
+                    "api_key": api_key,
+                    "api_secret": api_secret,
+                    "base_path": "https://fapi.binance.com",
+                    "timeout": 30_000,
+                }
+                if https_proxy_url:
+                    sdk_proxy = cls._proxy_url_to_sdk_proxy(https_proxy_url)
+                    if sdk_proxy is not None:
+                        config_kwargs["proxy"] = sdk_proxy
+                    else:
+                        logger.warning("proxy_parse_failed", proxy=https_proxy_url)
+
+                config = ConfigurationRestAPI(**config_kwargs)
+                cls._rest_instance = DerivativesTradingUsdsFuturesRestAPI(config)
+                logger.info("Official Binance USDs Futures REST client is ready.")
             except Exception as e:
-                logger.error("client_create_error", client_type="async", error=str(e))
-                raise MarketDataError(f"Failed to initialize Binance async client: {e}") from e
-        return cls._async_instance
+                logger.error("client_create_error", client_type="official_usds_futures", error=str(e))
+                raise MarketDataError(f"Failed to initialize official Binance futures client: {e}") from e
+        return cls._rest_instance
 
     @classmethod
     async def close_client(cls, timeout: float = 5.0) -> None:
-        """关闭现有的异步客户端会话.
-
-        Args:
-            timeout: 关闭连接的超时时间（秒），默认5秒
-        """
-        if cls._async_instance:
+        """关闭现有的 REST 客户端会话."""
+        if cls._rest_instance:
+            session = getattr(cls._rest_instance, "_session", None)
             try:
-                # 使用超时控制来避免SSL关闭时长时间挂起
-                await asyncio.wait_for(cls._async_instance.close_connection(), timeout=timeout)
+                if session is not None and hasattr(session, "close"):
+                    await asyncio.wait_for(asyncio.to_thread(session.close), timeout=timeout)
             except TimeoutError:
-                # SSL连接关闭超时是常见的，特别是在使用代理时
-                # 这不影响数据完整性，因为所有操作都已完成
                 logger.debug("client_close_timeout", timeout=timeout, note="normal_behavior")
             except Exception as e:
-                # 捕获其他关闭时的异常，避免影响程序退出
-                # 这些通常是网络清理相关的错误，不影响数据完整性
                 logger.debug("client_close_exception", exception_type=type(e).__name__, note="safe_to_ignore")
             finally:
-                cls._async_instance = None
+                cls._rest_instance = None
 
-        logger.debug("Binance async client connection closed.")
+        logger.debug("Binance futures REST client connection closed.")
 
     @classmethod
-    def get_client(cls) -> Client | None:
+    async def create_gateway(cls, api_key: str, api_secret: str) -> BinanceGateway:
+        """Create futures-only gateway using official SDK."""
+        rest_client = await cls.create_rest_client(api_key, api_secret)
+        return OfficialBinanceGateway(rest_client)
+
+    @classmethod
+    def get_client(cls) -> DerivativesTradingUsdsFuturesRestAPI | None:
         """获取现有的客户端实例."""
-        return cls._instance
+        return cls._rest_instance
 
     @classmethod
     def reset_client(cls) -> None:
         """重置客户端实例."""
-        cls._instance = None
-        cls._async_instance = None
+        cls._rest_instance = None

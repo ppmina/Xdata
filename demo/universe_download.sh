@@ -7,8 +7,9 @@
 #   --api-secret "${BINANCE_API_SECRET}" \      # optional; CLI override (fallback to env/settings)
 #   --interval 5m \                             # optional; kline frequency
 #   --download-market-metrics \                 # optional; include funding/oi/ratio datasets
-#   --max-api-workers 1 \                       # optional; API worker concurrency
-#   --max-vision-workers 50 \                   # optional; Vision worker concurrency
+#   --max-api-workers 1 \                       # optional; API worker concurrency (per day)
+#   --max-vision-workers 50 \                   # optional; Vision worker concurrency (per day)
+#   --max-day-workers 3 \                       # optional; days processed concurrently
 #   --max-retries 3 \                           # optional; retry attempts
 #   --api-request-delay 0.5 \                   # optional; delay seconds for API requests
 #   --vision-request-delay 0.0                  # optional; delay seconds for Vision requests
@@ -22,6 +23,7 @@ uv run --env-file .env cryptoservice universe download \
   --download-market-metrics \
   --max-api-workers 10 \
   --max-vision-workers 100 \
+  --max-day-workers 3 \
   --max-retries 3 \
   --api-request-delay 0.0 \
   --vision-request-delay 0.0 \

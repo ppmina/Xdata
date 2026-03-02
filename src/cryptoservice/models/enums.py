@@ -2,8 +2,6 @@
 
 from enum import Enum, IntEnum, auto
 
-from binance import enums as binance_enums
-
 
 class SortBy(Enum):
     """排序方式枚举."""
@@ -45,49 +43,49 @@ class IndustrySrc(IntEnum):
 class OrderStatus(str, Enum):
     """订单状态枚举，与 Binance SDK 保持一致."""
 
-    NEW = binance_enums.ORDER_STATUS_NEW
-    PARTIALLY_FILLED = binance_enums.ORDER_STATUS_PARTIALLY_FILLED
-    FILLED = binance_enums.ORDER_STATUS_FILLED
-    CANCELED = binance_enums.ORDER_STATUS_CANCELED
-    PENDING_CANCEL = binance_enums.ORDER_STATUS_PENDING_CANCEL
-    REJECTED = binance_enums.ORDER_STATUS_REJECTED
-    EXPIRED = binance_enums.ORDER_STATUS_EXPIRED
+    NEW = "NEW"
+    PARTIALLY_FILLED = "PARTIALLY_FILLED"
+    FILLED = "FILLED"
+    CANCELED = "CANCELED"
+    PENDING_CANCEL = "PENDING_CANCEL"
+    REJECTED = "REJECTED"
+    EXPIRED = "EXPIRED"
 
 
 class OrderType(str, Enum):
     """订单类型枚举."""
 
-    LIMIT = binance_enums.ORDER_TYPE_LIMIT
-    MARKET = binance_enums.ORDER_TYPE_MARKET
-    STOP_LOSS = binance_enums.ORDER_TYPE_STOP_LOSS
-    STOP_LOSS_LIMIT = binance_enums.ORDER_TYPE_STOP_LOSS_LIMIT
-    TAKE_PROFIT = binance_enums.ORDER_TYPE_TAKE_PROFIT
-    TAKE_PROFIT_LIMIT = binance_enums.ORDER_TYPE_TAKE_PROFIT_LIMIT
-    LIMIT_MAKER = binance_enums.ORDER_TYPE_LIMIT_MAKER
+    LIMIT = "LIMIT"
+    MARKET = "MARKET"
+    STOP_LOSS = "STOP_LOSS"
+    STOP_LOSS_LIMIT = "STOP_LOSS_LIMIT"
+    TAKE_PROFIT = "TAKE_PROFIT"
+    TAKE_PROFIT_LIMIT = "TAKE_PROFIT_LIMIT"
+    LIMIT_MAKER = "LIMIT_MAKER"
 
 
 class OrderSide(str, Enum):
     """订单方向枚举."""
 
-    BUY = binance_enums.SIDE_BUY
-    SELL = binance_enums.SIDE_SELL
+    BUY = "BUY"
+    SELL = "SELL"
 
 
 class TimeInForce(str, Enum):
     """订单有效期枚举."""
 
-    GTC = binance_enums.TIME_IN_FORCE_GTC
-    IOC = binance_enums.TIME_IN_FORCE_IOC
-    FOK = binance_enums.TIME_IN_FORCE_FOK
-    GTX = binance_enums.TIME_IN_FORCE_GTX
+    GTC = "GTC"
+    IOC = "IOC"
+    FOK = "FOK"
+    GTX = "GTX"
 
 
 class OrderResponseType(str, Enum):
     """订单响应类型枚举."""
 
-    ACK = binance_enums.ORDER_RESP_TYPE_ACK
-    RESULT = binance_enums.ORDER_RESP_TYPE_RESULT
-    FULL = binance_enums.ORDER_RESP_TYPE_FULL
+    ACK = "ACK"
+    RESULT = "RESULT"
+    FULL = "FULL"
 
 
 class Freq(str, Enum):
@@ -111,22 +109,22 @@ class Freq(str, Enum):
     M1: 1个月.
     """
 
-    s1 = binance_enums.KLINE_INTERVAL_1SECOND
-    m1 = binance_enums.KLINE_INTERVAL_1MINUTE
-    m3 = binance_enums.KLINE_INTERVAL_3MINUTE
-    m5 = binance_enums.KLINE_INTERVAL_5MINUTE
-    m15 = binance_enums.KLINE_INTERVAL_15MINUTE
-    m30 = binance_enums.KLINE_INTERVAL_30MINUTE
-    h1 = binance_enums.KLINE_INTERVAL_1HOUR
-    h2 = binance_enums.KLINE_INTERVAL_2HOUR
-    h4 = binance_enums.KLINE_INTERVAL_4HOUR
-    h6 = binance_enums.KLINE_INTERVAL_6HOUR
-    h8 = binance_enums.KLINE_INTERVAL_8HOUR
-    h12 = binance_enums.KLINE_INTERVAL_12HOUR
-    d1 = binance_enums.KLINE_INTERVAL_1DAY
-    d3 = binance_enums.KLINE_INTERVAL_3DAY
-    w1 = binance_enums.KLINE_INTERVAL_1WEEK
-    M1 = binance_enums.KLINE_INTERVAL_1MONTH
+    s1 = "1s"
+    m1 = "1m"
+    m3 = "3m"
+    m5 = "5m"
+    m15 = "15m"
+    m30 = "30m"
+    h1 = "1h"
+    h2 = "2h"
+    h4 = "4h"
+    h6 = "6h"
+    h8 = "8h"
+    h12 = "12h"
+    d1 = "1d"
+    d3 = "3d"
+    w1 = "1w"
+    M1 = "1M"
 
     def __str__(self) -> str:
         """返回枚举值的字符串表示形式."""
@@ -214,14 +212,9 @@ class ReturnType(IntEnum):
 class HistoricalKlinesType(IntEnum):
     """K线历史数据类型枚举."""
 
-    SPOT = binance_enums.HistoricalKlinesType.SPOT.value
-    FUTURES = binance_enums.HistoricalKlinesType.FUTURES.value
-    FUTURES_COIN = binance_enums.HistoricalKlinesType.FUTURES_COIN.value
-
-    @classmethod
-    def to_binance(cls, kline_type: "HistoricalKlinesType") -> binance_enums.HistoricalKlinesType:
-        """转换为 Binance SDK 的 HistoricalKlinesType."""
-        return binance_enums.HistoricalKlinesType(kline_type.value)
+    SPOT = 1
+    FUTURES = 2
+    FUTURES_COIN = 3
 
 
 class ErrorSeverity(Enum):

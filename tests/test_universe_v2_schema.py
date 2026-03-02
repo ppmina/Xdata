@@ -194,6 +194,15 @@ def test_accepts_not_full_day_missing_reason_code() -> None:
     assert loaded.daily_snapshots[0].missing_symbols == {"ETHUSDT": "not_full_day_on_date"}
 
 
+def test_accepts_missing_metrics_predata_for_asof_reason_code() -> None:
+    """`missing_metrics_predata_for_asof` should be accepted as a valid missing reason."""
+    payload = _build_valid_universe().to_dict()
+    payload["daily_snapshots"][0]["missing_symbols"] = {"ETHUSDT": "missing_metrics_predata_for_asof"}
+
+    loaded = UniverseDefinition.from_dict(payload)
+    assert loaded.daily_snapshots[0].missing_symbols == {"ETHUSDT": "missing_metrics_predata_for_asof"}
+
+
 def test_rejects_snapshot_missing_required_field() -> None:
     """Snapshots must include date/active_symbols/missing_symbols."""
     payload = _build_valid_universe().to_dict()

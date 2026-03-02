@@ -7,8 +7,7 @@ import asyncio
 import time
 from typing import Any
 
-from binance import AsyncClient
-
+from cryptoservice.client import BinanceGateway
 from cryptoservice.config.logging import get_logger
 from cryptoservice.exceptions import MarketDataFetchError, RateLimitError
 from cryptoservice.models import FundingRate, LongShortRatio, OpenInterest
@@ -30,7 +29,7 @@ class MetricsDownloader(BaseDownloader):
 
     def __init__(
         self,
-        client: AsyncClient,
+        client: BinanceGateway,
         request_delay: float = 0.5,
         endpoint_controls: EndpointControlRegistry | None = None,
     ):

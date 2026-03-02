@@ -35,6 +35,7 @@ class Settings(BaseSettings):
     # binance 配置
     BINANCE_API_KEY: str = ""
     BINANCE_API_SECRET: str = ""
+    BINANCE_GATEWAY_BACKEND: str = "python_binance"
 
     # 网络代理配置
     HTTP_PROXY: str = ""
