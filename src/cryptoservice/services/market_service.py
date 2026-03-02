@@ -10,18 +10,17 @@ import json
 import re
 import time
 from collections import defaultdict
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import Any, cast
+from typing import Any, TypedDict, cast
 
-from binance import AsyncClient
+import aiohttp
 
-from cryptoservice.client import BinanceClientFactory
-from cryptoservice.config import RetryConfig, settings
+from cryptoservice.client import BinanceClientFactory, BinanceGateway
+from cryptoservice.config import RetryConfig
 from cryptoservice.config.logging import get_logger
-from cryptoservice.exceptions import InvalidSymbolError, MarketDataFetchError, RateLimitError
+from cryptoservice.exceptions import MarketDataFetchError, RateLimitError
 from cryptoservice.models import (
-    DailyMarketTicker,
     Freq,
     FundingRate,
     FuturesKlineTicker,
@@ -29,13 +28,14 @@ from cryptoservice.models import (
     IntegrityReport,
     LongShortRatio,
     OpenInterest,
-    SortBy,
-    SpotKlineTicker,
-    SymbolTicker,
     UniverseDefinition,
 )
 from cryptoservice.models.universe import MISSING_REASON_MISSING_IN_EXPORT, UniverseDailySnapshot
 from cryptoservice.storage.database import Database
+from cryptoservice.storage.incremental import (
+    UniverseDownloadPlan,
+    gather_symbol_date_ranges,
+)
 from cryptoservice.utils import DataConverter
 from cryptoservice.utils.run_id import generate_run_id
 
@@ -45,12 +45,86 @@ from .processors import CategoryManager, DataValidator, UniverseManager
 logger = get_logger(__name__)
 SYMBOL_CHECK_TIMEOUT_SECONDS = 20.0
 _SYMBOL_CHECK_ENDPOINT = "fapi_symbol_check_1m"
+_EXCHANGE_INFO_ENDPOINT = "fapi_exchange_info"
+_MINUTE_MS = 60_000
+_DAY_MS = 24 * 60 * 60 * 1000
+_ASOF_LOOKBACK_DAYS = {
+    "funding_rate": 3,
+    "open_interest": 1,
+    "long_short_ratio": 1,
+}
+_LSR_RATIO_TYPES = ("account", "position", "global", "taker")
+
+
+class _DayScanStats(TypedDict):
+    count: int
+    first: int | None
+    last: int | None
+    prev: int | None
+    broken: bool
+
+
+class _PublicNoopGateway:
+    """No-op gateway used for public define workflows."""
+
+    async def futures_exchange_info(self) -> dict[str, Any]:
+        raise MarketDataFetchError("Gateway unavailable in public define mode")
+
+    async def futures_klines(
+        self,
+        *,
+        symbol: str,
+        interval: str,
+        **kwargs: Any,
+    ) -> list[list[Any]]:
+        del symbol, interval, kwargs
+        raise MarketDataFetchError("Gateway unavailable in public define mode")
+
+    async def get_historical_klines_generator(
+        self,
+        *,
+        symbol: str,
+        interval: str,
+        start_str: str,
+        end_str: str,
+        limit: int,
+        klines_type: Any,
+    ) -> Any:
+        del symbol, interval, start_str, end_str, limit, klines_type
+        raise MarketDataFetchError("Gateway unavailable in public define mode")
+
+    async def futures_funding_rate(self, **params: Any) -> list[dict[str, Any]]:
+        del params
+        raise MarketDataFetchError("Gateway unavailable in public define mode")
+
+    async def futures_open_interest_hist(self, **params: Any) -> list[dict[str, Any]]:
+        del params
+        raise MarketDataFetchError("Gateway unavailable in public define mode")
+
+    async def futures_top_longshort_account_ratio(self, **params: Any) -> list[dict[str, Any]]:
+        del params
+        raise MarketDataFetchError("Gateway unavailable in public define mode")
+
+    async def futures_top_longshort_position_ratio(self, **params: Any) -> list[dict[str, Any]]:
+        del params
+        raise MarketDataFetchError("Gateway unavailable in public define mode")
+
+    async def futures_global_longshort_ratio(self, **params: Any) -> list[dict[str, Any]]:
+        del params
+        raise MarketDataFetchError("Gateway unavailable in public define mode")
+
+    async def futures_taker_longshort_ratio(self, **params: Any) -> list[dict[str, Any]]:
+        del params
+        raise MarketDataFetchError("Gateway unavailable in public define mode")
+
+    async def close_connection(self) -> None:
+        return None
 
 
 class MarketDataService:
     """市场数据服务实现类."""
 
-    def __init__(self, client: AsyncClient) -> None:
+    def __init__(self, client: BinanceGateway) -> None:
         """初始化市场数据服务 (私有构造函数)."""
         self.client = client
         self.converter = DataConverter()
@@ -67,8 +141,13 @@ class MarketDataService:
     @classmethod
     async def create(cls, api_key: str, api_secret: str) -> MarketDataService:
         """异步创建MarketDataService实例."""
-        client = await BinanceClientFactory.create_async_client(api_key, api_secret)
+        client = await BinanceClientFactory.create_gateway(api_key, api_secret)
         return cls(client)
+
+    @classmethod
+    async def create_public(cls) -> MarketDataService:
+        """Create service for public define workflows without API credentials."""
+        return cls(cast(BinanceGateway, _PublicNoopGateway()))
 
     async def __aenter__(self) -> MarketDataService:
         """异步上下文管理器入口."""
@@ -82,29 +161,22 @@ class MarketDataService:
 
     # ==================== 基础市场数据API ====================
 
-    async def get_symbol_ticker(self, symbol: str | None = None) -> SymbolTicker | list[SymbolTicker]:
-        """获取单个或所有交易对的行情数据."""
-        try:
-            ticker = await self.client.get_symbol_ticker(symbol=symbol)
-            if not ticker:
-                raise InvalidSymbolError(f"Invalid symbol: {symbol}")
-
-            if isinstance(ticker, list):
-                return [SymbolTicker.from_binance_ticker(t) for t in ticker]
-            return SymbolTicker.from_binance_ticker(ticker)
-
-        except Exception as e:
-            logger.error(f"Error fetching ticker for {symbol}: {e}")
-            raise MarketDataFetchError(f"Failed to fetch ticker: {e}") from e
-
     async def get_perpetual_symbols(self, only_trading: bool = True, quote_asset: str = "USDT") -> list[str]:
         """获取当前市场上所有永续合约交易对."""
         try:
             logger.debug("fetch_perpetual_symbols", quote_asset=quote_asset, only_trading=only_trading)
-            futures_info = await self.client.futures_exchange_info()
+
+            async def request_func():
+                return await self.client.futures_exchange_info()
+
+            futures_info = await self.kline_downloader._handle_async_request_with_retry(
+                request_func,
+                endpoint_key=_EXCHANGE_INFO_ENDPOINT,
+            )
+            symbols = futures_info.get("symbols", []) if isinstance(futures_info, dict) else []
             perpetual_symbols = [
                 symbol["symbol"]
-                for symbol in futures_info["symbols"]
+                for symbol in symbols
                 if symbol["contractType"] == "PERPETUAL" and (not only_trading or symbol["status"] == "TRADING") and symbol["symbol"].endswith(quote_asset)
             ]
 
@@ -115,42 +187,96 @@ class MarketDataService:
             logger.error(f"Failed to fetch perpetual symbols: {e}")
             raise MarketDataFetchError(f"Failed to fetch perpetual symbols: {e}") from e
 
-    async def get_top_coins(
+    async def _get_vision_kline_available_dates(
         self,
-        limit: int = settings.DEFAULT_LIMIT,
-        sort_by: SortBy = SortBy.QUOTE_VOLUME,
-        quote_asset: str | None = None,
-    ) -> list[DailyMarketTicker]:
-        """获取前 N 个交易对."""
+        *,
+        symbol: str,
+        start_date: str,
+        end_date: str,
+        interval: str = "1m",
+    ) -> set[str]:
+        """List available Vision daily kline files for one symbol and date range."""
+        normalized_symbol = symbol.strip().upper()
+        normalized_interval = interval.strip()
+        if not normalized_symbol:
+            raise ValueError("symbol cannot be empty")
+        if not normalized_interval:
+            raise ValueError("interval cannot be empty")
+
+        prefix = f"data/futures/um/daily/klines/{normalized_symbol}/{normalized_interval}/"
+        listing_url = "https://s3.ap-northeast-1.amazonaws.com/data.binance.vision/"
+        timeout = aiohttp.ClientTimeout(total=30, connect=10)
+        filename_pattern = re.compile(rf"{re.escape(normalized_symbol)}-{re.escape(normalized_interval)}-(\d{{4}}-\d{{2}}-\d{{2}})\.zip")
+        key_pattern = re.compile(r"<Key>([^<]+)</Key>")
+        truncated_pattern = re.compile(r"<IsTruncated>(true|false)</IsTruncated>", re.IGNORECASE)
+        token_pattern = re.compile(r"<NextContinuationToken>([^<]+)</NextContinuationToken>")
+
         try:
-            tickers = await self.client.get_ticker()
-            market_tickers = [DailyMarketTicker.from_binance_ticker(t) for t in tickers]
+            available_dates: set[str] = set()
+            continuation_token: str | None = None
 
-            if quote_asset:
-                market_tickers = [t for t in market_tickers if t.symbol.endswith(quote_asset)]
+            async with aiohttp.ClientSession(timeout=timeout, trust_env=True) as session:
+                while True:
+                    params = {
+                        "list-type": "2",
+                        "prefix": prefix,
+                        "max-keys": "1000",
+                    }
+                    if continuation_token:
+                        params["continuation-token"] = continuation_token
 
-            return sorted(
-                market_tickers,
-                key=lambda x: getattr(x, sort_by.value),
-                reverse=True,
-            )[:limit]
+                    async with session.get(listing_url, params=params) as response:
+                        response.raise_for_status()
+                        payload = await response.text()
 
-        except Exception as e:
-            logger.error(f"Error getting top coins: {e}")
-            raise MarketDataFetchError(f"Failed to get top coins: {e}") from e
+                    page_dates, is_truncated, next_token = self._parse_vision_listing_page(
+                        payload=payload,
+                        filename_pattern=filename_pattern,
+                        key_pattern=key_pattern,
+                        truncated_pattern=truncated_pattern,
+                        token_pattern=token_pattern,
+                        start_date=start_date,
+                        end_date=end_date,
+                    )
+                    available_dates.update(page_dates)
 
-    async def get_market_summary(self, interval: Freq = Freq.d1) -> dict[str, Any]:
-        """获取市场概览."""
-        try:
-            summary: dict[str, Any] = {"snapshot_time": datetime.now(), "data": {}}
-            tickers_result = await self.get_symbol_ticker()
-            tickers = [ticker.to_dict() for ticker in tickers_result] if isinstance(tickers_result, list) else [tickers_result.to_dict()]
-            summary["data"] = tickers
-            return summary
+                    if not is_truncated:
+                        break
+                    if not next_token:
+                        raise RuntimeError("Vision listing response marked truncated but omitted continuation token")
+                    continuation_token = next_token
+        except Exception as exc:
+            raise MarketDataFetchError(f"Failed to list Vision kline files for {normalized_symbol} [{start_date}~{end_date}]: {exc}") from exc
 
-        except Exception as e:
-            logger.error(f"Error getting market summary: {e}")
-            raise MarketDataFetchError(f"Failed to get market summary: {e}") from e
+        return available_dates
+
+    @staticmethod
+    def _parse_vision_listing_page(
+        *,
+        payload: str,
+        filename_pattern: re.Pattern[str],
+        key_pattern: re.Pattern[str],
+        truncated_pattern: re.Pattern[str],
+        token_pattern: re.Pattern[str],
+        start_date: str,
+        end_date: str,
+    ) -> tuple[set[str], bool, str]:
+        page_dates: set[str] = set()
+        for key in key_pattern.findall(payload):
+            if not key.endswith(".zip"):
+                continue
+            match = filename_pattern.search(key)
+            if match is None:
+                continue
+            date_str = match.group(1)
+            if start_date <= date_str <= end_date:
+                page_dates.add(date_str)
+
+        is_truncated_match = truncated_pattern.search(payload)
+        is_truncated = bool(is_truncated_match and is_truncated_match.group(1).strip().lower() == "true")
+        token_match = token_pattern.search(payload)
+        next_token = token_match.group(1).strip() if token_match else ""
+        return page_dates, is_truncated, next_token
 
     async def get_historical_klines(
         self,
@@ -158,9 +284,8 @@ class MarketDataService:
         start_time: str | datetime,
         interval: Freq,
         end_time: str | datetime | None = None,
-        klines_type: HistoricalKlinesType = HistoricalKlinesType.SPOT,
-    ) -> list[SpotKlineTicker] | list[FuturesKlineTicker]:
-        """获取历史行情数据."""
+    ) -> list[FuturesKlineTicker]:
+        """获取期货历史行情数据."""
         try:
             if isinstance(start_time, str):
                 start_time = datetime.fromisoformat(start_time)
@@ -169,37 +294,23 @@ class MarketDataService:
             elif isinstance(end_time, str):
                 end_time = datetime.fromisoformat(end_time)
 
-            start_ts = self._date_to_timestamp_start(start_time.strftime("%Y-%m-%d"))
-            end_ts = self._date_to_timestamp_end(end_time.strftime("%Y-%m-%d"))
+            start_ts = int(self._date_to_timestamp_start(start_time.strftime("%Y-%m-%d")))
+            end_ts = int(self._date_to_timestamp_end(end_time.strftime("%Y-%m-%d")))
 
-            market_type = "期货" if klines_type == HistoricalKlinesType.FUTURES else "现货"
-            logger.debug("fetch_historical_klines", symbol=symbol, market_type=market_type, interval=interval.value)
-
-            ticker_class: type[SpotKlineTicker] | type[FuturesKlineTicker]
-            if klines_type == HistoricalKlinesType.FUTURES:
-                klines = await self.client.futures_klines(
-                    symbol=symbol,
-                    interval=interval.value,
-                    startTime=start_ts,
-                    endTime=end_ts,
-                    limit=1500,
-                )
-                ticker_class = FuturesKlineTicker
-            else:
-                klines = await self.client.get_klines(
-                    symbol=symbol,
-                    interval=interval.value,
-                    startTime=start_ts,
-                    endTime=end_ts,
-                    limit=1500,
-                )
-                ticker_class = SpotKlineTicker
+            logger.debug("fetch_historical_klines", symbol=symbol, market_type="期货", interval=interval.value)
+            klines = await self.client.futures_klines(
+                symbol=symbol,
+                interval=interval.value,
+                startTime=start_ts,
+                endTime=end_ts,
+                limit=1500,
+            )
 
             data = list(klines)
             if not data:
                 logger.warning(f"No data found for symbol {symbol} in the requested time range")
-            result = [ticker_class.from_binance_kline(symbol, kline) for kline in data]
-            return cast(list[FuturesKlineTicker] | list[SpotKlineTicker], result)
+            result = [FuturesKlineTicker.from_binance_kline(symbol, kline) for kline in data]
+            return cast(list[FuturesKlineTicker], result)
 
         except Exception as e:
             logger.error(f"Error getting historical data for {symbol}: {e}")
@@ -306,6 +417,7 @@ class MarketDataService:
         interval: Freq = Freq.m1,
         max_api_workers: int = 1,
         max_vision_workers: int = 50,
+        max_day_workers: int = 3,
         max_retries: int = 3,
         start_date: str | None = None,
         end_date: str | None = None,
@@ -339,6 +451,7 @@ class MarketDataService:
                 max_api_workers=max_api_workers,
                 max_vision_workers=max_vision_workers,
                 max_retries=max_retries,
+                max_day_workers=max_day_workers,
                 run_id=run_id,
                 universe_file=str(universe_file_obj),
                 snapshots=filtered_snapshots,
@@ -389,6 +502,7 @@ class MarketDataService:
         max_api_workers: int,
         max_vision_workers: int,
         max_retries: int,
+        max_day_workers: int = 3,
         run_id: str | None = None,
         universe_file: str | None = None,
         snapshots: list[UniverseDailySnapshot] | None = None,
@@ -398,7 +512,12 @@ class MarketDataService:
         override_start_date: str | None = None,
         override_end_date: str | None = None,
     ) -> dict[str, Any]:
-        """Execute strict day-symbol download plan from universe daily snapshots."""
+        """Execute universe download with global plan-then-execute strategy.
+
+        Phase 1 (Gather): build per-symbol contiguous date ranges.
+        Phase 2 (Plan):   query DB once per symbol to find missing data.
+        Phase 3 (Execute): download klines per-symbol; metrics per-date.
+        """
         run = run_id or generate_run_id("universe")
         db_file_path = self._validate_and_prepare_path(db_path, is_file=True)
         snapshots_to_process = snapshots if snapshots is not None else universe_def.daily_snapshots
@@ -416,65 +535,84 @@ class MarketDataService:
                 continue
             active_days.append((index, snapshot))
 
-        kline_stage = await self._run_kline_stage(
-            run_id=run,
-            snapshots=active_days,
-            db_path=db_file_path,
-            retry_config=retry_config,
-            incremental=incremental,
-            interval=interval,
-            max_api_workers=max_api_workers,
-            max_retries=max_retries,
-        )
-        day_reports = kline_stage["day_reports"]
-        stage_reports: dict[str, dict[str, Any]] = {"kline": kline_stage["stage_report"]}
-        stage_errors: list[dict[str, Any]] = list(kline_stage["stage_errors"])
+        # --- Phase 1: Gather symbol-date ranges ---
+        active_snapshots = [snap for _, snap in active_days]
+        symbol_date_ranges = gather_symbol_date_ranges(active_snapshots)
+
+        # --- Phase 2: Global plan (incremental check) ---
+        download_plan: UniverseDownloadPlan | None = None
+        if incremental and symbol_date_ranges:
+            db = Database(db_file_path)
+            await db.initialize()
+            try:
+                download_plan = await db.plan_universe_download(
+                    symbol_date_ranges=symbol_date_ranges,
+                    freq=interval,
+                    download_market_metrics=download_market_metrics,
+                )
+            finally:
+                await db.close()
+
+        # --- Phase 3: Execute ---
+        skipped_metrics_report = self._build_skipped_metrics_report(len(active_days))
 
         if download_market_metrics:
-            metrics_stage = await self._run_metrics_stage(
+            placeholder_day_reports: list[dict[str, Any]] = [{"date": snapshot.date, "index": index} for index, snapshot in active_days]
+            kline_stage, metrics_stage = await asyncio.gather(
+                self._run_kline_stage(
+                    run_id=run,
+                    snapshots=active_days,
+                    db_path=db_file_path,
+                    retry_config=retry_config,
+                    incremental=incremental,
+                    interval=interval,
+                    max_api_workers=max_api_workers,
+                    max_retries=max_retries,
+                    max_day_workers=max_day_workers,
+                    download_plan=download_plan,
+                ),
+                self._run_metrics_stage(
+                    run_id=run,
+                    snapshots=active_days,
+                    day_reports=placeholder_day_reports,
+                    db_path=db_file_path,
+                    api_request_delay=api_request_delay,
+                    vision_request_delay=vision_request_delay,
+                    max_api_workers=max_api_workers,
+                    max_vision_workers=max_vision_workers,
+                    incremental=incremental,
+                    max_day_workers=max_day_workers,
+                    download_plan=download_plan,
+                ),
+            )
+            day_reports = kline_stage["day_reports"]
+            metrics_by_date = {str(r["date"]): r.get("metrics") for r in metrics_stage["day_reports"] if r.get("metrics") is not None}
+            for report in day_reports:
+                metrics_data = metrics_by_date.get(str(report["date"]))
+                if metrics_data is not None:
+                    report["metrics"] = metrics_data
+
+            stage_reports: dict[str, dict[str, Any]] = {
+                "kline": kline_stage["stage_report"],
+                "metrics": metrics_stage["stage_report"],
+            }
+            stage_errors: list[dict[str, Any]] = list(kline_stage["stage_errors"]) + list(metrics_stage["stage_errors"])
+        else:
+            kline_stage = await self._run_kline_stage(
                 run_id=run,
                 snapshots=active_days,
-                day_reports=day_reports,
                 db_path=db_file_path,
-                api_request_delay=api_request_delay,
-                vision_request_delay=vision_request_delay,
-                max_api_workers=max_api_workers,
-                max_vision_workers=max_vision_workers,
+                retry_config=retry_config,
                 incremental=incremental,
+                interval=interval,
+                max_api_workers=max_api_workers,
+                max_retries=max_retries,
+                max_day_workers=max_day_workers,
+                download_plan=download_plan,
             )
-            day_reports = metrics_stage["day_reports"]
-            stage_reports["metrics"] = metrics_stage["stage_report"]
-            stage_errors.extend(metrics_stage["stage_errors"])
-        else:
-            stage_reports["metrics"] = {
-                "stage": "metrics",
-                "dataset": "market_metrics",
-                "status": "skipped",
-                "duration_ms": 0,
-                "days_total": len(active_days),
-                "days_complete": 0,
-                "days_partial": 0,
-                "days_error": 0,
-                "days_aborted": 0,
-                "sources": {
-                    "vision": {
-                        "status": "skipped",
-                        "aborted": False,
-                        "aborted_from_date": None,
-                        "days_complete": 0,
-                        "days_error": 0,
-                        "days_aborted": 0,
-                    },
-                    "funding_rate": {
-                        "status": "skipped",
-                        "aborted": False,
-                        "aborted_from_date": None,
-                        "days_complete": 0,
-                        "days_error": 0,
-                        "days_aborted": 0,
-                    },
-                },
-            }
+            day_reports = kline_stage["day_reports"]
+            stage_reports = {"kline": kline_stage["stage_report"], "metrics": skipped_metrics_report}
+            stage_errors = list(kline_stage["stage_errors"])
 
         return self._compose_universe_report(
             run_id=run,
@@ -501,7 +639,39 @@ class MarketDataService:
             max_retries=max_retries,
         )
 
-    async def _run_kline_stage(
+    @staticmethod
+    def _build_skipped_metrics_report(active_day_count: int) -> dict[str, Any]:
+        return {
+            "stage": "metrics",
+            "dataset": "market_metrics",
+            "status": "skipped",
+            "duration_ms": 0,
+            "days_total": active_day_count,
+            "days_complete": 0,
+            "days_partial": 0,
+            "days_error": 0,
+            "days_aborted": 0,
+            "sources": {
+                "vision": {
+                    "status": "skipped",
+                    "aborted": False,
+                    "aborted_from_date": None,
+                    "days_complete": 0,
+                    "days_error": 0,
+                    "days_aborted": 0,
+                },
+                "funding_rate": {
+                    "status": "skipped",
+                    "aborted": False,
+                    "aborted_from_date": None,
+                    "days_complete": 0,
+                    "days_error": 0,
+                    "days_aborted": 0,
+                },
+            },
+        }
+
+    async def _run_kline_stage(  # noqa: C901
         self,
         *,
         run_id: str,
@@ -512,14 +682,21 @@ class MarketDataService:
         interval: Freq,
         max_api_workers: int,
         max_retries: int,
+        max_day_workers: int = 3,
+        download_plan: UniverseDownloadPlan | None = None,
     ) -> dict[str, Any]:
-        """Run kline stage for all active universe days."""
+        """Run kline stage using a global symbol-centric plan.
+
+        When *download_plan* is provided, pre-computed ranges are passed
+        directly to the downloader, skipping per-day incremental queries.
+        """
         stage_started_at = time.perf_counter()
-        day_reports: list[dict[str, Any]] = []
         stage_errors: list[dict[str, Any]] = []
-        day_status_counts: dict[str, int] = defaultdict(int)
-        terminal_aborted = False
-        terminal_error_message: str | None = None
+
+        all_day_symbols: list[str] = []
+        for _, snap in snapshots:
+            all_day_symbols.extend(snap.active_symbols)
+        unique_symbols = sorted(set(all_day_symbols))
 
         logger.info(
             "download.stage_start",
@@ -529,166 +706,87 @@ class MarketDataService:
             status="start",
             duration_ms=0,
             days=len(snapshots),
+            symbols=len(unique_symbols),
+            max_api_workers=max_api_workers,
         )
 
-        for index, snapshot in snapshots:
-            symbols = list(snapshot.active_symbols)
-            day_started_at = time.perf_counter()
+        # Build precomputed_ranges from the global plan when available.
+        precomputed_ranges: dict[str, list[tuple[str, str]]] | None = None
+        effective_start = snapshots[0][1].date if snapshots else ""
+        effective_end = snapshots[-1][1].date if snapshots else ""
 
-            if terminal_aborted:
-                reason = terminal_error_message or "terminal_rate_limit_aborted"
-                missing_periods = [{"symbol": symbol, "period": f"{snapshot.date} - {snapshot.date}", "reason": reason} for symbol in symbols]
-                day_report = {
-                    "index": index,
-                    "date": snapshot.date,
-                    "total_symbols": len(symbols),
-                    "successful_symbols": 0,
-                    "failed_symbols": symbols,
-                    "missing_periods": missing_periods,
-                }
-                day_reports.append(day_report)
-                day_status_counts["aborted"] += 1
-                logger.warning(
-                    "download.day_done",
-                    run=run_id,
-                    stage="kline",
-                    dataset="kline",
-                    status="aborted",
-                    duration_ms=0,
-                    date=snapshot.date,
-                    total_symbols=len(symbols),
-                    successful_symbols=0,
-                    failed_symbols=len(symbols),
-                    terminal=True,
-                    error=reason,
-                )
-                continue
+        if download_plan is not None:
+            precomputed_ranges = {symbol: [(str(s), str(e)) for s, e in plan.download_ranges] for symbol, plan in download_plan.kline.items()}
 
-            logger.info(
-                "download.day_start",
-                run=run_id,
-                stage="kline",
-                dataset="kline",
-                status="start",
-                duration_ms=0,
-                date=snapshot.date,
-                total_symbols=len(symbols),
+        successful_symbols_set: set[str] = set()
+        failed_symbols_set: set[str] = set()
+        failed_symbol_reasons: dict[str, str] = {}
+        kline_missing_periods: list[dict[str, Any]] = []
+        terminal_aborted = False
+
+        try:
+            kline_report = await self.kline_downloader.download_multiple_symbols(
+                symbols=unique_symbols,
+                start_time=effective_start,
+                end_time=effective_end,
+                interval=interval,
+                db_path=db_path,
+                max_workers=max_api_workers,
+                retry_config=retry_config or RetryConfig(max_retries=max_retries),
+                incremental=incremental,
+                run_id=run_id,
+                precomputed_ranges=precomputed_ranges,
+                source="vision",
             )
+            kline_missing_periods = [mp for mp in kline_report.missing_periods if isinstance(mp, dict)]
+            successful_symbols_set = set(unique_symbols) - set(kline_report.failed_symbols)
+            failed_symbols_set = set(kline_report.failed_symbols)
+            for mp in kline_missing_periods:
+                if isinstance(mp, dict):
+                    failed_symbol_reasons[str(mp.get("symbol", ""))] = str(mp.get("reason", "unknown"))
 
-            try:
-                kline_report = await self.get_perpetual_data(
-                    symbols=symbols,
-                    start_time=snapshot.date,
-                    end_time=snapshot.date,
-                    db_path=db_path,
-                    interval=interval,
-                    max_workers=max_api_workers,
-                    max_retries=max_retries,
-                    retry_config=retry_config,
-                    incremental=incremental,
+        except RateLimitError as exc:
+            terminal_aborted = True
+            stage_errors.append(
+                self._normalize_stage_error(
                     run_id=run_id,
-                )
-                day_report = {
-                    "index": index,
-                    "date": snapshot.date,
-                    "total_symbols": kline_report.total_symbols,
-                    "successful_symbols": kline_report.successful_symbols,
-                    "failed_symbols": list(kline_report.failed_symbols),
-                    "missing_periods": list(kline_report.missing_periods),
-                }
-                day_reports.append(day_report)
-                status = "complete" if not kline_report.failed_symbols and not kline_report.missing_periods else "partial"
-                day_status_counts[status] += 1
-                logger.info(
-                    "download.day_done",
-                    run=run_id,
                     stage="kline",
                     dataset="kline",
-                    status=status,
-                    duration_ms=int((time.perf_counter() - day_started_at) * 1000),
-                    date=snapshot.date,
-                    total_symbols=kline_report.total_symbols,
-                    successful_symbols=kline_report.successful_symbols,
-                    failed_symbols=len(kline_report.failed_symbols),
-                )
-            except RateLimitError as exc:
-                terminal_aborted = True
-                terminal_error_message = str(exc)
-                stage_errors.append(
-                    self._normalize_stage_error(
-                        run_id=run_id,
-                        stage="kline",
-                        dataset="kline",
-                        date=snapshot.date,
-                        error=str(exc),
-                        terminal=True,
-                    )
-                )
-                missing_periods = [{"symbol": symbol, "period": f"{snapshot.date} - {snapshot.date}", "reason": str(exc)} for symbol in symbols]
-                day_report = {
-                    "index": index,
-                    "date": snapshot.date,
-                    "total_symbols": len(symbols),
-                    "successful_symbols": 0,
-                    "failed_symbols": symbols,
-                    "missing_periods": missing_periods,
-                }
-                day_reports.append(day_report)
-                day_status_counts["aborted"] += 1
-                logger.error(
-                    "download.day_done",
-                    run=run_id,
-                    stage="kline",
-                    dataset="kline",
-                    status="aborted",
-                    duration_ms=int((time.perf_counter() - day_started_at) * 1000),
-                    date=snapshot.date,
-                    total_symbols=len(symbols),
-                    successful_symbols=0,
-                    failed_symbols=len(symbols),
+                    error=str(exc),
                     terminal=True,
-                    error=str(exc),
                 )
-            except Exception as exc:  # noqa: BLE001
-                stage_errors.append(
-                    self._normalize_stage_error(
-                        run_id=run_id,
-                        stage="kline",
-                        dataset="kline",
-                        date=snapshot.date,
-                        error=str(exc),
-                        terminal=False,
-                    )
-                )
-                missing_periods = [{"symbol": symbol, "period": f"{snapshot.date} - {snapshot.date}", "reason": str(exc)} for symbol in symbols]
-                day_report = {
-                    "index": index,
-                    "date": snapshot.date,
-                    "total_symbols": len(symbols),
-                    "successful_symbols": 0,
-                    "failed_symbols": symbols,
-                    "missing_periods": missing_periods,
-                }
-                day_reports.append(day_report)
-                day_status_counts["error"] += 1
-                logger.error(
-                    "download.day_done",
-                    run=run_id,
+            )
+            failed_symbols_set = set(unique_symbols)
+            for s in unique_symbols:
+                failed_symbol_reasons[s] = str(exc)
+        except Exception as exc:  # noqa: BLE001
+            stage_errors.append(
+                self._normalize_stage_error(
+                    run_id=run_id,
                     stage="kline",
                     dataset="kline",
-                    status="error",
-                    duration_ms=int((time.perf_counter() - day_started_at) * 1000),
-                    date=snapshot.date,
-                    total_symbols=len(symbols),
-                    successful_symbols=0,
-                    failed_symbols=len(symbols),
-                    terminal=False,
                     error=str(exc),
+                    terminal=False,
                 )
+            )
+            failed_symbols_set = set(unique_symbols)
+            for s in unique_symbols:
+                failed_symbol_reasons[s] = str(exc)
 
-        total_symbols = sum(int(report.get("total_symbols", 0)) for report in day_reports)
-        total_success = sum(int(report.get("successful_symbols", 0)) for report in day_reports)
-        total_failures = sum(len(cast(list[str], report.get("failed_symbols", []))) for report in day_reports)
+        # Reconstruct per-day reports from symbol results.
+        day_reports, day_status_counts = self._reconstruct_kline_day_reports(
+            snapshots=snapshots,
+            successful_symbols=successful_symbols_set,
+            failed_symbols=failed_symbols_set,
+            failed_reasons=failed_symbol_reasons,
+            missing_periods=kline_missing_periods,
+            kline_plan=download_plan.kline if download_plan else None,
+            terminal_aborted=terminal_aborted,
+        )
+
+        total_symbols = sum(int(r.get("total_symbols", 0)) for r in day_reports)
+        total_success = sum(int(r.get("successful_symbols", 0)) for r in day_reports)
+        total_failures = sum(len(cast(list[str], r.get("failed_symbols", []))) for r in day_reports)
 
         if not day_reports:
             stage_status = "skipped"
@@ -732,6 +830,90 @@ class MarketDataService:
             "stage_errors": stage_errors,
         }
 
+    @staticmethod
+    def _index_missing_periods_by_date_symbol(
+        missing_periods: list[dict[str, Any]],
+    ) -> dict[tuple[str, str], list[dict[str, Any]]]:
+        index: dict[tuple[str, str], list[dict[str, Any]]] = defaultdict(list)
+        for payload in missing_periods:
+            symbol = str(payload.get("symbol", "")).strip()
+            if not symbol:
+                continue
+            date = payload.get("date")
+            if isinstance(date, str) and date:
+                index[(date, symbol)].append(payload)
+                continue
+
+            period_text = str(payload.get("period", ""))
+            period_start = period_text.split(" - ", 1)[0].strip()
+            if period_start:
+                index[(period_start, symbol)].append(payload)
+        return index
+
+    @staticmethod
+    def _reconstruct_kline_day_reports(
+        *,
+        snapshots: list[tuple[int, UniverseDailySnapshot]],
+        successful_symbols: set[str],
+        failed_symbols: set[str],
+        failed_reasons: dict[str, str],
+        missing_periods: list[dict[str, Any]],
+        kline_plan: dict | None,
+        terminal_aborted: bool,
+    ) -> tuple[list[dict[str, Any]], dict[str, int]]:
+        """Reconstruct per-day reports from symbol-level download results."""
+        day_reports: list[dict[str, Any]] = []
+        day_status_counts: dict[str, int] = defaultdict(int)
+        missing_by_date_symbol = MarketDataService._index_missing_periods_by_date_symbol(missing_periods)
+
+        for index, snapshot in snapshots:
+            day_symbols = list(snapshot.active_symbols)
+            day_successful: list[str] = []
+            day_failed: list[str] = []
+            day_missing: list[dict[str, Any]] = []
+
+            for s in day_symbols:
+                symbol_day_missing = missing_by_date_symbol.get((snapshot.date, s), [])
+                if symbol_day_missing:
+                    day_failed.append(s)
+                    day_missing.extend(symbol_day_missing)
+                    continue
+                if s in failed_symbols:
+                    day_failed.append(s)
+                    reason = failed_reasons.get(s, "unknown")
+                    day_missing.append(
+                        {
+                            "symbol": s,
+                            "period": f"{snapshot.date} - {snapshot.date}",
+                            "reason": reason,
+                        }
+                    )
+                else:
+                    day_successful.append(s)
+
+            if terminal_aborted and not day_successful:
+                status = "aborted"
+            elif day_failed and not day_successful:
+                status = "error"
+            elif day_failed or day_missing:
+                status = "partial"
+            else:
+                status = "complete"
+
+            day_status_counts[status] += 1
+            day_reports.append(
+                {
+                    "index": index,
+                    "date": snapshot.date,
+                    "total_symbols": len(day_symbols),
+                    "successful_symbols": len(day_successful),
+                    "failed_symbols": day_failed,
+                    "missing_periods": day_missing,
+                }
+            )
+
+        return day_reports, dict(day_status_counts)
+
     async def _run_metrics_stage(  # noqa: C901
         self,
         *,
@@ -744,13 +926,19 @@ class MarketDataService:
         max_api_workers: int,
         max_vision_workers: int,
         incremental: bool,
+        max_day_workers: int = 3,
+        download_plan: UniverseDownloadPlan | None = None,
     ) -> dict[str, Any]:
-        """Run metrics stage with source-level isolation and terminal abort per source."""
+        """Run metrics stage with concurrent day processing and per-source abort."""
         stage_started_at = time.perf_counter()
         day_status_counts: dict[str, int] = defaultdict(int)
         stage_errors: list[dict[str, Any]] = []
         day_report_by_date = {str(report["date"]): report for report in day_reports}
 
+        source_abort_events: dict[str, asyncio.Event] = {
+            "vision": asyncio.Event(),
+            "funding_rate": asyncio.Event(),
+        }
         source_state: dict[str, dict[str, Any]] = {
             "vision": {
                 "aborted": False,
@@ -768,6 +956,8 @@ class MarketDataService:
             },
         }
 
+        day_semaphore = asyncio.Semaphore(max_day_workers)
+
         logger.info(
             "download.stage_start",
             run=run_id,
@@ -777,24 +967,94 @@ class MarketDataService:
             duration_ms=0,
             days=len(snapshots),
             incremental=incremental,
+            max_day_workers=max_day_workers,
         )
 
-        for _, snapshot in snapshots:
-            day_metrics, day_errors, source_aborts = await self._download_market_metrics_for_date(
-                date=snapshot.date,
-                symbols=snapshot.active_symbols,
-                db_path=db_path,
-                api_request_delay=api_request_delay,
-                vision_request_delay=vision_request_delay,
-                max_api_workers=max_api_workers,
-                max_vision_workers=max_vision_workers,
-                incremental=incremental,
-                run_id=run_id,
-                skip_vision=bool(source_state["vision"]["aborted"]),
-                skip_funding_rate=bool(source_state["funding_rate"]["aborted"]),
-            )
+        # Pre-compute per-date symbols needing vision/funding from global plan.
+        vision_needed_by_date: dict[str, set[str]] | None = None
+        funding_needed_by_date: dict[str, set[str]] | None = None
 
-            report = day_report_by_date.get(snapshot.date)
+        if download_plan is not None:
+            active_day_bounds: dict[str, tuple[int, int]] = {
+                snap.date: (int(self._date_to_timestamp_start(snap.date)), int(self._date_to_timestamp_end(snap.date))) for _, snap in snapshots
+            }
+            vision_needed_by_date = {}
+            for symbol, vplan in download_plan.vision.items():
+                for d in vplan.missing_dates:
+                    if d in active_day_bounds:
+                        vision_needed_by_date.setdefault(d, set()).add(symbol)
+
+            funding_needed_by_date = {}
+            for symbol, fplan in download_plan.funding_rate.items():
+                for start_ts, end_ts in fplan.download_ranges:
+                    range_start = int(start_ts)
+                    range_end = int(end_ts)
+                    # Map range to active universe days using date span.
+                    # end_ts is generally exclusive; clamp by -1ms to get the covered final day.
+                    covered_end = max(range_start, range_end - 1)
+                    start_day = datetime.fromtimestamp(range_start / 1000, tz=UTC).date()
+                    end_day = datetime.fromtimestamp(covered_end / 1000, tz=UTC).date()
+                    current_day = start_day
+                    while current_day <= end_day:
+                        current_day_str = current_day.strftime("%Y-%m-%d")
+                        if current_day_str in active_day_bounds:
+                            funding_needed_by_date.setdefault(current_day_str, set()).add(symbol)
+                        current_day += timedelta(days=1)
+
+        metrics_results: list[tuple[dict[str, Any], list[dict[str, Any]], dict[str, bool], str] | None] = [None] * len(snapshots)
+
+        async def process_metrics_day(pos: int, snapshot: UniverseDailySnapshot) -> None:
+            async with day_semaphore:
+                day_symbols = list(snapshot.active_symbols)
+                day_symbol_set = set(day_symbols)
+                vision_terminal_abort = source_abort_events["vision"].is_set()
+                funding_terminal_abort = source_abort_events["funding_rate"].is_set()
+
+                vision_symbols_for_day = day_symbols
+                funding_symbols_for_day = day_symbols
+
+                if vision_needed_by_date is not None:
+                    vision_symbols_for_day = sorted(day_symbol_set & vision_needed_by_date.get(snapshot.date, set()))
+                if funding_needed_by_date is not None:
+                    funding_symbols_for_day = sorted(day_symbol_set & funding_needed_by_date.get(snapshot.date, set()))
+
+                skip_vision = vision_terminal_abort or not vision_symbols_for_day
+                skip_funding = funding_terminal_abort or not funding_symbols_for_day
+
+                day_metrics, day_errors, source_aborts = await self._download_market_metrics_for_date(
+                    date=snapshot.date,
+                    symbols=day_symbols,
+                    db_path=db_path,
+                    api_request_delay=api_request_delay,
+                    vision_request_delay=vision_request_delay,
+                    max_api_workers=max_api_workers,
+                    max_vision_workers=max_vision_workers,
+                    incremental=incremental,
+                    run_id=run_id,
+                    skip_vision=skip_vision,
+                    skip_funding_rate=skip_funding,
+                    vision_symbols=vision_symbols_for_day,
+                    funding_symbols=funding_symbols_for_day,
+                    skip_vision_terminal=vision_terminal_abort,
+                    skip_funding_terminal=funding_terminal_abort,
+                )
+
+                for source_name in ("vision", "funding_rate"):
+                    if source_aborts.get(source_name):
+                        source_abort_events[source_name].set()
+
+                metrics_results[pos] = (day_metrics, day_errors, source_aborts, snapshot.date)
+
+        async with asyncio.TaskGroup() as tg:
+            for pos, (_, snapshot) in enumerate(snapshots):
+                tg.create_task(process_metrics_day(pos, snapshot))
+
+        for result in metrics_results:
+            if result is None:
+                continue
+            day_metrics, day_errors, source_aborts, date = result
+
+            report = day_report_by_date.get(date)
             if report is not None:
                 report["metrics"] = day_metrics
 
@@ -815,7 +1075,7 @@ class MarketDataService:
                 if source_aborts.get(source_name):
                     source_state[source_name]["aborted"] = True
                     if source_state[source_name]["aborted_from_date"] is None:
-                        source_state[source_name]["aborted_from_date"] = snapshot.date
+                        source_state[source_name]["aborted_from_date"] = date
 
         if not snapshots:
             stage_status = "skipped"
@@ -1379,9 +1639,9 @@ class MarketDataService:
     async def check_symbol_full_day_available_on_date(self, symbol: str, date: str, strict: bool = False) -> bool:
         """Check whether a symbol has complete day coverage on a specific date."""
         try:
-            start_time = self._date_to_timestamp_start(date)
-            end_time = self._date_to_timestamp_end(date)
-            day_start_ts = int(start_time)
+            start_time = int(self._date_to_timestamp_start(date))
+            end_time = int(self._date_to_timestamp_end(date))
+            day_start_ts = start_time
 
             klines = await asyncio.wait_for(
                 self.client.futures_klines(
@@ -1421,8 +1681,8 @@ class MarketDataService:
     async def check_symbol_exists_on_date(self, symbol: str, date: str, strict: bool = False) -> bool:
         """Check whether a symbol has data on a specific date."""
         try:
-            start_time = self._date_to_timestamp_start(date)
-            end_time = self._date_to_timestamp_end(date)
+            start_time = int(self._date_to_timestamp_start(date))
+            end_time = int(self._date_to_timestamp_end(date))
 
             klines = await asyncio.wait_for(
                 self.client.futures_klines(
@@ -1486,7 +1746,7 @@ class MarketDataService:
                 interval="1m",
                 startTime=start_time,
                 endTime=end_time,
-                limit=1,
+                limit=1500,
             )
 
         try:
@@ -1503,14 +1763,145 @@ class MarketDataService:
         if not klines:
             return "no_kline_on_date"
 
-        first_open_time = int(klines[0][0])
-        if first_open_time == day_start_ts:
-            return "active"
-        return "not_full_day_on_date"
+        expected_points = _DAY_MS // _MINUTE_MS
+        if len(klines) != expected_points:
+            return "not_full_day_on_date"
+
+        try:
+            open_times = [int(kline[0]) for kline in klines]
+        except (TypeError, ValueError, IndexError):
+            return "not_full_day_on_date"
+
+        expected_start = day_start_ts
+        expected_end = day_start_ts + (expected_points - 1) * _MINUTE_MS
+        if open_times[0] != expected_start or open_times[-1] != expected_end:
+            return "not_full_day_on_date"
+
+        for index, open_time in enumerate(open_times):
+            if open_time != expected_start + index * _MINUTE_MS:
+                return "not_full_day_on_date"
+
+        return "active"
+
+    async def _scan_symbol_date_statuses(  # noqa: C901
+        self,
+        symbol: str,
+        start_date: str,
+        end_date: str,
+        endpoint_max_workers: int = 5,
+    ) -> dict[str, str]:
+        """Classify each date in a range for one symbol with one range scan."""
+        import pandas as pd
+
+        all_dates = [date.strftime("%Y-%m-%d") for date in pd.date_range(start=start_date, end=end_date, freq="D", tz="UTC")]
+        if not all_dates:
+            return {}
+
+        day_boundaries: dict[str, tuple[int, int]] = {}
+        for date_str in all_dates:
+            day_start = int(self._date_to_timestamp_start(date_str))
+            day_end = day_start + _DAY_MS
+            day_boundaries[date_str] = (day_start, day_end)
+
+        day_stats: dict[str, _DayScanStats] = {date_str: {"count": 0, "first": None, "last": None, "prev": None, "broken": False} for date_str in all_dates}
+
+        start_ts = str(int(self._date_to_timestamp_start(start_date)))
+        end_ts = str(int(self._date_to_timestamp_end(end_date)))
+
+        try:
+            async for ticker in self.kline_downloader.download_single_symbol(
+                symbol=symbol,
+                start_ts=start_ts,
+                end_ts=end_ts,
+                interval=Freq.m1,
+                klines_type=HistoricalKlinesType.FUTURES,
+                endpoint_max_workers=endpoint_max_workers,
+            ):
+                open_time = int(ticker.open_time)
+                date_key = datetime.fromtimestamp(open_time / 1000, tz=UTC).strftime("%Y-%m-%d")
+                stats = day_stats.get(date_key)
+                if stats is None:
+                    continue
+
+                stats["count"] += 1
+                if stats["first"] is None:
+                    stats["first"] = open_time
+                previous = stats["prev"]
+                if previous is not None and open_time - previous != _MINUTE_MS:
+                    stats["broken"] = True
+                stats["prev"] = open_time
+                stats["last"] = open_time
+        except RateLimitError as exc:
+            raise MarketDataFetchError(f"Rate limit circuit breaker tripped scanning {symbol} {start_date}~{end_date}: {exc}") from exc
+        except Exception as exc:
+            raise MarketDataFetchError(f"Failed to scan symbol {symbol} {start_date}~{end_date}: {exc}") from exc
+
+        expected_points = _DAY_MS // _MINUTE_MS
+        status_by_date: dict[str, str] = {}
+        for date_str in all_dates:
+            stats = day_stats[date_str]
+            count = stats["count"]
+            if count == 0:
+                status_by_date[date_str] = "no_kline_on_date"
+                continue
+
+            day_start, day_end = day_boundaries[date_str]
+            first_open = stats["first"] if stats["first"] is not None else -1
+            last_open = stats["last"] if stats["last"] is not None else -1
+            continuous = (not bool(stats["broken"])) and first_open == day_start and last_open == day_end - _MINUTE_MS
+            status_by_date[date_str] = "active" if continuous and count == expected_points else "not_full_day_on_date"
+
+        return status_by_date
+
+    async def _check_metrics_asof_ready_on_date(self, symbol: str, date: str) -> bool:
+        """Return True when required metrics predata exists for define-stage asof readiness."""
+        day_start_ts = int(self._date_to_timestamp_start(date))
+
+        async def has_funding_rate_data() -> bool:
+            lookback_start = day_start_ts - _ASOF_LOOKBACK_DAYS["funding_rate"] * _DAY_MS
+            data = await self.metrics_downloader.download_funding_rate(
+                symbol=symbol,
+                start_ts=lookback_start,
+                end_ts=day_start_ts,
+                limit=1,
+            )
+            return bool(data)
+
+        async def has_open_interest_data() -> bool:
+            lookback_start = day_start_ts - _ASOF_LOOKBACK_DAYS["open_interest"] * _DAY_MS
+            data = await self.metrics_downloader.download_open_interest(
+                symbol=symbol,
+                start_ts=lookback_start,
+                end_ts=day_start_ts,
+                limit=1,
+            )
+            return bool(data)
+
+        async def has_lsr_data(ratio_type: str) -> bool:
+            lookback_start = day_start_ts - _ASOF_LOOKBACK_DAYS["long_short_ratio"] * _DAY_MS
+            data = await self.metrics_downloader.download_long_short_ratio(
+                symbol=symbol,
+                ratio_type=ratio_type,
+                start_ts=lookback_start,
+                end_ts=day_start_ts,
+                limit=1,
+            )
+            return bool(data)
+
+        try:
+            checks = [
+                has_funding_rate_data(),
+                has_open_interest_data(),
+                *[has_lsr_data(ratio_type) for ratio_type in _LSR_RATIO_TYPES],
+            ]
+            results = await asyncio.gather(*checks)
+            return all(results)
+        except Exception as exc:
+            raise MarketDataFetchError(f"Failed to check metrics asof readiness for {symbol} on {date}: {exc}") from exc
 
     # ==================== 私有辅助方法 ====================
 
-    async def _download_market_metrics_for_date(
+    async def _download_market_metrics_for_date(  # noqa: C901
         self,
         date: str,
         symbols: list[str],
@@ -1523,6 +1914,10 @@ class MarketDataService:
         run_id: str | None = None,
         skip_vision: bool = False,
         skip_funding_rate: bool = False,
+        vision_symbols: list[str] | None = None,
+        funding_symbols: list[str] | None = None,
+        skip_vision_terminal: bool = False,
+        skip_funding_terminal: bool = False,
     ) -> tuple[dict[str, Any], list[dict[str, Any]], dict[str, bool]]:
         """Download metrics for one date and symbol list."""
         if not symbols:
@@ -1546,18 +1941,23 @@ class MarketDataService:
         day_started_at = time.perf_counter()
         errors: list[dict[str, Any]] = []
         source_aborts = {"vision": False, "funding_rate": False}
+        effective_vision_symbols = vision_symbols if vision_symbols is not None else symbols
+        effective_funding_symbols = funding_symbols if funding_symbols is not None else symbols
+        effective_skip_vision = skip_vision or not effective_vision_symbols
+        effective_skip_funding = skip_funding_rate or not effective_funding_symbols
+
         source_payloads: dict[str, dict[str, Any]] = {
             "vision": {
-                "status": "skipped" if skip_vision else "pending",
+                "status": "skipped" if effective_skip_vision else "pending",
                 "dataset": "vision-metrics",
                 "duration_ms": 0,
-                "terminal": bool(skip_vision),
+                "terminal": bool(skip_vision_terminal),
             },
             "funding_rate": {
-                "status": "skipped" if skip_funding_rate else "pending",
+                "status": "skipped" if effective_skip_funding else "pending",
                 "dataset": "funding_rate",
                 "duration_ms": 0,
-                "terminal": bool(skip_funding_rate),
+                "terminal": bool(skip_funding_terminal),
             },
         }
 
@@ -1589,6 +1989,7 @@ class MarketDataService:
             source: str,
             dataset: str,
             runner: Any,
+            source_symbols: list[str],
         ) -> None:
             source_started_at = time.perf_counter()
             logger.info(
@@ -1599,7 +2000,7 @@ class MarketDataService:
                 status="start",
                 duration_ms=0,
                 date=date,
-                total_symbols=len(symbols),
+                total_symbols=len(source_symbols),
             )
             try:
                 await runner
@@ -1617,7 +2018,7 @@ class MarketDataService:
                     status="complete",
                     duration_ms=source_payloads[source]["duration_ms"],
                     date=date,
-                    total_symbols=len(symbols),
+                    total_symbols=len(source_symbols),
                 )
             except RateLimitError as exc:
                 source_aborts[source] = True
@@ -1647,7 +2048,7 @@ class MarketDataService:
                     status="aborted",
                     duration_ms=source_payloads[source]["duration_ms"],
                     date=date,
-                    total_symbols=len(symbols),
+                    total_symbols=len(source_symbols),
                     terminal=True,
                     error=str(exc),
                 )
@@ -1678,82 +2079,108 @@ class MarketDataService:
                     status="error",
                     duration_ms=source_payloads[source]["duration_ms"],
                     date=date,
-                    total_symbols=len(symbols),
+                    total_symbols=len(source_symbols),
                     terminal=False,
                     error=str(exc),
                 )
 
-        if skip_vision:
-            source_payloads["vision"] = {
-                "status": "aborted",
-                "dataset": "vision-metrics",
-                "duration_ms": 0,
-                "terminal": True,
-                "error": "source_aborted_after_terminal_rate_limit",
-            }
-            logger.warning(
-                "download.source_done",
-                run=run_id,
-                stage="metrics",
-                dataset="vision-metrics",
-                status="aborted",
-                duration_ms=0,
-                date=date,
-                total_symbols=len(symbols),
-                terminal=True,
-                error="source_aborted_after_terminal_rate_limit",
-            )
-        else:
-            await run_source(
-                source="vision",
-                dataset="vision-metrics",
-                runner=self.vision_downloader.download_metrics_batch(
-                    symbols=symbols,
-                    start_date=date,
-                    end_date=date,
-                    db_path=str(db_path),
-                    request_delay=vision_request_delay,
-                    max_workers=max_vision_workers,
-                    incremental=incremental,
-                    run_id=run_id,
-                ),
-            )
+        if effective_skip_vision:
+            if skip_vision_terminal:
+                source_payloads["vision"] = {
+                    "status": "aborted",
+                    "dataset": "vision-metrics",
+                    "duration_ms": 0,
+                    "terminal": True,
+                    "error": "source_aborted_after_terminal_rate_limit",
+                }
+                logger.warning(
+                    "download.source_done",
+                    run=run_id,
+                    stage="metrics",
+                    dataset="vision-metrics",
+                    status="aborted",
+                    duration_ms=0,
+                    date=date,
+                    total_symbols=len(effective_vision_symbols),
+                    terminal=True,
+                    error="source_aborted_after_terminal_rate_limit",
+                )
+            else:
+                source_payloads["vision"] = {
+                    "status": "skipped",
+                    "dataset": "vision-metrics",
+                    "duration_ms": 0,
+                    "terminal": False,
+                }
 
-        if skip_funding_rate:
-            source_payloads["funding_rate"] = {
-                "status": "aborted",
-                "dataset": "funding_rate",
-                "duration_ms": 0,
-                "terminal": True,
-                "error": "source_aborted_after_terminal_rate_limit",
-            }
-            logger.warning(
-                "download.source_done",
-                run=run_id,
-                stage="metrics",
-                dataset="funding_rate",
-                status="aborted",
-                duration_ms=0,
-                date=date,
-                total_symbols=len(symbols),
-                terminal=True,
-                error="source_aborted_after_terminal_rate_limit",
+        if effective_skip_funding:
+            if skip_funding_terminal:
+                source_payloads["funding_rate"] = {
+                    "status": "aborted",
+                    "dataset": "funding_rate",
+                    "duration_ms": 0,
+                    "terminal": True,
+                    "error": "source_aborted_after_terminal_rate_limit",
+                }
+                logger.warning(
+                    "download.source_done",
+                    run=run_id,
+                    stage="metrics",
+                    dataset="funding_rate",
+                    status="aborted",
+                    duration_ms=0,
+                    date=date,
+                    total_symbols=len(effective_funding_symbols),
+                    terminal=True,
+                    error="source_aborted_after_terminal_rate_limit",
+                )
+            else:
+                source_payloads["funding_rate"] = {
+                    "status": "skipped",
+                    "dataset": "funding_rate",
+                    "duration_ms": 0,
+                    "terminal": False,
+                }
+
+        concurrent_tasks: list[Any] = []
+        if not effective_skip_vision:
+            concurrent_tasks.append(
+                run_source(
+                    source="vision",
+                    dataset="vision-metrics",
+                    runner=self.vision_downloader.download_metrics_batch(
+                        symbols=effective_vision_symbols,
+                        start_date=date,
+                        end_date=date,
+                        db_path=str(db_path),
+                        request_delay=vision_request_delay,
+                        max_workers=max_vision_workers,
+                        incremental=incremental,
+                        run_id=run_id,
+                    ),
+                    source_symbols=effective_vision_symbols,
+                )
             )
-        else:
-            await run_source(
-                source="funding_rate",
-                dataset="funding_rate",
-                runner=self.metrics_downloader.download_funding_rate_batch(
-                    symbols=symbols,
-                    start_time=date,
-                    end_time=date,
-                    db_path=str(db_path),
-                    request_delay=api_request_delay,
-                    max_workers=max_api_workers,
-                    incremental=incremental,
-                    run_id=run_id,
-                ),
+        if not effective_skip_funding:
+            concurrent_tasks.append(
+                run_source(
+                    source="funding_rate",
+                    dataset="funding_rate",
+                    runner=self.metrics_downloader.download_funding_rate_batch(
+                        symbols=effective_funding_symbols,
+                        start_time=date,
+                        end_time=date,
+                        db_path=str(db_path),
+                        request_delay=api_request_delay,
+                        max_workers=max_api_workers,
+                        incremental=incremental,
+                        run_id=run_id,
+                    ),
+                    source_symbols=effective_funding_symbols,
+                )
             )
+        if concurrent_tasks:
+            await asyncio.gather(*concurrent_tasks)
 
         source_statuses = {str(payload.get("status")) for payload in source_payloads.values()}
         if source_statuses.issubset({"complete", "skipped"}):
