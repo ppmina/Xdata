@@ -64,6 +64,7 @@ python demo/websocket.py
 - 支持 K 线数据 + 市场指标 (资金费率、持仓量、多空比例)
 - 使用 Binance Vision API 获取高质量数据
 - 并发控制和重试机制
+- 多日并行下载 (`--max-day-workers`，默认 3)，kline 与 metrics 阶段流水线执行
 
 **输出**: `./data/database/market.db`
 

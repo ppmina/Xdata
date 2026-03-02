@@ -3,8 +3,11 @@
 提供增量下载计划和缺失数据分析功能。
 """
 
+from __future__ import annotations
+
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from datetime import datetime, timedelta
 from typing import TYPE_CHECKING, Any, TypeVar
 
 import pandas as pd
@@ -14,6 +17,8 @@ from cryptoservice.models import Freq
 from cryptoservice.utils import date_to_timestamp_end, date_to_timestamp_start, shift_date, timestamp_to_date_str
 
 if TYPE_CHECKING:
+    from cryptoservice.models.universe import UniverseDailySnapshot
+
     from .queries import KlineQuery, MetricsQuery
 
 logger = get_logger(__name__)
@@ -76,6 +81,95 @@ class _MetricsRewritePoint:
     kind: str
 
 
+# ---------------------------------------------------------------------------
+# Global download plan models
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class SymbolKlinePlan:
+    """Pre-computed kline download plan for one symbol."""
+
+    symbol: str
+    download_ranges: list[tuple[int, int]]
+    missing_count: int
+    active_date_count: int
+
+
+@dataclass
+class SymbolVisionPlan:
+    """Pre-computed vision metrics download plan for one symbol."""
+
+    symbol: str
+    missing_dates: list[str]
+    missing_count: int
+
+
+@dataclass
+class SymbolFundingPlan:
+    """Pre-computed funding rate download plan for one symbol."""
+
+    symbol: str
+    download_ranges: list[tuple[int, int]]
+    missing_count: int
+
+
+@dataclass
+class UniverseDownloadPlan:
+    """Global download plan for the entire universe."""
+
+    kline: dict[str, SymbolKlinePlan] = field(default_factory=dict)
+    vision: dict[str, SymbolVisionPlan] = field(default_factory=dict)
+    funding_rate: dict[str, SymbolFundingPlan] = field(default_factory=dict)
+    all_symbols: list[str] = field(default_factory=list)
+    total_symbols: int = 0
+    symbols_needing_kline: int = 0
+    symbols_needing_vision: int = 0
+    symbols_needing_funding: int = 0
+    kline_total_missing: int = 0
+    vision_total_missing_days: int = 0
+    funding_total_missing: int = 0
+
+
+def gather_symbol_date_ranges(
+    snapshots: list[UniverseDailySnapshot],
+) -> dict[str, list[tuple[str, str]]]:
+    """Build symbol -> contiguous date ranges from universe daily snapshots.
+
+    Groups each symbol's active dates and merges consecutive dates into
+    contiguous ``(start_date, end_date)`` ranges.
+    """
+    symbol_dates: dict[str, list[str]] = {}
+    for snapshot in snapshots:
+        for symbol in snapshot.active_symbols:
+            symbol_dates.setdefault(symbol, []).append(snapshot.date)
+
+    result: dict[str, list[tuple[str, str]]] = {}
+    for symbol, dates in symbol_dates.items():
+        result[symbol] = _merge_consecutive_dates(sorted(dates))
+    return result
+
+
+def _merge_consecutive_dates(sorted_dates: list[str]) -> list[tuple[str, str]]:
+    """Merge a sorted list of YYYY-MM-DD dates into contiguous ranges."""
+    if not sorted_dates:
+        return []
+    ranges: list[tuple[str, str]] = []
+    range_start = sorted_dates[0]
+    prev = sorted_dates[0]
+    for date in sorted_dates[1:]:
+        prev_dt = datetime.strptime(prev, "%Y-%m-%d")
+        curr_dt = datetime.strptime(date, "%Y-%m-%d")
+        if (curr_dt - prev_dt) <= timedelta(days=1):
+            prev = date
+        else:
+            ranges.append((range_start, prev))
+            range_start = date
+            prev = date
+    ranges.append((range_start, prev))
+    return ranges
+
+
 class IncrementalManager:
     """增量下载管理器.
 
@@ -89,7 +183,9 @@ class IncrementalManager:
         "vision-metrics": "Vision指标(OI+LSR)",
     }
 
-    def __init__(self, kline_query: "KlineQuery", metrics_query: "MetricsQuery"):
+    _MS_PER_DAY = 24 * 60 * 60 * 1000
+
+    def __init__(self, kline_query: KlineQuery, metrics_query: MetricsQuery):
         """初始化增量下载管理器.
 
         Args:
@@ -98,6 +194,177 @@ class IncrementalManager:
         """
         self.kline_query = kline_query
         self.metrics_query = metrics_query
+
+    # ------------------------------------------------------------------
+    # Global universe download plan
+    # ------------------------------------------------------------------
+
+    async def plan_universe_download(
+        self,
+        symbol_date_ranges: dict[str, list[tuple[str, str]]],
+        freq: Freq,
+        download_market_metrics: bool = False,
+    ) -> UniverseDownloadPlan:
+        """Create a global download plan for the entire universe.
+
+        Queries the DB once per symbol per contiguous date range instead
+        of once per symbol per day, reducing planning overhead from
+        O(days * symbols) to O(symbols * contiguous_ranges).
+        """
+        all_symbols = sorted(symbol_date_ranges.keys())
+        logger.info(
+            "plan.universe_start",
+            total_symbols=len(all_symbols),
+            download_market_metrics=download_market_metrics,
+        )
+
+        kline_plan = await self._plan_universe_klines(symbol_date_ranges, freq)
+
+        vision_plan: dict[str, SymbolVisionPlan] = {}
+        funding_plan: dict[str, SymbolFundingPlan] = {}
+        if download_market_metrics:
+            vision_plan = await self._plan_universe_vision(symbol_date_ranges)
+            funding_plan = await self._plan_universe_funding(symbol_date_ranges)
+
+        plan = UniverseDownloadPlan(
+            kline=kline_plan,
+            vision=vision_plan,
+            funding_rate=funding_plan,
+            all_symbols=all_symbols,
+            total_symbols=len(all_symbols),
+            symbols_needing_kline=len(kline_plan),
+            symbols_needing_vision=len(vision_plan),
+            symbols_needing_funding=len(funding_plan),
+            kline_total_missing=sum(p.missing_count for p in kline_plan.values()),
+            vision_total_missing_days=sum(p.missing_count for p in vision_plan.values()),
+            funding_total_missing=sum(p.missing_count for p in funding_plan.values()),
+        )
+
+        kline_up_to_date = plan.total_symbols - plan.symbols_needing_kline
+        logger.info(
+            "plan.universe_done",
+            total_symbols=plan.total_symbols,
+            kline_needed=plan.symbols_needing_kline,
+            kline_up_to_date=kline_up_to_date,
+            kline_missing_points=plan.kline_total_missing,
+            vision_needed=plan.symbols_needing_vision,
+            vision_missing_days=plan.vision_total_missing_days,
+            funding_needed=plan.symbols_needing_funding,
+            funding_missing_points=plan.funding_total_missing,
+        )
+        return plan
+
+    async def _plan_universe_klines(
+        self,
+        symbol_date_ranges: dict[str, list[tuple[str, str]]],
+        freq: Freq,
+    ) -> dict[str, SymbolKlinePlan]:
+        step_ms = self._get_freq_milliseconds(freq)
+        kline_plan: dict[str, SymbolKlinePlan] = {}
+
+        for symbol, date_ranges in symbol_date_ranges.items():
+            total_missing = 0
+            download_ranges: list[tuple[int, int]] = []
+            active_days = 0
+
+            for start_date, end_date in date_ranges:
+                start_ts = date_to_timestamp_start(start_date)
+                end_ts = date_to_timestamp_end(end_date)
+                start_dt = datetime.strptime(start_date, "%Y-%m-%d")
+                end_dt = datetime.strptime(end_date, "%Y-%m-%d")
+                active_days += (end_dt - start_dt).days + 1
+
+                try:
+                    missing = await self.kline_query.get_missing_timestamps(symbol, start_ts, end_ts, freq)
+                    if missing:
+                        segment = self._build_single_segment(missing, step_ms, start_ts, end_ts)
+                        download_ranges.append((segment["start_ts"], segment["end_ts"]))
+                        total_missing += len(missing)
+                except Exception as e:
+                    logger.error(f"[plan] kline error checking {symbol}: {e}")
+                    download_ranges.append((start_ts, end_ts))
+
+            if download_ranges:
+                kline_plan[symbol] = SymbolKlinePlan(
+                    symbol=symbol,
+                    download_ranges=download_ranges,
+                    missing_count=total_missing,
+                    active_date_count=active_days,
+                )
+
+        return kline_plan
+
+    async def _plan_universe_vision(
+        self,
+        symbol_date_ranges: dict[str, list[tuple[str, str]]],
+        metrics_freq: Freq = Freq.m5,
+    ) -> dict[str, SymbolVisionPlan]:
+        vision_plan: dict[str, SymbolVisionPlan] = {}
+        expected = self._expected_rows_per_day(metrics_freq)
+
+        for symbol, date_ranges in symbol_date_ranges.items():
+            missing_dates: list[str] = []
+            for start_date, end_date in date_ranges:
+                dr = pd.date_range(start=start_date, end=end_date, freq="D", tz="UTC")
+                for date in dr:
+                    date_str = date.strftime("%Y-%m-%d")
+                    try:
+                        status = await self.metrics_query.get_daily_metrics_status(symbol, date_str)
+                        oi_count = status.get("open_interest", 0)
+                        lsr_count = status.get("long_short_ratio", 0)
+                        if not (oi_count >= expected and lsr_count >= expected):
+                            missing_dates.append(date_str)
+                    except Exception:
+                        missing_dates.append(date_str)
+
+            if missing_dates:
+                vision_plan[symbol] = SymbolVisionPlan(
+                    symbol=symbol,
+                    missing_dates=missing_dates,
+                    missing_count=len(missing_dates),
+                )
+
+        return vision_plan
+
+    async def _plan_universe_funding(
+        self,
+        symbol_date_ranges: dict[str, list[tuple[str, str]]],
+        interval_hours: float = 8.0,
+    ) -> dict[str, SymbolFundingPlan]:
+        funding_plan: dict[str, SymbolFundingPlan] = {}
+        interval_ms = self._hours_to_milliseconds(interval_hours)
+
+        for symbol, date_ranges in symbol_date_ranges.items():
+            total_missing = 0
+            download_ranges: list[tuple[int, int]] = []
+
+            for start_date, end_date in date_ranges:
+                expanded_start = shift_date(start_date, -3)
+                start_ts = date_to_timestamp_start(expanded_start)
+                end_ts = date_to_timestamp_end(end_date)
+
+                try:
+                    missing = await self.metrics_query.get_missing_timestamps("funding_rate", symbol, start_ts, end_ts, interval_hours)
+                    if missing:
+                        segment = self._build_metric_segment_with_rewrite(missing, interval_ms, start_ts, end_ts)
+                        download_ranges.append((segment["start_ts"], segment["end_ts"]))
+                        total_missing += len(missing)
+                except Exception as e:
+                    logger.error(f"[plan] funding error checking {symbol}: {e}")
+                    continue
+
+            if download_ranges:
+                funding_plan[symbol] = SymbolFundingPlan(
+                    symbol=symbol,
+                    download_ranges=download_ranges,
+                    missing_count=total_missing,
+                )
+
+        return funding_plan
+
+    # ------------------------------------------------------------------
+    # Per-day incremental planning (legacy, still used by non-universe paths)
+    # ------------------------------------------------------------------
 
     async def plan_kline_download(self, symbols: list[str], start_date: str, end_date: str, freq: Freq) -> dict[str, dict[str, Any]]:
         """制定K线数据增量下载计划.
@@ -277,9 +544,11 @@ class IncrementalManager:
         self,
         symbols: list[str],
         date_range: pd.DatetimeIndex,
+        metrics_freq: Freq = Freq.m5,
     ) -> tuple[dict[str, dict[str, Any]], int]:
         plan: dict[str, dict[str, Any]] = {}
         complete_count = 0
+        expected = self._expected_rows_per_day(metrics_freq)
 
         for symbol in symbols:
             for date in date_range:
@@ -294,7 +563,7 @@ class IncrementalManager:
                 oi_count = status.get("open_interest", 0)
                 lsr_count = status.get("long_short_ratio", 0)
 
-                if oi_count > 0 and lsr_count > 0:
+                if oi_count >= expected and lsr_count >= expected:
                     logger.debug(f"[vision-metrics] {symbol} {date_str}: data complete (OI: {oi_count}, LSR: {lsr_count})")
                     complete_count += 1
                 else:
@@ -615,6 +884,11 @@ class IncrementalManager:
         }
 
         return freq_ms_map.get(freq, 60 * 60 * 1000)  # 默认1小时
+
+    def _expected_rows_per_day(self, freq: Freq) -> int:
+        """Return the exact number of data points expected per symbol per UTC day."""
+        freq_ms = self._get_freq_milliseconds(freq)
+        return self._MS_PER_DAY // freq_ms
 
     @staticmethod
     def _hours_to_milliseconds(hours: float) -> int:

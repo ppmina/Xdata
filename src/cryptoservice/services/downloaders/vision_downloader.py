@@ -13,8 +13,8 @@ from io import BytesIO
 
 import aiohttp
 from aiohttp import ClientConnectionError, ClientTimeout
-from binance import AsyncClient
 
+from cryptoservice.client import BinanceGateway
 from cryptoservice.config import RetryConfig
 from cryptoservice.config.logging import get_logger
 from cryptoservice.exceptions import MarketDataFetchError, RateLimitError
@@ -33,7 +33,7 @@ class VisionDownloader(BaseDownloader):
 
     def __init__(
         self,
-        client: AsyncClient,
+        client: BinanceGateway,
         request_delay: float = 0,
         endpoint_controls: EndpointControlRegistry | None = None,
     ):

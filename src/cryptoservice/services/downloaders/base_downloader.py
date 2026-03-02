@@ -7,9 +7,8 @@ import asyncio
 from abc import ABC, abstractmethod
 from typing import Any
 
-from binance import AsyncClient
-from binance.exceptions import BinanceAPIException
-
+from cryptoservice.client import BinanceGateway
+from cryptoservice.client.gateway import extract_api_error_context
 from cryptoservice.config import RetryConfig
 from cryptoservice.config.logging import get_logger
 from cryptoservice.exceptions import RateLimitError
@@ -65,7 +64,7 @@ class BaseDownloader(ABC):
 
     def __init__(
         self,
-        client: AsyncClient,
+        client: BinanceGateway,
         request_delay: float = 0.5,
         endpoint_controls: EndpointControlRegistry | None = None,
     ):
@@ -321,62 +320,30 @@ class BaseDownloader(ABC):
                 if acquired:
                     await limiter.release()
 
-    @staticmethod
-    def _extract_response_body(response: Any, max_length: int = 240) -> str | None:
-        """提取并压缩响应体文本，用于错误日志."""
-        if response is None:
-            return None
-
-        body = getattr(response, "_body", None)
-        if body is None:
-            return None
-
-        if isinstance(body, bytes | bytearray):
-            text = body.decode("utf-8", errors="replace")
-        elif isinstance(body, str):
-            text = body
-        else:
-            return None
-
-        normalized = " ".join(text.split())
-        if not normalized:
-            return None
-        if len(normalized) > max_length:
-            return f"{normalized[:max_length]}..."
-        return normalized
-
     @classmethod
     def _format_exception_message(cls, error: Exception) -> str:
         """将异常格式化为稳定、可读的日志消息."""
-        if not isinstance(error, BinanceAPIException):
+        context = extract_api_error_context(error)
+        if context is None:
             return str(error)
 
-        response = getattr(error, "response", None)
-        status_code = getattr(error, "status_code", None)
-        api_code = getattr(error, "code", None)
-        reason = getattr(response, "reason", None) if response else None
-        method = getattr(response, "method", None) if response else None
-        url = getattr(response, "url", None) if response else None
-        api_message = str(getattr(error, "message", "") or "")
-        response_body = cls._extract_response_body(response)
-
         details: list[str] = []
-        if status_code is not None:
-            details.append(f"status={status_code}")
-        if api_code not in (None, 0):
-            details.append(f"code={api_code}")
-        if reason:
-            details.append(f"reason={reason}")
-        if method and url:
-            details.append(f"request={method} {url}")
-        elif url:
-            details.append(f"url={url}")
+        if context.status_code is not None:
+            details.append(f"status={context.status_code}")
+        if context.code not in (None, 0):
+            details.append(f"code={context.code}")
+        if context.reason:
+            details.append(f"reason={context.reason}")
+        if context.method and context.url:
+            details.append(f"request={context.method} {context.url}")
+        elif context.url:
+            details.append(f"url={context.url}")
 
         invalid_json_marker = "Invalid JSON error message from Binance"
-        if api_message and invalid_json_marker not in api_message:
-            details.append(f"message={api_message}")
-        if response_body:
-            details.append(f"response_body={response_body}")
+        if context.message and invalid_json_marker not in context.message:
+            details.append(f"message={context.message}")
+        if context.response_body:
+            details.append(f"response_body={context.response_body}")
 
         if details:
             return f"Binance API error ({', '.join(details)})"

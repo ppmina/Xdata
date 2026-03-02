@@ -11,18 +11,19 @@ from cryptoservice.services import MarketDataService
 
 @pytest.mark.asyncio
 async def test_define_universe_builds_daily_truth_table(tmp_path) -> None:
-    """Define should generate one daily snapshot and strict partitions."""
+    """Define should use Vision listing availability for daily snapshots."""
     service = MarketDataService(AsyncMock())
-    service.get_perpetual_symbols = AsyncMock(return_value=["BTCUSDT", "ETHUSDT"])
-
-    async def fake_status(symbol: str, date: str, endpoint_max_workers: int = 5) -> str:
-        if symbol == "ETHUSDT" and date == "2024-10-02":
-            return "not_full_day_on_date"
-        if symbol in {"BTCUSDT", "ETHUSDT"}:
-            return "active"
-        return "no_kline_on_date"
-
-    service._check_symbol_date_status = AsyncMock(side_effect=fake_status)
+    setattr(
+        service,
+        "_get_vision_kline_available_dates",
+        AsyncMock(
+            side_effect=lambda symbol, start_date, end_date, interval="1m": {
+                "BTCUSDT": {"2024-10-01", "2024-10-02", "2024-10-03"},
+                "ETHUSDT": {"2024-10-01", "2024-10-03"},
+                "BADSYMBOL": set(),
+            }.get(symbol, set())
+        ),
+    )
 
     output_path = tmp_path / "universe.json"
     universe = await service.define_universe(
@@ -38,14 +39,14 @@ async def test_define_universe_builds_daily_truth_table(tmp_path) -> None:
     day1 = universe.get_snapshot_for_date("2024-10-01")
     assert day1 is not None
     assert day1.active_symbols == ["BTCUSDT", "ETHUSDT"]
-    assert day1.missing_symbols == {"BADSYMBOL": "not_in_current_trading_list"}
+    assert day1.missing_symbols == {"BADSYMBOL": "vision_day_unavailable"}
 
     day2 = universe.get_snapshot_for_date("2024-10-02")
     assert day2 is not None
     assert day2.active_symbols == ["BTCUSDT"]
     assert day2.missing_symbols == {
-        "BADSYMBOL": "not_in_current_trading_list",
-        "ETHUSDT": "not_full_day_on_date",
+        "BADSYMBOL": "vision_day_unavailable",
+        "ETHUSDT": "vision_day_unavailable",
     }
 
     assert output_path.exists()
@@ -57,8 +58,11 @@ async def test_define_universe_builds_daily_truth_table(tmp_path) -> None:
 async def test_define_universe_requires_force_to_overwrite(tmp_path) -> None:
     """Define should enforce immutable file semantics unless force=True."""
     service = MarketDataService(AsyncMock())
-    service.get_perpetual_symbols = AsyncMock(return_value=["BTCUSDT"])
-    service._check_symbol_date_status = AsyncMock(return_value="active")
+    setattr(
+        service,
+        "_get_vision_kline_available_dates",
+        AsyncMock(return_value={"2024-10-01"}),
+    )
 
     output_path = tmp_path / "universe.json"
     output_path.write_text(json.dumps({"existing": True}), encoding="utf-8")

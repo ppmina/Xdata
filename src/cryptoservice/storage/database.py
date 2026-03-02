@@ -248,6 +248,18 @@ class Database:
         return await self.metrics_query.select_long_short_ratios(symbols, start_time, end_time, period, ratio_type, columns)
 
     # === 增量下载支持 ===
+
+    async def plan_universe_download(
+        self,
+        symbol_date_ranges: dict[str, list[tuple[str, str]]],
+        freq: Freq,
+        download_market_metrics: bool = False,
+    ):
+        """Create a global download plan for the entire universe."""
+        if not self._initialized:
+            await self.initialize()
+        return await self.incremental.plan_universe_download(symbol_date_ranges, freq, download_market_metrics)
+
     async def plan_kline_download(self, symbols: list[str], start_date: str, end_date: str, freq: Freq) -> dict[str, dict[str, int | str]]:
         """制定K线数据增量下载计划.
 

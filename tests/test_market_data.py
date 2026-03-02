@@ -13,11 +13,10 @@ import pytest
 import pytest_asyncio
 
 from cryptoservice.models import (
-    DailyMarketTicker,
     Freq,
+    FuturesKlineTicker,
     KlineMarketTicker,
     PerpetualMarketTicker,
-    SymbolTicker,
 )
 from cryptoservice.storage import Database
 from cryptoservice.utils import DataConverter
@@ -25,36 +24,26 @@ from cryptoservice.utils import DataConverter
 # ================= 模型测试 =================
 
 
-def test_market_ticker_from_24h_ticker() -> None:
-    """测试24小时行情数据解析."""
-    ticker_24h = {
-        "symbol": "BTCUSDT",
-        "lastPrice": "50000.0",
-        "priceChange": "1000.0",
-        "priceChangePercent": "2.0",
-        "volume": "100.0",
-        "quoteVolume": "5000000.0",
-        "weightedAvgPrice": "100.0",
-        "prevClosePrice": "100.0",
-        "bidPrice": "100.0",
-        "askPrice": "100.0",
-        "bidQty": "100.0",
-        "askQty": "100.0",
-        "openPrice": "100.0",
-        "highPrice": "100.0",
-        "lowPrice": "100.0",
-        "openTime": 1234567890000,
-        "closeTime": 1234567890000,
-        "firstId": 1234567890000,
-        "lastId": 1234567890000,
-        "count": 100,
-    }
-    ticker = DailyMarketTicker.from_binance_ticker(ticker_24h)
+def test_futures_kline_ticker_from_kline() -> None:
+    """测试期货K线数据解析."""
+    kline_data = [
+        1234567890000,
+        "49000.0",
+        "51000.0",
+        "48000.0",
+        "50000.0",
+        "100.0",
+        1234567890000,
+        "5000000.0",
+        1000,
+        "50.0",
+        "2500000.0",
+        "0",
+    ]
+    ticker = FuturesKlineTicker.from_binance_kline("BTCUSDT", kline_data)
     assert ticker.symbol == "BTCUSDT"
     assert ticker.last_price == Decimal("50000.0")
-    assert ticker.price_change == Decimal("1000.0")
-    assert ticker.volume == Decimal("100.0")
-    assert ticker.quote_volume == Decimal("5000000.0")
+    assert ticker.close_price == Decimal("50000.0")
 
 
 def test_market_ticker_from_kline() -> None:
@@ -83,14 +72,26 @@ def test_market_ticker_from_kline() -> None:
 
 def test_market_ticker_to_dict() -> None:
     """测试转换为字典格式."""
-    ticker_data = {"symbol": "BTCUSDT", "price": "50000.0"}
-    ticker = SymbolTicker.from_binance_ticker(ticker_data)
+    kline_data = [
+        1234567890000,
+        "49000.0",
+        "51000.0",
+        "48000.0",
+        "50000.0",
+        "100.0",
+        1234567890000,
+        "5000000.0",
+        1000,
+        "50.0",
+        "2500000.0",
+        "0",
+    ]
+    ticker = FuturesKlineTicker.from_binance_kline("BTCUSDT", kline_data)
     result = ticker.to_dict()
 
     assert result["symbol"] == "BTCUSDT"
     assert result["last_price"] == "50000.0"
-    assert "volume" not in result
-    assert "price_change" not in result  # 确保不存在的字段不会出现在结果中
+    assert result["volume"] == "100.0"
 
 
 # ================= 工具类测试 =================
@@ -202,7 +203,7 @@ async def test_kline_operations(temp_database):
 @pytest.mark.asyncio
 async def test_market_service_creation():
     """测试市场数据服务创建."""
-    with patch("cryptoservice.client.BinanceClientFactory.create_async_client") as mock_create:
+    with patch("cryptoservice.client.BinanceClientFactory.create_gateway") as mock_create:
         # Mock async client
         mock_client = AsyncMock()
         mock_create.return_value = mock_client
@@ -223,7 +224,7 @@ async def test_market_service_creation():
 async def test_service_context_manager():
     """测试服务上下文管理器."""
     with (
-        patch("cryptoservice.client.BinanceClientFactory.create_async_client") as mock_create,
+        patch("cryptoservice.client.BinanceClientFactory.create_gateway") as mock_create,
         patch("cryptoservice.client.BinanceClientFactory.close_client") as mock_close,
     ):
         mock_client = AsyncMock()

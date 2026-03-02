@@ -5,10 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 __all__ = [
-    "SymbolTicker",
-    "DailyMarketTicker",
     "KlineMarketTicker",
-    "SpotKlineTicker",
     "FuturesKlineTicker",
     "PerpetualMarketTicker",
     "FundingRate",
@@ -56,32 +53,23 @@ def __getattr__(name: str) -> Any:
         return metric_exports[name]
 
     if name in {
-        "DailyMarketTicker",
         "FuturesKlineTicker",
         "KlineIndex",
         "KlineMarketTicker",
         "PerpetualMarketTicker",
-        "SpotKlineTicker",
-        "SymbolTicker",
     }:
         from .market_ticker import (
-            DailyMarketTicker,
             FuturesKlineTicker,
             KlineIndex,
             KlineMarketTicker,
             PerpetualMarketTicker,
-            SpotKlineTicker,
-            SymbolTicker,
         )
 
         ticker_exports: dict[str, Any] = {
-            "DailyMarketTicker": DailyMarketTicker,
             "FuturesKlineTicker": FuturesKlineTicker,
             "KlineIndex": KlineIndex,
             "KlineMarketTicker": KlineMarketTicker,
             "PerpetualMarketTicker": PerpetualMarketTicker,
-            "SpotKlineTicker": SpotKlineTicker,
-            "SymbolTicker": SymbolTicker,
         }
         return ticker_exports[name]
 

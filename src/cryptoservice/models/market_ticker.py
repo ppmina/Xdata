@@ -31,97 +31,6 @@ class BaseMarketTicker:
 
 
 @dataclass
-class SymbolTicker(BaseMarketTicker):
-    """单个交易币的行情数据类.
-
-    Attributes:
-        symbol: 交易对
-        last_price: 最新价格
-    """
-
-    @classmethod
-    def from_binance_ticker(cls, ticker: dict[str, Any]) -> "SymbolTicker":
-        """从Binance API响应创建SymbolTicker实例."""
-        return cls(
-            symbol=ticker["symbol"],
-            last_price=Decimal(str(ticker["price"])),
-        )
-
-
-@dataclass
-class DailyMarketTicker(BaseMarketTicker):
-    """24小时行情数据类.
-
-    Attributes:
-        symbol: 交易对
-        last_price: 最新价格
-        price_change: 价格变动
-        price_change_percent: 价格变动百分比
-        volume: 成交量
-        quote_volume: 成交额
-        weighted_avg_price: 加权平均价
-        prev_close_price: 前收盘价
-        bid_price: 买一价
-        ask_price: 卖一价
-        bid_qty: 买一量
-        ask_qty: 卖一量
-        open_price: 开盘价
-        high_price: 最高价
-        low_price: 最低价
-        open_time: 开盘时间
-        close_time: 收盘时间
-        first_id: 第一个ID
-        last_id: 最后一个ID
-        count: 计数
-    """
-
-    price_change: Decimal
-    price_change_percent: Decimal
-    volume: Decimal
-    quote_volume: Decimal
-    weighted_avg_price: Decimal
-    prev_close_price: Decimal
-    bid_price: Decimal
-    ask_price: Decimal
-    bid_qty: Decimal
-    ask_qty: Decimal
-    open_price: Decimal
-    high_price: Decimal
-    low_price: Decimal
-    open_time: int
-    close_time: int
-    first_id: int
-    last_id: int
-    count: int
-
-    @classmethod
-    def from_binance_ticker(cls, ticker: dict[str, Any]) -> "DailyMarketTicker":
-        """从Binance API响应创建DailyMarketTicker实例."""
-        return cls(
-            symbol=ticker["symbol"],
-            last_price=Decimal(str(ticker["lastPrice"])),
-            price_change=Decimal(str(ticker["priceChange"])),
-            price_change_percent=Decimal(str(ticker["priceChangePercent"])),
-            volume=Decimal(str(ticker["volume"])),
-            quote_volume=Decimal(str(ticker["quoteVolume"])),
-            weighted_avg_price=Decimal(str(ticker["weightedAvgPrice"])),
-            prev_close_price=Decimal(str(ticker["prevClosePrice"])),
-            bid_price=Decimal(str(ticker["bidPrice"])),
-            ask_price=Decimal(str(ticker["askPrice"])),
-            bid_qty=Decimal(str(ticker["bidQty"])),
-            ask_qty=Decimal(str(ticker["askQty"])),
-            open_price=Decimal(str(ticker["openPrice"])),
-            high_price=Decimal(str(ticker["highPrice"])),
-            low_price=Decimal(str(ticker["lowPrice"])),
-            open_time=ticker["openTime"],
-            close_time=ticker["closeTime"],
-            first_id=ticker["firstId"],
-            last_id=ticker["lastId"],
-            count=ticker["count"],
-        )
-
-
-@dataclass
 class KlineMarketTicker(BaseMarketTicker):
     """K线行情数据基类（完整的Binance K线数据）.
 
@@ -184,20 +93,6 @@ class KlineMarketTicker(BaseMarketTicker):
             taker_buy_volume=Decimal(str(kline_data[9])),
             taker_buy_quote_volume=Decimal(str(kline_data[10])),
         )
-
-
-@dataclass
-class SpotKlineTicker(KlineMarketTicker):
-    """现货K线行情数据类.
-
-    专门用于现货市场的K线数据，继承基类的所有字段。
-    未来可以添加现货特有的字段（如借贷利率等）。
-    """
-
-    @classmethod
-    def from_binance_kline(cls, symbol: str, kline_data: list) -> "SpotKlineTicker":
-        """从Binance API响应创建SpotKlineTicker实例."""
-        return cast("SpotKlineTicker", super().from_binance_kline(symbol, kline_data))
 
 
 @dataclass

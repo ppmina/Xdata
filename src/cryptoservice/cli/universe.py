@@ -61,6 +61,7 @@ def add_universe_parser(subparsers: argparse._SubParsersAction[argparse.Argument
     download_parser.add_argument("--no-incremental", action="store_true", help="Disable incremental planning")
     download_parser.add_argument("--max-api-workers", type=int, default=1)
     download_parser.add_argument("--max-vision-workers", type=int, default=50)
+    download_parser.add_argument("--max-day-workers", type=int, default=3, help="Max days processed concurrently")
     download_parser.add_argument("--max-retries", type=int, default=3)
     download_parser.add_argument("--api-request-delay", type=float, default=0.5)
     download_parser.add_argument("--vision-request-delay", type=float, default=0.0)
@@ -189,10 +190,19 @@ async def _handle_define(args: argparse.Namespace) -> int:
     if not symbols:
         raise RuntimeError("At least one symbol is required (--symbols or --symbols-file)")
 
-    api_key, api_secret = _resolve_api_credentials(args.api_key, args.api_secret, command="define")
+    api_key = (args.api_key or "").strip() or settings.BINANCE_API_KEY
+    api_secret = (args.api_secret or "").strip() or settings.BINANCE_API_SECRET
 
     market_service_cls = _get_market_service_cls()
-    async with await market_service_cls.create(api_key=api_key, api_secret=api_secret) as service:
+    if api_key and api_secret:
+        service_context = await market_service_cls.create(api_key=api_key, api_secret=api_secret)
+    else:
+        create_public = getattr(market_service_cls, "create_public", None)
+        if not callable(create_public):
+            raise RuntimeError("Public define mode is unavailable: MarketDataService.create_public() is not implemented")
+        service_context = await create_public()
+
+    async with service_context as service:
         universe = await service.define_universe(
             symbols=symbols,
             start_date=args.start_date,
@@ -241,6 +251,7 @@ async def _handle_download(args: argparse.Namespace) -> int:
             interval=args.interval,
             max_api_workers=args.max_api_workers,
             max_vision_workers=args.max_vision_workers,
+            max_day_workers=args.max_day_workers,
             max_retries=args.max_retries,
             start_date=args.start_date,
             end_date=args.end_date,

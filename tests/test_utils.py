@@ -320,11 +320,7 @@ def test_load_symbols_from_txt(tmp_path):
     """测试从 txt 导入 symbols."""
     file_path = tmp_path / "symbols.txt"
     file_path.write_text(
-        "# symbols list\n"
-        "btcusdt\n"
-        "ETHUSDT, solusdt\n"
-        "adausdt # inline comment\n"
-        "BTCUSDT\n",
+        "# symbols list\nbtcusdt\nETHUSDT, solusdt\nadausdt # inline comment\nBTCUSDT\n",
         encoding="utf-8",
     )
 

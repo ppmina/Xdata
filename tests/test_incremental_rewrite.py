@@ -143,9 +143,7 @@ async def test_plan_metrics_download_filler_start_is_clamped_to_start_bound() ->
     start_bound = date_to_timestamp_start(expanded_start)
 
     metrics_query = AsyncMock()
-    metrics_query.get_missing_timestamps = AsyncMock(
-        return_value=[start_bound + 10 * 60 * 1000, start_bound + 20 * 60 * 1000]
-    )
+    metrics_query.get_missing_timestamps = AsyncMock(return_value=[start_bound + 10 * 60 * 1000, start_bound + 20 * 60 * 1000])
 
     manager = IncrementalManager(kline_query=AsyncMock(), metrics_query=metrics_query)
     plan = await manager.plan_metrics_download(
@@ -177,3 +175,129 @@ async def test_plan_metrics_download_excludes_symbols_without_missing_timestamps
     )
 
     assert plan == {}
+
+
+class TestVisionPlannerThreshold:
+    """Verify vision planner requires full coverage per frequency."""
+
+    @pytest.mark.asyncio
+    async def test_sparse_5m_data_is_marked_missing(self) -> None:
+        """A symbol-day with 1 row (stub from interrupted download) must be re-downloaded."""
+        from cryptoservice.models import Freq
+
+        metrics_query = AsyncMock()
+        metrics_query.get_daily_metrics_status = AsyncMock(
+            return_value={"open_interest": 1, "long_short_ratio": 1},
+        )
+
+        manager = IncrementalManager(kline_query=AsyncMock(), metrics_query=metrics_query)
+        plan = await manager._plan_universe_vision(
+            {"BTCUSDT": [("2024-10-02", "2024-10-02")]},
+            metrics_freq=Freq.m5,
+        )
+
+        assert "BTCUSDT" in plan
+        assert "2024-10-02" in plan["BTCUSDT"].missing_dates
+
+    @pytest.mark.asyncio
+    async def test_full_5m_data_is_marked_complete(self) -> None:
+        """A symbol-day with 288 rows (full 5m coverage) should not appear in the plan."""
+        from cryptoservice.models import Freq
+
+        metrics_query = AsyncMock()
+        metrics_query.get_daily_metrics_status = AsyncMock(
+            return_value={"open_interest": 288, "long_short_ratio": 288},
+        )
+
+        manager = IncrementalManager(kline_query=AsyncMock(), metrics_query=metrics_query)
+        plan = await manager._plan_universe_vision(
+            {"BTCUSDT": [("2024-10-01", "2024-10-01")]},
+            metrics_freq=Freq.m5,
+        )
+
+        assert plan == {}
+
+    @pytest.mark.asyncio
+    async def test_missing_one_row_triggers_redownload(self) -> None:
+        """Even 287 out of 288 rows (one missing) must trigger a re-download."""
+        from cryptoservice.models import Freq
+
+        metrics_query = AsyncMock()
+        metrics_query.get_daily_metrics_status = AsyncMock(
+            return_value={"open_interest": 287, "long_short_ratio": 288},
+        )
+
+        manager = IncrementalManager(kline_query=AsyncMock(), metrics_query=metrics_query)
+        plan = await manager._plan_universe_vision(
+            {"BTCUSDT": [("2024-10-01", "2024-10-01")]},
+            metrics_freq=Freq.m5,
+        )
+
+        assert "BTCUSDT" in plan
+
+    @pytest.mark.asyncio
+    async def test_threshold_adapts_to_hourly_freq(self) -> None:
+        """For 1h metrics, expected rows = 24; 23 rows should trigger re-download."""
+        from cryptoservice.models import Freq
+
+        metrics_query = AsyncMock()
+        metrics_query.get_daily_metrics_status = AsyncMock(
+            return_value={"open_interest": 23, "long_short_ratio": 24},
+        )
+
+        manager = IncrementalManager(kline_query=AsyncMock(), metrics_query=metrics_query)
+        plan = await manager._plan_universe_vision(
+            {"ETHUSDT": [("2024-10-03", "2024-10-03")]},
+            metrics_freq=Freq.h1,
+        )
+
+        assert "ETHUSDT" in plan
+
+    @pytest.mark.asyncio
+    async def test_full_hourly_data_is_complete(self) -> None:
+        """For 1h metrics, 24 rows per day is complete."""
+        from cryptoservice.models import Freq
+
+        metrics_query = AsyncMock()
+        metrics_query.get_daily_metrics_status = AsyncMock(
+            return_value={"open_interest": 24, "long_short_ratio": 24},
+        )
+
+        manager = IncrementalManager(kline_query=AsyncMock(), metrics_query=metrics_query)
+        plan = await manager._plan_universe_vision(
+            {"ETHUSDT": [("2024-10-03", "2024-10-03")]},
+            metrics_freq=Freq.h1,
+        )
+
+        assert plan == {}
+
+    @pytest.mark.asyncio
+    async def test_legacy_collect_vision_plan_uses_expected_count(self) -> None:
+        """The legacy _collect_vision_plan should also require full coverage."""
+        import pandas as pd
+
+        from cryptoservice.models import Freq
+
+        metrics_query = AsyncMock()
+        metrics_query.get_daily_metrics_status = AsyncMock(
+            return_value={"open_interest": 1, "long_short_ratio": 1},
+        )
+
+        manager = IncrementalManager(kline_query=AsyncMock(), metrics_query=metrics_query)
+        date_range = pd.date_range(start="2024-10-02", end="2024-10-02", freq="D", tz="UTC")
+        plan, complete_count = await manager._collect_vision_plan(["BTCUSDT"], date_range, metrics_freq=Freq.m5)
+
+        assert "BTCUSDT" in plan
+        assert complete_count == 0
+
+    def test_expected_rows_per_day_values(self) -> None:
+        """Verify _expected_rows_per_day returns correct counts for common frequencies."""
+        from cryptoservice.models import Freq
+
+        manager = IncrementalManager(kline_query=AsyncMock(), metrics_query=AsyncMock())
+        assert manager._expected_rows_per_day(Freq.m1) == 1440
+        assert manager._expected_rows_per_day(Freq.m5) == 288
+        assert manager._expected_rows_per_day(Freq.m15) == 96
+        assert manager._expected_rows_per_day(Freq.h1) == 24
+        assert manager._expected_rows_per_day(Freq.h4) == 6
+        assert manager._expected_rows_per_day(Freq.d1) == 1

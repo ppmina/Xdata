@@ -71,11 +71,7 @@ class _FakeNumpyExporter:
                     "required_columns": ["funding_rate"],
                     "kept_symbol_days": [{"symbol": symbols[0], "date": start_time}] if symbols else [],
                     "dropped_symbol_days": dropped_symbol_days,
-                    "drop_reason_counts": {
-                        "missing_required_metrics_after_asof": len(dropped_symbol_days)
-                    }
-                    if dropped_symbol_days
-                    else {},
+                    "drop_reason_counts": {"missing_required_metrics_after_asof": len(dropped_symbol_days)} if dropped_symbol_days else {},
                     "skipped": False,
                     "skip_reason": None,
                 },
