@@ -4,13 +4,18 @@
 """
 
 import asyncio
+import csv
 import time
 from collections.abc import AsyncGenerator
+from datetime import UTC, datetime, timedelta
+from io import BytesIO
 from pathlib import Path
 from typing import Any
+from zipfile import BadZipFile, ZipFile
 
-from binance import AsyncClient
+import aiohttp
 
+from cryptoservice.client import BinanceGateway
 from cryptoservice.config import RetryConfig
 from cryptoservice.config.logging import get_logger
 from cryptoservice.exceptions import InvalidSymbolError, MarketDataFetchError, RateLimitError
@@ -33,7 +38,7 @@ class KlineDownloader(BaseDownloader):
 
     def __init__(
         self,
-        client: AsyncClient,
+        client: BinanceGateway,
         request_delay: float = 0.5,
         endpoint_controls: EndpointControlRegistry | None = None,
     ):
@@ -48,7 +53,7 @@ class KlineDownloader(BaseDownloader):
         self.db: AsyncMarketDB | None = None
         self._run_id: str | None = None
 
-    async def download_single_symbol(
+    async def download_single_symbol(  # noqa: C901
         self,
         symbol: str,
         start_ts: str,
@@ -60,6 +65,7 @@ class KlineDownloader(BaseDownloader):
     ) -> AsyncGenerator[PerpetualMarketTicker, None]:
         """异步下载单个交易对的K线数据, 并以生成器模式返回."""
         try:
+            del klines_type
             logger.debug(
                 "download.range_start",
                 run=self._run_id,
@@ -70,40 +76,47 @@ class KlineDownloader(BaseDownloader):
                 interval=interval.value,
             )
 
-            async def request_func():
-                return await self.client.get_historical_klines_generator(
-                    symbol=symbol,
-                    interval=interval.value,
-                    start_str=start_ts,
-                    end_str=end_ts,
-                    limit=1500,
-                    klines_type=HistoricalKlinesType.to_binance(klines_type),
-                )
-
-            klines_generator = await self._handle_async_request_with_retry(
-                request_func,
-                retry_config=retry_config,
-                endpoint_key="fapi_klines",
-                endpoint_max_workers=endpoint_max_workers,
-            )
-
-            if not klines_generator:
-                logger.debug(
-                    "download.range_empty",
-                    run=self._run_id,
-                    dataset="kline",
-                    symbol=symbol,
-                    start_ts=start_ts,
-                    end_ts=end_ts,
-                )
-                return
-
+            cursor = int(start_ts)
+            end_time = int(end_ts)
+            page_limit = 1500
             processed_count = 0
-            async for kline in klines_generator:
-                validated_kline = self._validate_single_kline(kline, symbol)
-                if validated_kline:
-                    yield PerpetualMarketTicker.from_binance_kline(symbol=symbol, kline=validated_kline)
-                    processed_count += 1
+            while cursor < end_time:
+                current_cursor = cursor
+
+                async def request_func(start_cursor: int = current_cursor):
+                    return await self.client.futures_klines(
+                        symbol=symbol,
+                        interval=interval.value,
+                        startTime=start_cursor,
+                        endTime=end_time,
+                        limit=page_limit,
+                    )
+
+                klines = await self._handle_async_request_with_retry(
+                    request_func,
+                    retry_config=retry_config,
+                    endpoint_key="fapi_klines",
+                    endpoint_max_workers=endpoint_max_workers,
+                )
+                if not klines:
+                    break
+
+                last_open_time = cursor
+                for kline in klines:
+                    validated_kline = self._validate_single_kline(kline, symbol)
+                    if validated_kline:
+                        yield PerpetualMarketTicker.from_binance_kline(symbol=symbol, kline=validated_kline)
+                        processed_count += 1
+                        try:
+                            last_open_time = int(validated_kline[0])
+                        except (ValueError, TypeError, IndexError):
+                            continue
+
+                if len(klines) < page_limit:
+                    break
+                if last_open_time < cursor:
+                    break
+                cursor = last_open_time + 1
 
             logger.debug(
                 "download.range_done",
@@ -157,8 +170,16 @@ class KlineDownloader(BaseDownloader):
         retry_config: RetryConfig | None = None,
         incremental: bool = True,
         run_id: str | None = None,
+        precomputed_ranges: dict[str, list[tuple[str, str]]] | None = None,
+        source: str = "api",
     ) -> IntegrityReport:
-        """批量异步下载多个交易对的K线数据."""
+        """批量异步下载多个交易对的K线数据.
+
+        When *precomputed_ranges* is provided the internal incremental
+        planning step is skipped entirely and the supplied ranges are
+        used directly.  This enables the global ``plan_universe_download``
+        optimisation where planning runs once across all days.
+        """
         run = run_id or generate_run_id("kline")
         self._run_id = run
         self.begin_run_state(run_id=run, stage="kline", dataset="kline")
@@ -170,7 +191,37 @@ class KlineDownloader(BaseDownloader):
 
         plan_ranges: dict[str, list[tuple[str, str]]] = {}
 
-        if incremental:
+        if precomputed_ranges is not None:
+            plan_ranges = precomputed_ranges
+            symbols = list(precomputed_ranges.keys())
+            if not symbols:
+                elapsed_ms = int((time.perf_counter() - started_at) * 1000)
+                logger.info(
+                    "download.stage_done",
+                    run=run,
+                    stage="kline",
+                    dataset="kline",
+                    status="skipped",
+                    duration_ms=elapsed_ms,
+                    symbols=0,
+                    interval=interval.value,
+                    reason="already_up_to_date",
+                )
+                return IntegrityReport(
+                    total_symbols=0,
+                    successful_symbols=0,
+                    failed_symbols=[],
+                    missing_periods=[],
+                    data_quality_score=1.0,
+                    recommendations=["所有数据已是最新状态"],
+                )
+            logger.debug(
+                "download.plan_precomputed",
+                run=run,
+                dataset="kline",
+                selected=len(symbols),
+            )
+        elif incremental:
             logger.debug(
                 "download.incremental_start",
                 run=run,
@@ -279,6 +330,22 @@ class KlineDownloader(BaseDownloader):
             incremental=incremental,
         )
 
+        vision_session: aiohttp.ClientSession | None = None
+        if source == "vision":
+            vision_session = aiohttp.ClientSession(
+                timeout=aiohttp.ClientTimeout(total=60, connect=10),
+                trust_env=True,
+            )
+
+        def _extract_missing_periods(outcome: dict[str, Any]) -> list[dict[str, Any]]:
+            missing_items = outcome.get("missing_periods")
+            if isinstance(missing_items, list):
+                return [item for item in missing_items if isinstance(item, dict)]
+            single_missing = outcome.get("missing")
+            if isinstance(single_missing, dict):
+                return [single_missing]
+            return []
+
         async def worker() -> None:
             while True:
                 symbol = await task_queue.get()
@@ -292,14 +359,17 @@ class KlineDownloader(BaseDownloader):
                         interval=interval,
                         retry_config=retry_config,
                         endpoint_max_workers=max_workers,
+                        source=source,
+                        vision_session=vision_session,
                     )
                     async with results_lock:
                         status = outcome["status"]
-                        if status == "success":
+                        if status in {"success", "partial"}:
                             successful_symbols.append(symbol)
+                            missing_periods.extend(_extract_missing_periods(outcome))
                         elif status in {"empty", "failed"}:
                             failed_symbols.append(symbol)
-                            missing_periods.append(outcome["missing"])
+                            missing_periods.extend(_extract_missing_periods(outcome))
                 finally:
                     task_queue.task_done()
 
@@ -309,6 +379,9 @@ class KlineDownloader(BaseDownloader):
                     tg.create_task(worker())
         except* RateLimitError as grouped_rate_limit:
             raise grouped_rate_limit.exceptions[0] from None
+        finally:
+            if vision_session is not None and not vision_session.closed:
+                await vision_session.close()
 
         elapsed_ms = int((time.perf_counter() - started_at) * 1000)
         logger.info(
@@ -341,9 +414,19 @@ class KlineDownloader(BaseDownloader):
         interval: Freq,
         retry_config: RetryConfig | None,
         endpoint_max_workers: int,
+        source: str = "api",
+        vision_session: aiohttp.ClientSession | None = None,
     ) -> dict[str, Any]:
         """下载并存储单个交易对数据，返回结果摘要."""
         try:
+            if source == "vision":
+                return await self._process_symbol_from_vision(
+                    symbol=symbol,
+                    download_ranges=download_ranges,
+                    interval=interval,
+                    vision_session=vision_session,
+                )
+
             total_processed = 0
 
             for range_start, range_end in download_ranges:
@@ -424,6 +507,176 @@ class KlineDownloader(BaseDownloader):
                 "reason": str(exc),
             }
             return {"status": "failed", "missing": missing}
+
+    async def _process_symbol_from_vision(  # noqa: C901
+        self,
+        *,
+        symbol: str,
+        download_ranges: list[tuple[str, str]],
+        interval: Freq,
+        vision_session: aiohttp.ClientSession | None,
+    ) -> dict[str, Any]:
+        if vision_session is None:
+            raise MarketDataFetchError("Vision session is not initialized")
+
+        total_processed = 0
+        day_missing: list[dict[str, Any]] = []
+        target_dates = self._expand_ranges_to_dates(download_ranges)
+
+        for date_str in target_dates:
+            rows, reason = await self._download_vision_kline_rows(
+                session=vision_session,
+                symbol=symbol,
+                interval=interval,
+                date_str=date_str,
+            )
+            if rows is None:
+                day_missing.append({"symbol": symbol, "date": date_str, "period": f"{date_str} - {date_str}", "reason": reason})
+                continue
+
+            if not self._is_full_day_kline(rows, date_str=date_str, interval=interval):
+                day_missing.append(
+                    {
+                        "symbol": symbol,
+                        "date": date_str,
+                        "period": f"{date_str} - {date_str}",
+                        "reason": "vision_not_full_day",
+                    }
+                )
+                continue
+
+            chunk: list[PerpetualMarketTicker] = []
+            inserted = 0
+            try:
+                for row in rows:
+                    chunk.append(PerpetualMarketTicker.from_binance_kline(symbol=symbol, kline=row))
+                    if len(chunk) >= 1000:
+                        if self.db:
+                            await self.db.insert_klines(chunk, interval)
+                        inserted += len(chunk)
+                        chunk = []
+                if chunk and self.db:
+                    await self.db.insert_klines(chunk, interval)
+                    inserted += len(chunk)
+            except Exception:
+                day_missing.append(
+                    {
+                        "symbol": symbol,
+                        "date": date_str,
+                        "period": f"{date_str} - {date_str}",
+                        "reason": "vision_not_full_day",
+                    }
+                )
+                continue
+
+            total_processed += inserted
+
+        if total_processed > 0 and day_missing:
+            return {"status": "partial", "rows": total_processed, "missing_periods": day_missing}
+        if total_processed > 0:
+            return {"status": "success", "rows": total_processed, "missing_periods": []}
+        if day_missing:
+            return {"status": "failed", "missing_periods": day_missing}
+
+        overall_start = download_ranges[0][0]
+        overall_end = download_ranges[-1][1]
+        return {
+            "status": "empty",
+            "missing_periods": [
+                {
+                    "symbol": symbol,
+                    "period": (f"{self._format_timestamp(overall_start)} - {self._format_timestamp(overall_end)}"),
+                    "reason": "no_data",
+                }
+            ],
+        }
+
+    async def _download_vision_kline_rows(
+        self,
+        *,
+        session: aiohttp.ClientSession,
+        symbol: str,
+        interval: Freq,
+        date_str: str,
+    ) -> tuple[list[list[Any]] | None, str]:
+        interval_value = interval.value
+        base_url = "https://data.binance.vision/data/futures/um/daily/klines"
+        file_name = f"{symbol}-{interval_value}-{date_str}.zip"
+        url = f"{base_url}/{symbol}/{interval_value}/{file_name}"
+
+        try:
+            async with session.get(url) as response:
+                if response.status == 404:
+                    return None, "vision_file_missing"
+                response.raise_for_status()
+                payload = await response.read()
+        except aiohttp.ClientResponseError as exc:
+            if exc.status == 404:
+                return None, "vision_file_missing"
+            return None, "vision_download_error"
+        except Exception:
+            return None, "vision_download_error"
+
+        try:
+            with ZipFile(BytesIO(payload)) as zip_file:
+                csv_files = [name for name in zip_file.namelist() if name.endswith(".csv")]
+                if not csv_files:
+                    return None, "vision_not_full_day"
+                with zip_file.open(csv_files[0]) as fp:
+                    text_rows = fp.read().decode("utf-8").splitlines()
+            rows = [row for row in csv.reader(text_rows) if row]
+            return rows, ""
+        except (BadZipFile, OSError, UnicodeDecodeError, ValueError):
+            return None, "vision_not_full_day"
+
+    @staticmethod
+    def _expand_ranges_to_dates(download_ranges: list[tuple[str, str]]) -> list[str]:
+        dates: set[str] = set()
+        for range_start, range_end in download_ranges:
+            start_ms = int(range_start)
+            end_ms = int(range_end)
+            start_dt = datetime.fromtimestamp(start_ms / 1000, tz=UTC).date()
+            end_inclusive = start_dt if end_ms <= start_ms else datetime.fromtimestamp((end_ms - 1) / 1000, tz=UTC).date()
+
+            current = start_dt
+            while current <= end_inclusive:
+                dates.add(current.strftime("%Y-%m-%d"))
+                current += timedelta(days=1)
+        return sorted(dates)
+
+    @staticmethod
+    def _interval_to_milliseconds(interval: Freq) -> int:
+        mapping = {
+            Freq.m1: 60_000,
+            Freq.m3: 180_000,
+            Freq.m5: 300_000,
+            Freq.m15: 900_000,
+            Freq.m30: 1_800_000,
+            Freq.h1: 3_600_000,
+            Freq.h2: 7_200_000,
+            Freq.h4: 14_400_000,
+            Freq.h6: 21_600_000,
+            Freq.h8: 28_800_000,
+            Freq.h12: 43_200_000,
+            Freq.d1: 86_400_000,
+        }
+        return mapping[interval]
+
+    def _is_full_day_kline(self, rows: list[list[Any]], *, date_str: str, interval: Freq) -> bool:
+        step_ms = self._interval_to_milliseconds(interval)
+        expected_points = 86_400_000 // step_ms
+        if len(rows) != expected_points:
+            return False
+
+        day_start = int(datetime.strptime(date_str, "%Y-%m-%d").replace(tzinfo=UTC).timestamp() * 1000)
+        expected_last = day_start + (expected_points - 1) * step_ms
+        try:
+            open_times = [int(row[0]) for row in rows]
+        except (TypeError, ValueError, IndexError):
+            return False
+        if open_times[0] != day_start or open_times[-1] != expected_last:
+            return False
+        return all(ts == day_start + idx * step_ms for idx, ts in enumerate(open_times))
 
     def _validate_single_kline(self, kline: list, symbol: str) -> list | None:
         """验证单条K线数据质量."""

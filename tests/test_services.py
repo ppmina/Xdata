@@ -6,11 +6,11 @@
 
 import asyncio
 import time
+from datetime import UTC, datetime
 from decimal import Decimal
 from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
-from binance.exceptions import BinanceAPIException
 
 from cryptoservice.models import PerpetualMarketTicker
 
@@ -80,6 +80,28 @@ def test_kline_downloader_generate_recommendations_handles_zero_symbols():
     assert downloader._generate_recommendations([], []) == ["no symbols to process"]
 
 
+def test_kline_downloader_expand_ranges_to_dates_includes_same_day_partial_gap() -> None:
+    """Same-day incremental gaps should still expand to that calendar day."""
+    from cryptoservice.services.downloaders import KlineDownloader
+
+    start_ms = int(datetime(2024, 10, 1, 12, 0, tzinfo=UTC).timestamp() * 1000)
+    end_ms = int(datetime(2024, 10, 1, 12, 30, tzinfo=UTC).timestamp() * 1000)
+
+    dates = KlineDownloader._expand_ranges_to_dates([(str(start_ms), str(end_ms))])
+    assert dates == ["2024-10-01"]
+
+
+def test_kline_downloader_expand_ranges_to_dates_keeps_end_exclusive_boundary() -> None:
+    """A full day [start, next_day_start) should produce exactly one date."""
+    from cryptoservice.services.downloaders import KlineDownloader
+
+    start_ms = int(datetime(2024, 10, 1, 0, 0, tzinfo=UTC).timestamp() * 1000)
+    end_ms = int(datetime(2024, 10, 2, 0, 0, tzinfo=UTC).timestamp() * 1000)
+
+    dates = KlineDownloader._expand_ranges_to_dates([(str(start_ms), str(end_ms))])
+    assert dates == ["2024-10-01"]
+
+
 @pytest.mark.asyncio
 async def test_kline_downloader_treats_empty_outcome_as_failed_symbol(tmp_path):
     """`empty` symbol outcome should be counted as failed for run summary."""
@@ -89,7 +111,7 @@ async def test_kline_downloader_treats_empty_outcome_as_failed_symbol(tmp_path):
     downloader = KlineDownloader(AsyncMock(), request_delay=0.0)
     downloader.db = AsyncMock()
     downloader.db.initialize = AsyncMock()
-    downloader._process_symbol = AsyncMock(  # type: ignore[method-assign]
+    downloader._process_symbol = AsyncMock(
         return_value={
             "status": "empty",
             "missing": {
@@ -113,6 +135,48 @@ async def test_kline_downloader_treats_empty_outcome_as_failed_symbol(tmp_path):
     assert report.successful_symbols == 0
     assert report.failed_symbols == ["BTCUSDT"]
     assert len(report.missing_periods) == 1
+
+
+@pytest.mark.asyncio
+async def test_kline_downloader_pages_with_futures_klines_client():
+    """Downloader paginates via futures_klines and yields validated rows."""
+    from cryptoservice.models import Freq
+    from cryptoservice.services.downloaders import KlineDownloader
+
+    mock_client = AsyncMock()
+    mock_client.futures_klines = AsyncMock(
+        return_value=[
+            [
+                1730000000000,
+                "100.0",
+                "110.0",
+                "90.0",
+                "105.0",
+                "1000.0",
+                1730000059999,
+                "105000.0",
+                42,
+                "500.0",
+                "52500.0",
+                "0",
+            ]
+        ]
+    )
+    downloader = KlineDownloader(mock_client, request_delay=0.0)
+
+    rows = [
+        row
+        async for row in downloader.download_single_symbol(
+            symbol="BTCUSDT",
+            start_ts="1730000000000",
+            end_ts="1730000100000",
+            interval=Freq.m1,
+        )
+    ]
+
+    assert len(rows) == 1
+    assert rows[0].symbol == "BTCUSDT"
+    mock_client.futures_klines.assert_awaited()
 
 
 @pytest.mark.asyncio
@@ -207,7 +271,7 @@ async def test_market_service_with_mocks():
     from cryptoservice.services import MarketDataService
 
     # Mock整个客户端工厂
-    with patch("cryptoservice.client.BinanceClientFactory.create_async_client") as mock_create:
+    with patch("cryptoservice.client.BinanceClientFactory.create_gateway") as mock_create:
         mock_client = AsyncMock()
         mock_create.return_value = mock_client
 
@@ -230,12 +294,49 @@ async def test_service_error_handling():
     """测试服务错误处理."""
     from cryptoservice.services import MarketDataService
 
-    with patch("cryptoservice.client.BinanceClientFactory.create_async_client") as mock_create:
+    with patch("cryptoservice.client.BinanceClientFactory.create_gateway") as mock_create:
         # 模拟创建客户端失败
         mock_create.side_effect = Exception("Connection failed")
 
         with pytest.raises(Exception, match="Connection failed"):
             await MarketDataService.create("invalid_key", "invalid_secret")
+
+
+@pytest.mark.asyncio
+async def test_get_perpetual_symbols_retries_on_rate_limit():
+    """Perpetual symbol fetch should retry transient Binance throttle errors."""
+    from cryptoservice.services import MarketDataService
+
+    class FakeRateLimitError(Exception):
+        status_code = 429
+        code = -1003
+
+    mock_client = AsyncMock()
+    mock_client.futures_exchange_info = AsyncMock(
+        side_effect=[
+            FakeRateLimitError("(-1003, 'Too many requests')"),
+            {
+                "symbols": [
+                    {"symbol": "BTCUSDT", "contractType": "PERPETUAL", "status": "TRADING"},
+                    {"symbol": "ETHUSD_240628", "contractType": "CURRENT_QUARTER", "status": "TRADING"},
+                ]
+            },
+        ]
+    )
+    service = MarketDataService(mock_client)
+    rate_manager = service.kline_downloader._get_async_rate_manager("fapi_exchange_info")
+
+    async def _fast_handle_rate_limit_error() -> float:
+        rate_manager.consecutive_errors += 1
+        rate_manager.cooldown_until = 0.0
+        return 0.0
+
+    rate_manager.handle_rate_limit_error = _fast_handle_rate_limit_error
+
+    symbols = await service.get_perpetual_symbols()
+
+    assert symbols == ["BTCUSDT"]
+    assert mock_client.futures_exchange_info.await_count == 2
 
 
 # ================= 下载器功能测试 =================
@@ -350,7 +451,13 @@ async def test_base_downloader_formats_binance_invalid_json_exception():
             return "<html>forbidden</html>"
 
     downloader = TestDownloader(AsyncMock())
-    error = BinanceAPIException(FakeResponse(), 403, "<html>forbidden</html>")
+    class FakeBinanceError(Exception):
+        status_code = 403
+        code = -1003
+        message = "forbidden"
+        response = FakeResponse()
+
+    error = FakeBinanceError("boom")
 
     message = downloader._format_exception_message(error)
 
@@ -490,7 +597,7 @@ async def test_base_downloader_429_triggers_adaptive_scale_down():
         manager.cooldown_until = time.time()
         return 0.0
 
-    manager.handle_rate_limit_error = fast_handle_rate_limit_error  # type: ignore[assignment]
+    manager.handle_rate_limit_error = fast_handle_rate_limit_error
 
     limiter = await downloader._get_async_limiter(endpoint_key, hard_cap=8)
     for _ in range(16):
